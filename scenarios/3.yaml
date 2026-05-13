@@ -1,0 +1,148 @@
+services:
+  amount_filter_0:
+    build:
+      context: ./src/
+      dockerfile: amount_filter/Dockerfile # ojo cuando se junten las querys
+    container_name: amount_filter_0
+    depends_on:
+    - gateway
+    environment:
+    - MOM_HOST=rabbitmq
+    - CONTROL_TOPIC=promediator_control_topic
+    - INPUT_TOPIC=usd_later_period_transactions_topic
+    - OUTPUT_TOPIC=results_topic
+    - PYTHONUNBUFFERED=1
+  client_0:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_0
+    depends_on:
+    - usd_filter_0
+    environment:
+    - INPUT_FILE=/datasets/input_0.csv
+    - OUTPUT_FILE=/output/output_0.csv
+    - PYTHONUNBUFFERED=1
+    - SERVER_HOST=gateway
+    - SERVER_PORT=5678
+    volumes:
+    - ./datasets:/datasets
+    - ./output:/output
+  date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: date_filter/Dockerfile
+    container_name: date_filter_0
+    depends_on:
+    - sum_0
+    - transactions_saver_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
+    - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+    - PYTHONUNBUFFERED=1
+  gateway:
+    build:
+      context: ./src/
+      dockerfile: gateway/Dockerfile
+    container_name: gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - INPUT_TOPIC=results_topic
+    - MOM_HOST=rabbitmq
+    - OUTPUT_TOPIC=transactions_topic
+    - PYTHONUNBUFFERED=1
+    - SERVER_HOST=gateway
+    - SERVER_PORT=5678
+  group_0:
+    build:
+      context: ./src/
+      dockerfile: group/Dockerfile
+    container_name: group_0
+    depends_on:
+    - bridge_matcher_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=usd_q4_period_topic
+    - OUTPUT_TOPIC=q4_grouped_sus_transactions_topic
+    - PYTHONUNBUFFERED=1
+  join_0:
+    build:
+      context: ./src/
+      dockerfile: join/Dockerfile
+    container_name: join_0
+    depends_on:
+    - gateway
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=bridged_transactions_topic
+    - OUTPUT_TOPIC=results_topic
+    - PYTHONUNBUFFERED=1
+  promediator_0:
+    build:
+      context: ./src/
+      dockerfile: promediator/Dockerfile
+    container_name: promediator_0
+    depends_on:
+    - transactions_saver_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=amounts_sum_results_topic
+    - OUTPUT_TOPIC=promediator_control_topic
+    - PYTHONUNBUFFERED=1
+  rabbitmq:
+    build:
+      context: ./src/rabbitmq
+      dockerfile: Dockerfile
+    container_name: rabbitmq
+    environment:
+    - RABBITMQ_LOG_LEVELS=error
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 50s
+      test: rabbitmq-diagnostics check_port_connectivity
+      timeout: 3s
+    ports:
+    - 5672:5672
+    - 15672:15672
+  sum_0:
+    build:
+      context: ./src/
+      dockerfile: sum/Dockerfile
+    container_name: sum_0
+    depends_on:
+    - promediator_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=usd_early_period_transactions_topic
+    - OUTPUT_TOPIC=amounts_sum_results_topic
+    - PYTHONUNBUFFERED=1
+  transactions_saver_0:
+    build:
+      context: ./src/
+      dockerfile: transactions_saver/Dockerfile
+    container_name: transactions_saver_0
+    depends_on:
+    - amount_filter_0 #esto a modificar en el docker con todas las querys
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=usd_later_period_transactions_topic
+    - CONTROL_TOPIC=promediator_control_topic
+    - OUTPUT_TOPIC=stored_transactions_topic
+    - PYTHONUNBUFFERED=1
+  usd_filter_0:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_0
+    depends_on:
+    - date_filter_0
+    environment:
+    - INPUT_TOPIC=transactions_topic
+    - OUTPUT_TOPIC=usd_transactions_topic
+    - MOM_HOST=rabbitmq
+    - PYTHONUNBUFFERED=1

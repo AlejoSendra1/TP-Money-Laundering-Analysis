@@ -1,0 +1,84 @@
+services:
+  client_0:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_0
+    depends_on:
+    - usd_filter_0
+    environment:
+    - INPUT_FILE=/datasets/input_0.csv
+    - OUTPUT_FILE=/output/output_0.csv
+    - PYTHONUNBUFFERED=1
+    - SERVER_HOST=gateway
+    - SERVER_PORT=5678
+    volumes:
+    - ./datasets:/datasets
+    - ./output:/output
+  counter_0:
+    build:
+      context: ./src/
+      dockerfile: counter/Dockerfile
+    container_name: counter_0
+    depends_on:
+    - join_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_TOPIC=max_amount_counted_topic
+    - PYTHONUNBUFFERED=1
+  gateway:
+    build:
+      context: ./src/
+      dockerfile: gateway/Dockerfile
+    container_name: gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - INPUT_TOPIC=results_topic
+    - MOM_HOST=rabbitmq
+    - OUTPUT_TOPIC=transactions_topic
+    - PYTHONUNBUFFERED=1
+    - SERVER_HOST=gateway
+    - SERVER_PORT=5678
+  join_0:
+    build:
+      context: ./src/
+      dockerfile: join/Dockerfile
+    container_name: join_0
+    depends_on:
+    - gateway
+    environment:
+    - MOM_HOST=rabbitmq
+    - INPUT_TOPIC=max_amount_counted_topic
+    - OUTPUT_TOPIC=results_topic
+    - PYTHONUNBUFFERED=1
+  rabbitmq:
+    build:
+      context: ./src/rabbitmq
+      dockerfile: Dockerfile
+    container_name: rabbitmq
+    environment:
+    - RABBITMQ_LOG_LEVELS=error
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 50s
+      test: rabbitmq-diagnostics check_port_connectivity
+      timeout: 3s
+    ports:
+    - 5672:5672
+    - 15672:15672
+  usd_filter_0:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_0
+    depends_on:
+    - counter_0
+    environment:
+    - INPUT_TOPIC=transactions_topic
+    - MOM_HOST=rabbitmq
+    - OUTPUT_TOPIC=usd_transactions_topic
+    - PYTHONUNBUFFERED=1
