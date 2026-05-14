@@ -17,7 +17,7 @@ logs:
 .PHONY: logs
 
 test:
-	mkdir -p output
+	mkdir -p ./datasets/output
 	rm ./output/* -f
 	COMPOSE_HTTP_TIMEOUT=300 docker compose -f docker-compose.yaml up --build --remove-orphans --detach
 	PYTHONPATH="$(PWD)/src/common" python3 ./verify_output.py
