@@ -5,9 +5,10 @@ services:
       dockerfile: bridge_matcher/Dockerfile
     container_name: bridge_matcher_0
     depends_on:
-    - join_0
+    - q4_join_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=bridge_matcher_queue
     - INPUT_TOPIC=q4_grouped_sus_transactions_topic
     - OUTPUT_TOPIC=bridged_transactions_topic
     - PYTHONUNBUFFERED=1
@@ -36,6 +37,7 @@ services:
     - group_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=date_filter_queue
     - INPUT_TOPIC=usd_transactions_topic
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
     - PYTHONUNBUFFERED=1
@@ -63,14 +65,15 @@ services:
     - bridge_matcher_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=group_queue
     - INPUT_TOPIC=usd_early_period_transactions_topic
     - OUTPUT_TOPIC=q4_grouped_sus_transactions_topic
     - PYTHONUNBUFFERED=1
-  join_0:
+  q4_join_0:
     build:
       context: ./src/
       dockerfile: join/Dockerfile
-    container_name: join_0
+    container_name: q4_join_0
     depends_on:
     - gateway
     environment:
@@ -102,6 +105,7 @@ services:
     depends_on:
     - date_filter_0
     environment:
+    - INPUT_QUEUE=usd_filter_queue
     - INPUT_TOPIC=transactions_topic
     - OUTPUT_TOPIC=usd_transactions_topic
     - MOM_HOST=rabbitmq

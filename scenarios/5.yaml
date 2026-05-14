@@ -5,7 +5,7 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - date_filter_0
+    - q5_date_filter_0
     environment:
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
@@ -15,16 +15,17 @@ services:
     volumes:
     - ./datasets:/datasets
     - ./output:/output
-  counter_0:
+  q5_counter_0:
     build:
       context: ./src/
       dockerfile: counter/Dockerfile
-    container_name: counter_0
+    container_name: q5_counter_0
     depends_on:
     - currencies_cache_0
     - gateway
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=q5_counter_queue
     - INPUT_TOPIC=q5_period_and_paymentformat_filtered_transaction_topic
     - OUTPUT_TOPIC=results_topic
     - PYTHONUNBUFFERED=1
@@ -38,15 +39,16 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - PYTHONUNBUFFERED=1
-  date_filter_0:
+  q5_date_filter_0:
     build:
       context: ./src/
       dockerfile: date_filter/Dockerfile
-    container_name: date_filter_0
+    container_name: q5_date_filter_0
     depends_on:
     - payment_format_filter_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=q5_date_filter_queue
     - INPUT_TOPIC=transactions_topic
     - OUTPUT_TOPIC=q5_period_transaction_topic
     - PYTHONUNBUFFERED=1
@@ -71,8 +73,9 @@ services:
       dockerfile: payment_format_filter/Dockerfile
     container_name: payment_format_filter_0
     depends_on:
-    - counter_0
+    - q5_counter_0
     environment:
+    - INPUT_QUEUE=payment_format_filter_queue
     - INPUT_TOPIC=q5_period_transaction_topic
     - MOM_HOST=rabbitmq
     - OUTPUT_TOPIC=q5_period_and_paymentformat_filtered_transaction_topic

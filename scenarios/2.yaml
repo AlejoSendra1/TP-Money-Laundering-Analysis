@@ -15,15 +15,16 @@ services:
     volumes:
     - ./datasets:/datasets
     - ./output:/output
-  counter_0:
+  q2_counter_0:
     build:
       context: ./src/
       dockerfile: counter/Dockerfile
-    container_name: counter_0
+    container_name: q2_counter_0
     depends_on:
-    - join_0
+    - q2_join_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=q2_counter_queue
     - INPUT_TOPIC=usd_transactions_topic
     - OUTPUT_TOPIC=max_amount_counted_topic
     - PYTHONUNBUFFERED=1
@@ -42,15 +43,16 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-  join_0:
+  q2_join_0:
     build:
       context: ./src/
       dockerfile: join/Dockerfile
-    container_name: join_0
+    container_name: q2_join_0
     depends_on:
     - gateway
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=q2_join_queue
     - INPUT_TOPIC=max_amount_counted_topic
     - OUTPUT_TOPIC=results_topic
     - PYTHONUNBUFFERED=1
@@ -76,8 +78,9 @@ services:
       dockerfile: usd_filter/Dockerfile
     container_name: usd_filter_0
     depends_on:
-    - counter_0
+    - q2_counter_0
     environment:
+    - INPUT_QUEUE=usd_filter_queue
     - INPUT_TOPIC=transactions_topic
     - MOM_HOST=rabbitmq
     - OUTPUT_TOPIC=usd_transactions_topic

@@ -1,13 +1,14 @@
 services:
-  amount_filter_0:
+  amount_filter_q1_0:
     build:
       context: ./src/
       dockerfile: amount_filter/Dockerfile
-    container_name: amount_filter_0
+    container_name: amount_filter_q1_0
     depends_on:
     - gateway
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=amount_filter_q1_queue
     - INPUT_TOPIC=usd_transactions_topic
     - OUTPUT_TOPIC=results_topic
     - PYTHONUNBUFFERED=1
@@ -64,8 +65,9 @@ services:
       dockerfile: usd_filter/Dockerfile
     container_name: usd_filter_0
     depends_on:
-    - amount_filter_0
+    - amount_filter_q1_0
     environment:
+    - INPUT_QUEUE=usd_filter_queue
     - INPUT_TOPIC=transactions_topic
     - MOM_HOST=rabbitmq
     - OUTPUT_TOPIC=usd_transactions_topic

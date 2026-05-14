@@ -1,14 +1,15 @@
 services:
-  amount_filter_0:
+  q3_amount_filter_0:
     build:
       context: ./src/
       dockerfile: amount_filter/Dockerfile # ojo cuando se junten las querys
-    container_name: amount_filter_0
+    container_name: q3_amount_filter_0
     depends_on:
     - gateway
     environment:
     - MOM_HOST=rabbitmq
     - CONTROL_TOPIC=promediator_control_topic
+    - INPUT_QUEUE=q3_amount_filter_queue
     - INPUT_TOPIC=usd_later_period_transactions_topic
     - OUTPUT_TOPIC=results_topic
     - PYTHONUNBUFFERED=1
@@ -38,6 +39,7 @@ services:
     - transactions_saver_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=date_filter_queue
     - INPUT_TOPIC=usd_transactions_topic
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
     - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
@@ -57,30 +59,6 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-  group_0:
-    build:
-      context: ./src/
-      dockerfile: group/Dockerfile
-    container_name: group_0
-    depends_on:
-    - bridge_matcher_0
-    environment:
-    - MOM_HOST=rabbitmq
-    - INPUT_TOPIC=usd_q4_period_topic
-    - OUTPUT_TOPIC=q4_grouped_sus_transactions_topic
-    - PYTHONUNBUFFERED=1
-  join_0:
-    build:
-      context: ./src/
-      dockerfile: join/Dockerfile
-    container_name: join_0
-    depends_on:
-    - gateway
-    environment:
-    - MOM_HOST=rabbitmq
-    - INPUT_TOPIC=bridged_transactions_topic
-    - OUTPUT_TOPIC=results_topic
-    - PYTHONUNBUFFERED=1
   promediator_0:
     build:
       context: ./src/
@@ -118,6 +96,7 @@ services:
     - promediator_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=sum_queue
     - INPUT_TOPIC=usd_early_period_transactions_topic
     - OUTPUT_TOPIC=amounts_sum_results_topic
     - PYTHONUNBUFFERED=1
@@ -127,9 +106,10 @@ services:
       dockerfile: transactions_saver/Dockerfile
     container_name: transactions_saver_0
     depends_on:
-    - amount_filter_0 #esto a modificar en el docker con todas las querys
+    - q3_amount_filter_0
     environment:
     - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=transactions_saver_queue
     - INPUT_TOPIC=usd_later_period_transactions_topic
     - CONTROL_TOPIC=promediator_control_topic
     - OUTPUT_TOPIC=stored_transactions_topic
@@ -142,6 +122,7 @@ services:
     depends_on:
     - date_filter_0
     environment:
+    - INPUT_QUEUE=usd_filter_queue
     - INPUT_TOPIC=transactions_topic
     - OUTPUT_TOPIC=usd_transactions_topic
     - MOM_HOST=rabbitmq
