@@ -1,11 +1,12 @@
 package inner
 
+/*
 import (
 	"encoding/json"
 	"errors"
 
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
+	"tp_distribuidos/src/common/fruititem"
+	"tp_distribuidos/src/common/middleware"
 )
 
 func serializeJson(message []interface{}) ([]byte, error) {
@@ -68,3 +69,4 @@ func DeserializeMessage(message *middleware.Message) ([]fruititem.FruitItem, boo
 
 	return fruitRecords, len(fruitRecords) == 0, nil
 }
+*/

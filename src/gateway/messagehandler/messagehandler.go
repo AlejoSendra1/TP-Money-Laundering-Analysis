@@ -1,9 +1,9 @@
 package messagehandler
 
 import (
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
+	"tp_distribuidos/src/common/fruititem"
+	"tp_distribuidos/src/common/messageprotocol/inner"
+	"tp_distribuidos/src/common/middleware"
 )
 
 type MessageHandler struct {

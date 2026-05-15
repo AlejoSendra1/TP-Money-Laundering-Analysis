@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -14,10 +15,25 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/external"
+	"tp_distribuidos/src/common/messageprotocol/external"
+	"tp_distribuidos/src/common/transaction"
 )
 
+const (
+	ID_COLUMN                 = 0
+	TIMESTAMP_COLUMN          = 1
+	FROM_BANK_COLUMN          = 2
+	ACCOUNT_COLUMN            = 3
+	TO_BANK_COLUMN            = 4
+	ACCOUNT_1_COLUMN          = 5
+	AMOUNT_RECEIVED_COLUMN    = 6
+	RECEIVING_CURRENCY_COLUMN = 7
+	AMOUNT_PAID_COLUMN        = 8
+	PAYMENT_CURRENCY_COLUMN   = 9
+	PAYMENT_FORMAT_COLUMN     = 10
+
+	EXPECTED_COLUMNS = 12
+)
 const connectionAttempts = 3
 const connectionAttemptsDelayMs = 300
 
@@ -66,7 +82,7 @@ func (client *Client) Run() error {
 	defer client.conn.Close()
 	go client.handleSignals()
 
-	if err := client.sendFruitRecords(); err != nil {
+	if err := client.sendTransactionRecords(); err != nil {
 		if client.running.Load() {
 			return err
 		}
@@ -104,7 +120,74 @@ func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
 	return nil
 }
 
-func (client *Client) sendFruitRecords() error {
+func parseTransaction(columns []string) (*transaction.Transaction, error) {
+	if len(columns) < EXPECTED_COLUMNS {
+		return nil, fmt.Errorf("expected %d columns, got %d", EXPECTED_COLUMNS, len(columns))
+	}
+
+	id, err := strconv.ParseUint(columns[ID_COLUMN], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid id %q: %w", columns[ID_COLUMN], err)
+	}
+
+	timestamp, err := time.Parse("2006-01-02 15:04:05", columns[TIMESTAMP_COLUMN])
+	if err != nil {
+		return nil, fmt.Errorf("invalid timestamp %q: %w", columns[TIMESTAMP_COLUMN], err)
+	}
+
+	fromBank, err := strconv.ParseUint(columns[FROM_BANK_COLUMN], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid from_bank %q: %w", columns[FROM_BANK_COLUMN], err)
+	}
+
+	toBank, err := strconv.ParseUint(columns[TO_BANK_COLUMN], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid to_bank %q: %w", columns[TO_BANK_COLUMN], err)
+	}
+
+	amountReceived, err := strconv.ParseFloat(columns[AMOUNT_RECEIVED_COLUMN], 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid amount_received %q: %w", columns[AMOUNT_RECEIVED_COLUMN], err)
+	}
+
+	amountPaid, err := strconv.ParseFloat(columns[AMOUNT_PAID_COLUMN], 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid amount_paid %q: %w", columns[AMOUNT_PAID_COLUMN], err)
+	}
+
+	return &transaction.Transaction{
+		Id:                 id,
+		Timestamp:          timestamp,
+		From_Bank:          fromBank,
+		Account:            columns[ACCOUNT_COLUMN],
+		To_Bank:            toBank,
+		Account_1:          columns[ACCOUNT_1_COLUMN],
+		Amount_Received:    amountReceived,
+		Receiving_Currency: columns[RECEIVING_CURRENCY_COLUMN],
+		Amount_Paid:        amountPaid,
+		Payment_Currency:   columns[PAYMENT_CURRENCY_COLUMN],
+		Payment_Format:     columns[PAYMENT_FORMAT_COLUMN],
+	}, nil
+}
+
+func (client *Client) sendBatch(batch *[]transaction.Transaction) error {
+	if len(*batch) == 0 {
+		return nil
+	}
+
+	if err := external.WriteTransactionBatch(client.conn, batch); err != nil { // implementar esta func
+		return err
+	}
+
+	if err := client.expectMsgType(external.Ack); err != nil {
+		return err
+	}
+
+	*batch = (*batch)[:0]
+	return nil
+}
+
+func (client *Client) sendTransactionRecords() error {
 	file, err := os.Open(client.config.InputFile)
 	if err != nil {
 		slog.Debug("Error while runninging input file", "err", err)
@@ -112,26 +195,31 @@ func (client *Client) sendFruitRecords() error {
 	}
 	defer file.Close()
 
+	batchSize := os.Getenv("BATCH_SIZE") // pasar a int
+
 	scanner := bufio.NewScanner(file)
+	batch := []transaction.Transaction{}
+
 	for scanner.Scan() {
 		columns := strings.Split(scanner.Text(), ",")
-		fruit := columns[0]
-		amount, err := strconv.ParseInt(columns[1], 10, 32)
+
+		transaction, err := parseTransaction(columns)
 		if err != nil {
-			slog.Debug("Error while parsing fruit record", "err", err)
+			slog.Debug("Error while parsing transaction record", "err", err)
 			return err
 		}
 
-		fruitRecord := fruititem.FruitItem{Fruit: fruit, Amount: uint32(amount)}
-		if err := external.WriteFruitRecord(client.conn, &fruitRecord); err != nil {
-			return err
-		}
-
-		if err := client.expectMsgType(external.Ack); err != nil {
-			return err
+		batch = append(batch, *transaction)
+		if len(batch) == batchSize {
+			if err := client.sendBatch(&batch); err != nil {
+				return err
+			}
 		}
 	}
 
+	if err := client.sendBatch(&batch); err != nil {
+		return err
+	}
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
 		return err
 	}

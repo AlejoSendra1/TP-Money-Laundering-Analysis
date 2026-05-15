@@ -7,6 +7,7 @@ services:
     depends_on:
     - q5_date_filter_0
     environment:
+    - BATCH_SIZE = 10
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1

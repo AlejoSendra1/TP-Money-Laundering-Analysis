@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/client"
+	"tp_distribuidos/src/client/client"
 )
 
 func loadConfig() (client.ClientConfig, error) {
