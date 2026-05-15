@@ -2,7 +2,6 @@ package client
 
 import (
 	"bufio"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -88,14 +87,14 @@ func (client *Client) Run() error {
 		}
 		return nil
 	}
-
-	if err := client.recvFruitTop(); err != nil {
-		if client.running.Load() {
-			return err
+	/*
+		if err := client.recvFruitTop(); err != nil {
+			if client.running.Load() {
+				return err
+			}
+			return nil
 		}
-		return nil
-	}
-
+	*/
 	return nil
 }
 
@@ -195,7 +194,12 @@ func (client *Client) sendTransactionRecords() error {
 	}
 	defer file.Close()
 
-	batchSize := os.Getenv("BATCH_SIZE") // pasar a int
+	batchSizeAsString := os.Getenv("BATCH_SIZE")
+	batchSize, err := strconv.Atoi(batchSizeAsString)
+	if err != nil {
+		slog.Debug("Error reading batchSize from environment", "err", err)
+		return err
+	}
 
 	scanner := bufio.NewScanner(file)
 	batch := []transaction.Transaction{}
@@ -230,6 +234,7 @@ func (client *Client) sendTransactionRecords() error {
 	return nil
 }
 
+/*
 func (client *Client) recvFruitTop() error {
 	if err := client.expectMsgType(external.FruitTop); err != nil {
 		return err
@@ -263,3 +268,4 @@ func (client *Client) recvFruitTop() error {
 
 	return nil
 }
+*/

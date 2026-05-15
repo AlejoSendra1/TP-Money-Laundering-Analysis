@@ -2,13 +2,29 @@ package serializer
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"math"
 	"time"
+	"tp_distribuidos/src/common/transaction"
 )
 
 const UINT64_SIZE uint32 = 8
 const UINT32_SIZE uint32 = 4
 const BOOL_SIZE uint32 = 1
+
+func SerializeTransactions(transactions []transaction.Transaction) ([]byte, error) {
+	data, err := json.Marshal(transactions)
+	if err != nil {
+		return make([]byte, 0), err
+	}
+	return appendLenght(data), nil
+}
+
+func DeserializeTransactions(data []byte) ([]transaction.Transaction, error) {
+	var transactions []transaction.Transaction
+	err := json.Unmarshal(data, &transactions)
+	return transactions, err
+}
 
 func appendLenght(data []byte) []byte {
 	length := make([]byte, UINT32_SIZE)

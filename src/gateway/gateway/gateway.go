@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"tp_distribuidos/src/common/messageprotocol/external"
 	"tp_distribuidos/src/common/middleware"
@@ -113,8 +114,8 @@ loop:
 		}
 
 		switch msgType {
-		case external.FruitRecord:
-			if err := gateway.handleFruitRecordMessage(client); err != nil {
+		case external.TransactionBatch:
+			if err := gateway.handleTransactionBatchMessage(client); err != nil {
 				slog.Debug("While handling record message", "err", err)
 				return
 			}
@@ -138,34 +139,39 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 
 	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
 		for i, client := range clients {
-			fruitTop, err := client.Handler.DeserializeResultMessage(&msg)
-			if err != nil {
-				slog.Debug("While reading from output queue", "err", err)
-				nack()
-				gateway.outputQueue.StopConsuming()
-				return
-			}
+			slog.Debug("A implementar la lectura de las respuestas a enviar al client")
+			slog.Debug("se removera al cliente en 20 s", i, client)
+			time.Sleep(20 * time.Second)
+			/*
+				fruitTop, err := client.Handler.DeserializeResultMessage(&msg)
+				if err != nil {
+					slog.Debug("While reading from output queue", "err", err)
+					nack()
+					gateway.outputQueue.StopConsuming()
+					return
+				}
 
-			// The message handler can't process this message
-			if fruitTop == nil {
-				continue
-			}
+				// The message handler can't process this message
+				if fruitTop == nil {
+					continue
+				}
 
-			if err := external.WriteFruitTop(client.Conn, fruitTop); err != nil {
-				slog.Debug("While writing FRUIT_TOP message", "err", err)
+				if err := external.WriteFruitTop(client.Conn, fruitTop); err != nil {
+					slog.Debug("While writing FRUIT_TOP message", "err", err)
+					return
+				}
+				msgType, err := external.ReadMsgType(client.Conn)
+				if err != nil {
+					slog.Debug("While reading message type", "err", err)
+					return
+				}
+				if msgType != external.Ack {
+					slog.Debug("Expected ACK message")
+					return
+				}
+				clientIndex = i
 				return
-			}
-			msgType, err := external.ReadMsgType(client.Conn)
-			if err != nil {
-				slog.Debug("While reading message type", "err", err)
-				return
-			}
-			if msgType != external.Ack {
-				slog.Debug("Expected ACK message")
-				return
-			}
-			clientIndex = i
-			return
+			*/
 		}
 		slog.Warn("No client handler could process this message")
 		nack()
@@ -178,13 +184,13 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 	}
 }
 
-func (gateway *Gateway) handleFruitRecordMessage(client clientregistry.ClientState) error {
-	fruitRecord, err := external.ReadFruitRecord(client.Conn)
+func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
+	transactions, err := external.ReadTransactionBatch(client.Conn)
 	if err != nil {
-		slog.Debug("While reading FRUIT_RECORD", "err", err)
+		slog.Debug("While reading transaction batch", "err", err)
 		return err
 	}
-	message, err := client.Handler.SerializeDataMessage(*fruitRecord)
+	message, err := client.Handler.SerializeDataMessage(*transactions)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err)
 		return err

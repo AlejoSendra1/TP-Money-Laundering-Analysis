@@ -57,41 +57,35 @@ func ReadMsgType(reader io.Reader) (MsgType, error) { // no modif
 
 func WriteTransactionBatch(writer io.Writer, transactionBatch *[]transaction.Transaction) error { // no modif
 	msg := serializer.SerializeUint32(uint32(TransactionBatch))
-
-	for i := range *transactionBatch {
-		serialization, err := serializeTransactionRecord(&(*transactionBatch)[i])
-		if err != nil {
-			return err
-		}
-		msg = append(msg, serialization...) // mmmmmmm dudoso
+	serial, err := serializer.SerializeTransactions(*transactionBatch)
+	if err != nil {
+		return err
 	}
-
+	msg = append(msg, serial...)
 	return safeio.WriteAll(writer, msg)
 }
 
 func ReadTransactionBatch(reader io.Reader) (*[]transaction.Transaction, error) {
-	serializedFruitSize, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	serializedBytesToRead, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
 	if err != nil {
 		return nil, err
 	}
-	fruitSize := serializer.DeserializeUint32(serializedFruitSize)
+	bytesToRead := serializer.DeserializeUint32(serializedBytesToRead)
 
-	serializedFruit, err := safeio.ReadAll(reader, fruitSize)
+	serializedTransactions, err := safeio.ReadAll(reader, bytesToRead)
 	if err != nil {
 		return nil, err
 	}
-	fruit := serializer.DeserializeString(serializedFruit)
 
-	serializedAmount, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	transactions, err := serializer.DeserializeTransactions(serializedTransactions)
 	if err != nil {
 		return nil, err
 	}
-	amount := serializer.DeserializeUint32(serializedAmount)
 
-	fruitItem := fruititem.FruitItem{Fruit: fruit, Amount: amount}
-	return &fruitItem, nil
+	return &transactions, nil
 }
 
+/*
 func WriteFruitTop(writer io.Writer, fruitItemRecords []fruititem.FruitItem) error {
 	msg := serializer.SerializeUint32(uint32(FruitTop))
 	msg = append(msg, serializer.SerializeUint32(uint32(len(fruitItemRecords)))...)
@@ -120,6 +114,7 @@ func ReadFruitTop(reader io.Reader) ([]fruititem.FruitItem, error) {
 
 	return fruitRecords, nil
 }
+*/
 
 func WriteAck(writer io.Writer) error { // no modif
 	return writeMsgType(writer, Ack)
