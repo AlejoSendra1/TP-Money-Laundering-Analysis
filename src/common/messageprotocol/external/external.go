@@ -21,6 +21,7 @@ const (
 	Query5Response
 )
 
+/*
 func serializeTransactionRecord(transaction *transaction.Transaction) ([]byte, error) { //no modif
 	msg := serializer.SerializeUint64(transaction.Id)
 	serialization, err := serializer.SerializeTime(transaction.Timestamp)
@@ -38,7 +39,7 @@ func serializeTransactionRecord(transaction *transaction.Transaction) ([]byte, e
 	msg = append(msg, serializer.SerializeString(transaction.Payment_Currency)...)
 	msg = append(msg, serializer.SerializeString(transaction.Payment_Format)...)
 	return msg, nil
-}
+}*/
 
 func writeMsgType(writer io.Writer, msgType MsgType) error { // no modif
 	msg := serializer.SerializeUint32(uint32(msgType))

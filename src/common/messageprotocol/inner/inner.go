@@ -2,13 +2,18 @@ package inner
 
 import (
 	"encoding/json"
-	//	"errors"
+	//"errors"
 	"tp_distribuidos/src/common/middleware"
 	"tp_distribuidos/src/common/transaction"
 )
 
-func serializeJson(message []interface{}) ([]byte, error) {
-	return json.Marshal(message)
+type MessageClient struct {
+	ClientID int64         `json:"client_id"`
+	Data     []interface{} `json:"data"`
+}
+
+func serializeJson(messageClient MessageClient) ([]byte, error) {
+	return json.Marshal(messageClient)
 }
 
 func deserializeJson(message []byte) ([]interface{}, error) {
@@ -23,17 +28,14 @@ func SerializeMessage(transactionBatch []transaction.Transaction) (*middleware.M
 	data := []interface{}{}
 	for _, transaction := range transactionBatch {
 		datum := []interface{}{
-			transaction.Id,
 			transaction.Timestamp,
-			transaction.From_Bank,
-			transaction.Account,
-			transaction.To_Bank,
-			transaction.Account_1,
-			transaction.Amount_Received,
-			transaction.Receiving_Currency,
-			transaction.Amount_Paid,
-			transaction.Payment_Currency,
-			transaction.Payment_Format,
+			transaction.FromBank,
+			transaction.ToBank,
+			transaction.FromAccount,
+			transaction.ToAccount,
+			transaction.Amount,
+			transaction.Currency,
+			transaction.PaymentFormat,
 		}
 		data = append(data, datum)
 	}

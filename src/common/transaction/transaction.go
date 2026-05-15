@@ -1,17 +1,16 @@
 package transaction
 
-import "time"
+import (
+	"time"
+)
 
 type Transaction struct {
-	Id                 uint64
-	Timestamp          time.Time
-	From_Bank          uint64
-	Account            string
-	To_Bank            uint64
-	Account_1          string
-	Amount_Received    float64
-	Receiving_Currency string
-	Amount_Paid        float64
-	Payment_Currency   string
-	Payment_Format     string
+	Timestamp     time.Time // Fecha y hora (ISO 8601)
+	FromBank      int       // Código de entidad origen
+	ToBank        int       // Código de entidad destino
+	FromAccount   string    // CBU/CVU o ID de cuenta origen
+	ToAccount     string    // CBU/CVU o ID de cuenta destino
+	Amount        float64   // Monto de la operación
+	Currency      string    // Moneda original (ej: "USD", "EUR", "ARS")
+	PaymentFormat string    // Formato (ej: "Wire", "ACH", "Cheque")
 }

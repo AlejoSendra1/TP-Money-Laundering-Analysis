@@ -19,17 +19,14 @@ import (
 )
 
 const (
-	ID_COLUMN                 = 0
-	TIMESTAMP_COLUMN          = 1
-	FROM_BANK_COLUMN          = 2
-	ACCOUNT_COLUMN            = 3
-	TO_BANK_COLUMN            = 4
-	ACCOUNT_1_COLUMN          = 5
-	AMOUNT_RECEIVED_COLUMN    = 6
-	RECEIVING_CURRENCY_COLUMN = 7
-	AMOUNT_PAID_COLUMN        = 8
-	PAYMENT_CURRENCY_COLUMN   = 9
-	PAYMENT_FORMAT_COLUMN     = 10
+	TIMESTAMP_COLUMN      = 1
+	FROM_BANK_COLUMN      = 2
+	FROM_ACCOUNT_COLUMN   = 3
+	TO_BANK_COLUMN        = 4
+	TO_ACCOUNT_COLUMN     = 5
+	AMOUNT_COLUMN         = 6
+	CURRENCY_COLUMN       = 7
+	PAYMENT_FORMAT_COLUMN = 10
 
 	EXPECTED_COLUMNS = 12
 )
@@ -124,48 +121,35 @@ func parseTransaction(columns []string) (*transaction.Transaction, error) {
 		return nil, fmt.Errorf("expected %d columns, got %d", EXPECTED_COLUMNS, len(columns))
 	}
 
-	id, err := strconv.ParseUint(columns[ID_COLUMN], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid id %q: %w", columns[ID_COLUMN], err)
-	}
-
 	timestamp, err := time.Parse("2006-01-02 15:04:05", columns[TIMESTAMP_COLUMN])
 	if err != nil {
 		return nil, fmt.Errorf("invalid timestamp %q: %w", columns[TIMESTAMP_COLUMN], err)
 	}
 
-	fromBank, err := strconv.ParseUint(columns[FROM_BANK_COLUMN], 10, 64)
+	fromBank, err := strconv.Atoi(columns[FROM_BANK_COLUMN])
 	if err != nil {
 		return nil, fmt.Errorf("invalid from_bank %q: %w", columns[FROM_BANK_COLUMN], err)
 	}
 
-	toBank, err := strconv.ParseUint(columns[TO_BANK_COLUMN], 10, 64)
+	toBank, err := strconv.Atoi(columns[TO_BANK_COLUMN])
 	if err != nil {
 		return nil, fmt.Errorf("invalid to_bank %q: %w", columns[TO_BANK_COLUMN], err)
 	}
 
-	amountReceived, err := strconv.ParseFloat(columns[AMOUNT_RECEIVED_COLUMN], 64)
+	amountReceived, err := strconv.ParseFloat(columns[AMOUNT_COLUMN], 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid amount_received %q: %w", columns[AMOUNT_RECEIVED_COLUMN], err)
-	}
-
-	amountPaid, err := strconv.ParseFloat(columns[AMOUNT_PAID_COLUMN], 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid amount_paid %q: %w", columns[AMOUNT_PAID_COLUMN], err)
+		return nil, fmt.Errorf("invalid amount_received %q: %w", columns[AMOUNT_COLUMN], err)
 	}
 
 	return &transaction.Transaction{
-		Id:                 id,
-		Timestamp:          timestamp,
-		From_Bank:          fromBank,
-		Account:            columns[ACCOUNT_COLUMN],
-		To_Bank:            toBank,
-		Account_1:          columns[ACCOUNT_1_COLUMN],
-		Amount_Received:    amountReceived,
-		Receiving_Currency: columns[RECEIVING_CURRENCY_COLUMN],
-		Amount_Paid:        amountPaid,
-		Payment_Currency:   columns[PAYMENT_CURRENCY_COLUMN],
-		Payment_Format:     columns[PAYMENT_FORMAT_COLUMN],
+		Timestamp:     timestamp,
+		FromBank:      fromBank,
+		ToBank:        toBank,
+		FromAccount:   columns[FROM_ACCOUNT_COLUMN],
+		ToAccount:     columns[TO_ACCOUNT_COLUMN],
+		Amount:        amountReceived,
+		Currency:      columns[CURRENCY_COLUMN],
+		PaymentFormat: columns[PAYMENT_FORMAT_COLUMN],
 	}, nil
 }
 
