@@ -11,7 +11,6 @@ import (
 const USDCurrencyName = "US Dollar"
 
 type USDFilterConfig struct {
-	Id          int
 	MomHost     string
 	MomPort     int
 	InputQueue  string
@@ -27,8 +26,8 @@ type USDFilter struct {
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputQueue, []string{config.InputTopic}, connSettings)
+	// TODO: Aca el nombre del exchange tiene que coincidir con el de gateway
+	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputTopic, []string{config.InputTopic}, connSettings)
 	if err != nil {
 		return nil, err
 	}

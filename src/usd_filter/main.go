@@ -10,13 +10,6 @@ import (
 )
 
 func loadConfig() (usd_filter.USDFilterConfig, error) {
-	// TODO: Agregar ID al dockerfile?
-	id, err := strconv.Atoi(os.Getenv("ID"))
-	if err != nil {
-		return usd_filter.USDFilterConfig{}, err
-	}
-
-	// TODO: Agregar MOM_PORT al dockerfile?
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return usd_filter.USDFilterConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")

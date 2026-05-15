@@ -83,5 +83,5 @@ services:
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_TOPIC=transactions_topic
     - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
     - OUTPUT_TOPIC=usd_transactions_topic
-    - PYTHONUNBUFFERED=1
