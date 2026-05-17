@@ -1,25 +1,28 @@
 package messagehandler
 
 import (
-	"tp_distribuidos/src/common/messageprotocol/inner"
-	"tp_distribuidos/src/common/middleware"
-	"tp_distribuidos/src/common/transaction"
+	"math/rand/v2"
+	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/middleware"
+	"tp_distribuidos/common/transaction"
 )
 
 type MessageHandler struct {
+	userId int64
 }
 
 func NewMessageHandler() MessageHandler {
-	return MessageHandler{}
+	n := rand.Int64()
+	return MessageHandler{userId: n}
 }
 
 func (messageHandler *MessageHandler) SerializeDataMessage(transactionBatch []transaction.Transaction) (*middleware.Message, error) {
-	return inner.SerializeMessage(transactionBatch)
+	return inner.SerializeMessage(messageHandler.userId, transactionBatch)
 }
 
 func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message, error) {
 	data := []transaction.Transaction{}
-	return inner.SerializeMessage(data)
+	return inner.SerializeMessage(messageHandler.userId, data)
 }
 
 //func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) ([]transaction.Transaction, error) {

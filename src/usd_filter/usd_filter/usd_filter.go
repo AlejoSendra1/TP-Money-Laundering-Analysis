@@ -1,11 +1,12 @@
 package usd_filter
 
+/*
 import (
 	"log/slog"
 
-	"tp_distribuidos/src/common/messageprotocol/inner"
-	"tp_distribuidos/src/common/middleware"
-	"tp_distribuidos/src/common/transaction"
+	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/middleware"
+	"tp_distribuidos/common/transaction"
 )
 
 const USDCurrencyName = "US Dollar"
@@ -105,3 +106,4 @@ func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transact
 	}
 	return nil
 }
+*/

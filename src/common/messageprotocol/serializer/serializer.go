@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"time"
-	"tp_distribuidos/src/common/transaction"
+	"tp_distribuidos/common/transaction"
 )
 
 const UINT64_SIZE uint32 = 8

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"tp_distribuidos/src/client/client"
+	"tp_distribuidos/client"
 )
 
 func loadConfig() (client.ClientConfig, error) {

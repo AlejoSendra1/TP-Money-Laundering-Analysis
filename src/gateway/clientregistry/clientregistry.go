@@ -4,7 +4,7 @@ import (
 	"net"
 	"sync"
 
-	"tp_distribuidos/src/gateway/messagehandler"
+	"tp_distribuidos/messagehandler"
 )
 
 type ClientState struct {

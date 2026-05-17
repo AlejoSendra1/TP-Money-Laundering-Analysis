@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"time"
 
-	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -13,7 +13,7 @@ type QueueMiddleware struct {
 	q amqp.Queue
 }
 
-func NewQueueMiddleware(queueName string, connectionSettings m.ConnSettings) (m.Middleware, error) {
+func NewQueueMiddleware(queueName string, connectionSettings ConnSettings) (*QueueMiddleware, error) {
 	qm := new(QueueMiddleware)
 	base, err := newBaseMiddleware(connectionSettings)
 	if err != nil {
@@ -22,15 +22,17 @@ func NewQueueMiddleware(queueName string, connectionSettings m.ConnSettings) (m.
 	qm.baseMiddleware = base
 	qm.q, err = qm.ch.QueueDeclare(
 		queueName, // name
-		false,     // durability
+		true,      // durability
 		false,     // delete when unused
 		false,     // exclusive
 		false,     // no-wait
-		nil,
+		amqp.Table{
+			amqp.QueueTypeArg: amqp.QueueTypeQuorum,
+		},
 	)
 	if err != nil {
 		qm.close()
-		return nil, m.ErrMessageMiddlewareDisconnected
+		return nil, err
 	}
 
 	err = qm.ch.Qos(
@@ -41,14 +43,14 @@ func NewQueueMiddleware(queueName string, connectionSettings m.ConnSettings) (m.
 
 	if err != nil {
 		qm.close()
-		return nil, m.ErrMessageMiddlewareDisconnected
+		return nil, err
 	}
 	return qm, nil
 }
 
-func (qm *QueueMiddleware) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
+func (qm *QueueMiddleware) StartConsuming(callbackFunc func(msg Message, ack func(), nack func())) error {
 	if qm.isDisconnected() {
-		return m.ErrMessageMiddlewareDisconnected
+		return ErrMessageMiddlewareDisconnected
 	}
 
 	return qm.consume(qm.q.Name, callbackFunc)
@@ -58,16 +60,45 @@ func (qm *QueueMiddleware) StopConsuming() error {
 	return qm.stop()
 }
 
-func (qm *QueueMiddleware) Send(msg m.Message) error {
+func (qm *QueueMiddleware) Send(msg Message) error {
 	if qm.isDisconnected() {
-		return m.ErrMessageMiddlewareDisconnected
+		return ErrMessageMiddlewareDisconnected
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) // cancel the publish operation if it takes longer than 5 seconds
 	defer cancel()
 
 	errPublish := qm.publish(msg, ctx, "", qm.q.Name)
 	if errPublish != nil {
-		return m.ErrMessageMiddlewareMessage
+		return ErrMessageMiddlewareMessage
+	}
+	return nil
+}
+
+func (qm *QueueMiddleware) BindToTopics(exchangeName string, topic string) error {
+	// Por ahi seria mas idiomatico pasar un arreglo de pares (exchangeName, topic)
+	err := qm.baseMiddleware.ch.ExchangeDeclare(
+		exchangeName, // name
+		"topic",      // type
+		false,        // durability
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		return ErrMessageMiddlewareMessage
+	}
+
+	log.Printf("Binding queue %s to exchange %s with routing key %s",
+		qm.q.Name, exchangeName, topic)
+	err = qm.baseMiddleware.ch.QueueBind(
+		qm.q.Name,    // queue name
+		topic,        // routing key
+		exchangeName, // exchange
+		false,
+		nil)
+	if err != nil {
+		return ErrMessageMiddlewareMessage
 	}
 	return nil
 }

@@ -1,12 +1,13 @@
 package main
 
+/*
 import (
 	"errors"
 	"log/slog"
 	"os"
 	"strconv"
 
-	"tp_distribuidos/src/usd_filter/usd_filter"
+	"tp_distribuidos/usd_filter/usd_filter"
 )
 
 func loadConfig() (usd_filter.USDFilterConfig, error) {
@@ -65,3 +66,4 @@ func run() int {
 func main() {
 	os.Exit(run())
 }
+*/

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"tp_distribuidos/src/gateway/gateway"
+	"tp_distribuidos/gateway"
 )
 
 func loadConfig() (gateway.GatewayConfig, error) {
@@ -15,9 +15,14 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("INPUT_QUEUE environment variable is required")
 	}
 
-	outputQueueName := os.Getenv("OUTPUT_QUEUE")
-	if outputQueueName == "" {
-		return gateway.GatewayConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
+	outputExchangeName := os.Getenv("OUTPUT_EXCHANGE_NAME")
+	if outputExchangeName == "" {
+		return gateway.GatewayConfig{}, errors.New("OUTPUT_EXCHANGE_NAME environment variable is required")
+	}
+
+	outputTopic := os.Getenv("OUTPUT_TOPIC")
+	if outputTopic == "" {
+		return gateway.GatewayConfig{}, errors.New("OUTPUT_TOPIC environment variable is required")
 	}
 
 	serverHost := os.Getenv("SERVER_HOST")
@@ -41,12 +46,13 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	}
 
 	return gateway.GatewayConfig{
-		InputQueueName:  inputQueueName,
-		OutputQueueName: outputQueueName,
-		ServerHost:      serverHost,
-		ServerPort:      serverPort,
-		MomHost:         momHost,
-		MomPort:         momPort,
+		InputQueueName:     inputQueueName,
+		OutputExchangeName: outputExchangeName,
+		OutputTopic:        outputTopic,
+		ServerHost:         serverHost,
+		ServerPort:         serverPort,
+		MomHost:            momHost,
+		MomPort:            momPort,
 	}, nil
 }
 

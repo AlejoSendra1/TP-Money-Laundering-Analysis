@@ -3,9 +3,9 @@ package external
 import (
 	"io"
 
-	"tp_distribuidos/src/common/messageprotocol/external/safeio"
-	"tp_distribuidos/src/common/messageprotocol/external/serializer"
-	"tp_distribuidos/src/common/transaction"
+	"tp_distribuidos/common/messageprotocol/external/safeio"
+	"tp_distribuidos/common/messageprotocol/serializer"
+	"tp_distribuidos/common/transaction"
 )
 
 type MsgType uint32

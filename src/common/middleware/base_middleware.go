@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -15,7 +14,7 @@ type baseMiddleware struct {
 	consumerTag string
 }
 
-func newBaseMiddleware(connectionSettings m.ConnSettings) (*baseMiddleware, error) {
+func newBaseMiddleware(connectionSettings ConnSettings) (*baseMiddleware, error) {
 	bm := new(baseMiddleware)
 
 	addr := fmt.Sprintf("amqp://guest:guest@%s:%d/", connectionSettings.Hostname, connectionSettings.Port)
@@ -23,13 +22,13 @@ func newBaseMiddleware(connectionSettings m.ConnSettings) (*baseMiddleware, erro
 
 	bm.conn, err = amqp.Dial(addr)
 	if err != nil {
-		return nil, m.ErrMessageMiddlewareDisconnected
+		return nil, err
 	}
 
 	bm.ch, err = bm.conn.Channel()
 	if err != nil {
 		bm.conn.Close()
-		return nil, m.ErrMessageMiddlewareDisconnected
+		return nil, err
 	}
 
 	bm.consumerTag = ""
@@ -49,12 +48,12 @@ func (bm *baseMiddleware) stop() error {
 	bm.consumerTag = ""
 
 	if bm.isDisconnected() {
-		return m.ErrMessageMiddlewareDisconnected
+		return ErrMessageMiddlewareDisconnected
 	}
 	err := bm.ch.Cancel(tag, false)
 
 	if err != nil {
-		return m.ErrMessageMiddlewareDisconnected
+		return ErrMessageMiddlewareDisconnected
 	}
 	return nil
 }
@@ -69,12 +68,12 @@ func (bm *baseMiddleware) close() error {
 	}
 	bm.ch, bm.conn, bm.consumerTag = nil, nil, ""
 	if errCh != nil || errConn != nil {
-		return m.ErrMessageMiddlewareClose
+		return ErrMessageMiddlewareClose
 	}
 	return nil
 }
 
-func (bm *baseMiddleware) consume(queueName string, callBackFunc func(msg m.Message, ack func(), nack func())) error {
+func (bm *baseMiddleware) consume(queueName string, callBackFunc func(msg Message, ack func(), nack func())) error {
 	bm.consumerTag = fmt.Sprintf("consumer%d", time.Now().UnixNano())
 	msgs, err := bm.ch.Consume(
 		queueName,
@@ -86,11 +85,11 @@ func (bm *baseMiddleware) consume(queueName string, callBackFunc func(msg m.Mess
 		nil,
 	)
 	if err != nil {
-		return m.ErrMessageMiddlewareMessage
+		return ErrMessageMiddlewareMessage
 	}
 
 	for d := range msgs {
-		msg := m.Message{Body: string(d.Body)}
+		msg := Message{Body: string(d.Body)}
 
 		ack := func() {
 			d.Ack(
@@ -106,10 +105,10 @@ func (bm *baseMiddleware) consume(queueName string, callBackFunc func(msg m.Mess
 		callBackFunc(msg, ack, nack)
 	}
 
-	return m.ErrMessageMiddlewareMessage // msgs is closed
+	return ErrMessageMiddlewareMessage // msgs is closed
 }
 
-func (bm *baseMiddleware) publish(msg m.Message, ctx context.Context, exchange string, key string) error {
+func (bm *baseMiddleware) publish(msg Message, ctx context.Context, exchange string, key string) error {
 	return bm.ch.PublishWithContext(
 		ctx,
 		exchange,
@@ -117,7 +116,8 @@ func (bm *baseMiddleware) publish(msg m.Message, ctx context.Context, exchange s
 		false,
 		false,
 		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(msg.Body),
+			DeliveryMode: amqp.Persistent, // survives broker restarts
+			ContentType:  "text/plain",
+			Body:         []byte(msg.Body),
 		})
 }

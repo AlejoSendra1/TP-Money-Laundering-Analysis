@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -9,51 +10,53 @@ import (
 	"syscall"
 	"time"
 
-	"tp_distribuidos/src/common/messageprotocol/external"
-	"tp_distribuidos/src/common/middleware"
-	"tp_distribuidos/src/gateway/clientregistry"
-	"tp_distribuidos/src/gateway/messagehandler"
+	"tp_distribuidos/clientregistry"
+	"tp_distribuidos/common/messageprotocol/external"
+	"tp_distribuidos/common/middleware"
+	"tp_distribuidos/messagehandler"
 )
 
 type GatewayConfig struct {
-	InputQueueName  string
-	OutputQueueName string
-	ServerHost      string
-	ServerPort      string
-	MomHost         string
-	MomPort         int
+	InputQueueName     string
+	OutputExchangeName string
+	OutputTopic        string
+	ServerHost         string
+	ServerPort         string
+	MomHost            string
+	MomPort            int
 }
 
 type Gateway struct {
-	registry    clientregistry.ClientRegistry
-	inputQueue  middleware.Middleware
-	outputQueue middleware.Middleware
-	listener    net.Listener
-	running     atomic.Bool
+	batchCounter   int64 // para debug porposes
+	registry       clientregistry.ClientRegistry
+	inputQueue     middleware.Middleware
+	OutputExchange middleware.Middleware
+	listener       net.Listener
+	running        atomic.Bool
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 
-	inputQueue, err := middleware.CreateQueueMiddleware(config.OutputQueueName, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
 	if err != nil {
 		return nil, err
 	}
 
-	outputQueue, err := middleware.CreateQueueMiddleware(config.InputQueueName, connSettings)
+	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueueName, connSettings)
 	if err != nil {
-		inputQueue.Close()
+		outputExchange.Close()
 		return nil, err
 	}
 
 	listener, err := net.Listen("tcp", config.ServerHost+":"+config.ServerPort)
 	if err != nil {
 		inputQueue.Close()
-		outputQueue.Close()
+		outputExchange.Close()
 		return nil, err
 	}
 
-	gateway := &Gateway{outputQueue: outputQueue, inputQueue: inputQueue, listener: listener}
+	gateway := &Gateway{batchCounter: 0, OutputExchange: outputExchange, inputQueue: inputQueue, listener: listener}
 	gateway.running.Store(true)
 	return gateway, nil
 }
@@ -61,7 +64,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 func (gateway *Gateway) Run() error {
 	defer gateway.listener.Close()
 
-	go gateway.outputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+	go gateway.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		gateway.handleClientResponse(msg, ack, nack)
 	})
 	go gateway.handleSignals()
@@ -86,7 +89,7 @@ func (gateway *Gateway) Run() error {
 		go gateway.handleClientRequest(client)
 	}
 
-	gateway.outputQueue.StopConsuming()
+	gateway.OutputExchange.StopConsuming()
 	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
 		for _, client := range clients {
 			client.Conn.Close()
@@ -195,7 +198,7 @@ func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.Clie
 		slog.Debug("While serializing data message", "err", err)
 		return err
 	}
-	if err := gateway.inputQueue.Send(*message); err != nil {
+	if err := gateway.OutputExchange.Send(*message); err != nil {
 		slog.Debug("While sending data message", "err", err)
 		return err
 	}
@@ -203,17 +206,21 @@ func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.Clie
 		slog.Debug("While writing ACK message", "err", err)
 		return err
 	}
+	gateway.batchCounter += 1
 	return nil
 }
 
 func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientState) error {
 	slog.Info("Received END_OF_RECORDS message")
+	str := fmt.Sprint("batches enviados: ", gateway.batchCounter)
+	slog.Info(str)
+
 	message, err := client.Handler.SerializeEOFMessage()
 	if err != nil {
-		slog.Debug("While serializing END_OF_RECORDS  message", "err", err)
+		slog.Debug("While serializing END_OF_RECORDS message", "err", err)
 		return err
 	}
-	if err := gateway.inputQueue.Send(*message); err != nil {
+	if err := gateway.OutputExchange.Send(*message); err != nil {
 		slog.Debug("While sending eof message", "err", err)
 		return err
 	}

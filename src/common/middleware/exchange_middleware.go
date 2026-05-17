@@ -3,8 +3,6 @@ package middleware
 import (
 	"context"
 	"time"
-
-	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 )
 
 type ExchangeMiddleware struct {
@@ -14,7 +12,7 @@ type ExchangeMiddleware struct {
 	queueName string
 }
 
-func NewExchangeMiddleware(exchange string, keys []string, connectionSettings m.ConnSettings) (m.Middleware, error) {
+func NewExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings) (Middleware, error) {
 	em := new(ExchangeMiddleware)
 	base, err := newBaseMiddleware(connectionSettings)
 	if err != nil {
@@ -26,7 +24,7 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings m.
 	em.exchange = exchange
 	err = em.ch.ExchangeDeclare(
 		exchange, // name
-		"direct", // type
+		"topic",  // type
 		false,    // durability
 		false,    // auto-deleted
 		false,    // internal
@@ -36,7 +34,7 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings m.
 
 	if err != nil {
 		em.close()
-		return nil, m.ErrMessageMiddlewareDisconnected
+		return nil, err
 	}
 
 	q, err := em.ch.QueueDeclare(
@@ -49,16 +47,16 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings m.
 	)
 	if err != nil {
 		em.close()
-		return nil, m.ErrMessageMiddlewareDisconnected
+		return nil, err
 	}
 	em.queueName = q.Name
 
 	return em, nil
 }
 
-func (em *ExchangeMiddleware) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
+func (em *ExchangeMiddleware) StartConsuming(callbackFunc func(msg Message, ack func(), nack func())) error {
 	if em.isDisconnected() {
-		return m.ErrMessageMiddlewareDisconnected
+		return ErrMessageMiddlewareDisconnected
 	}
 
 	for _, key := range em.keys {
@@ -71,7 +69,7 @@ func (em *ExchangeMiddleware) StartConsuming(callbackFunc func(msg m.Message, ac
 			nil)
 
 		if err != nil {
-			return m.ErrMessageMiddlewareMessage
+			return ErrMessageMiddlewareMessage
 		}
 	}
 
@@ -82,9 +80,9 @@ func (em *ExchangeMiddleware) StopConsuming() error {
 	return em.stop()
 }
 
-func (em *ExchangeMiddleware) Send(msg m.Message) error {
+func (em *ExchangeMiddleware) Send(msg Message) error {
 	if em.isDisconnected() {
-		return m.ErrMessageMiddlewareDisconnected
+		return ErrMessageMiddlewareDisconnected
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -93,7 +91,7 @@ func (em *ExchangeMiddleware) Send(msg m.Message) error {
 	for _, key := range em.keys {
 		err := em.publish(msg, ctx, em.exchange, key)
 		if err != nil {
-			return m.ErrMessageMiddlewareMessage
+			return ErrMessageMiddlewareMessage
 		}
 	}
 

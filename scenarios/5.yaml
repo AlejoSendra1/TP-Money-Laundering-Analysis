@@ -62,8 +62,10 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-    - INPUT_TOPIC=results_topic
+    - INPUT_QUEUE=results_queue
     - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=transactions_exchange
     - OUTPUT_TOPIC=transactions_topic
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway

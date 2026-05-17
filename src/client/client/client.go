@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"tp_distribuidos/src/common/messageprotocol/external"
-	"tp_distribuidos/src/common/transaction"
+	"tp_distribuidos/common/messageprotocol/external"
+	"tp_distribuidos/common/transaction"
 )
 
 const (
@@ -41,9 +41,10 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	conn    net.Conn
-	running atomic.Bool
-	config  ClientConfig
+	transactionsSentCounter int64 // for debug
+	conn                    net.Conn
+	running                 atomic.Bool
+	config                  ClientConfig
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -52,7 +53,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{conn: conn, config: config}
+	client := &Client{transactionsSentCounter: 0, conn: conn, config: config}
 	client.running.Store(true)
 	return client, nil
 }
@@ -121,7 +122,7 @@ func parseTransaction(columns []string) (*transaction.Transaction, error) {
 		return nil, fmt.Errorf("expected %d columns, got %d", EXPECTED_COLUMNS, len(columns))
 	}
 
-	timestamp, err := time.Parse("2006-01-02 15:04:05", columns[TIMESTAMP_COLUMN])
+	timestamp, err := time.Parse("2006/01/02 15:04", columns[TIMESTAMP_COLUMN])
 	if err != nil {
 		return nil, fmt.Errorf("invalid timestamp %q: %w", columns[TIMESTAMP_COLUMN], err)
 	}
@@ -199,7 +200,9 @@ func (client *Client) sendTransactionRecords() error {
 
 		batch = append(batch, *transaction)
 		if len(batch) == batchSize {
+			client.transactionsSentCounter += int64(len(batch))
 			if err := client.sendBatch(&batch); err != nil {
+				slog.Debug("Error while sending transaction batch", "err", err)
 				return err
 			}
 		}
@@ -208,6 +211,9 @@ func (client *Client) sendTransactionRecords() error {
 	if err := client.sendBatch(&batch); err != nil {
 		return err
 	}
+	str := fmt.Sprint("transacciones enviadas: ", client.transactionsSentCounter)
+	slog.Info(str)
+
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
 		return err
 	}
