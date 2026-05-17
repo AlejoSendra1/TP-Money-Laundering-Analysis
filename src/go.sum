@@ -1,0 +1,4 @@
+github.com/7574-sistemas-distribuidos/tp-mom/golang v0.0.0-20260404195134-2b22e4a74159 h1:k881XaVDYzqwIKS4eBxhWH9QZ9RFNuvsTjDsdssK2bo=
+github.com/7574-sistemas-distribuidos/tp-mom/golang v0.0.0-20260404195134-2b22e4a74159/go.mod h1:5n+hQKK9Ge2cuRer9W2CACRXFCcBAMcv/YlVIarOG+M=
+github.com/rabbitmq/amqp091-go v1.11.0 h1:HxIctVm9Gid/Vtn706necmZ7Wj6pgGI2eqplRbEY8O8=
+github.com/rabbitmq/amqp091-go v1.11.0/go.mod h1:Hy4jKW5kQART1u+JkDTF9YYOQUHXqMuhrgxOEeS7G4o=

@@ -20,6 +20,7 @@ services:
     depends_on:
     - usd_filter_0
     environment:
+    - BATCH_SIZE = 10
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
@@ -50,8 +51,10 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-    - INPUT_TOPIC=results_topic
+    - INPUT_QUEUE=results_queue
     - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=transactions_exchange
     - OUTPUT_TOPIC=transactions_topic
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -109,4 +112,4 @@ services:
     - INPUT_TOPIC=transactions_topic
     - OUTPUT_TOPIC=usd_transactions_topic
     - MOM_HOST=rabbitmq
-    - PYTHONUNBUFFERED=1
+    - MOM_PORT=5672
