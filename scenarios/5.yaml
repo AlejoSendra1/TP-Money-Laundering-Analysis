@@ -49,10 +49,12 @@ services:
     - payment_format_filter_0
     environment:
     - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
     - INPUT_QUEUE=q5_date_filter_queue
+    - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
+    - OUTPUT_EXCHANGE_NAME=q5_date_exchange
     - OUTPUT_TOPIC=q5_period_transaction_topic
-    - PYTHONUNBUFFERED=1
   gateway:
     build:
       context: ./src/
