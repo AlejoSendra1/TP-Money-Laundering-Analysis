@@ -38,10 +38,12 @@ services:
     - group_0
     environment:
     - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
     - INPUT_QUEUE=date_filter_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
     - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
-    - PYTHONUNBUFFERED=1
   gateway:
     build:
       context: ./src/
