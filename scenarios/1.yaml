@@ -12,7 +12,7 @@ services:
     - INPUT_QUEUE=amount_filter_q1_queue
     - INPUT_EXCHANGE_NAME=usd_exchange
     - INPUT_TOPIC=usd_transactions_topic
-    - OUTPUT_EXCHANGE=results_exchange
+    - OUTPUT_EXCHANGE_NAME=results_exchange
     - OUTPUT_TOPIC=results_topic
   client_0:
     build:
@@ -70,7 +70,7 @@ services:
       dockerfile: usd_filter/Dockerfile
     container_name: usd_filter_0
     depends_on:
-    - amount_filter_q1_0
+    - q1_amount_filter_0
     environment:
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
