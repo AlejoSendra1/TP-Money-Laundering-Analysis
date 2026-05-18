@@ -14,3 +14,11 @@ type Transaction struct {
 	Currency      string    // Moneda original (ej: "USD", "EUR", "ARS")
 	PaymentFormat string    // Formato (ej: "Wire", "ACH", "Cheque")
 }
+
+type TransactionResultQuery1 struct {
+	FromBank    int
+	FromAccount string
+	ToBank      int
+	ToAccount   string
+	Amount      float64
+}
