@@ -94,13 +94,11 @@ func (dateFilter *DateFilter) handleMessage(msg *middleware.Message, ack func(),
 }
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
-	err := dateFilter.sendOutput([]transaction.Transaction{}, clientID, dateFilter.config.OutputTopic1)
-	if err != nil {
-		return err
-	}
-	err = dateFilter.sendOutput([]transaction.Transaction{}, clientID, dateFilter.config.OutputTopic2)
-	if err != nil {
-		return err
+	for topic := range dateFilter.outputExchanges {
+		err := dateFilter.sendOutput([]transaction.Transaction{}, clientID, topic)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
