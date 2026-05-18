@@ -9,14 +9,6 @@ import (
 	"tp_distribuidos/date_filter/date_filter"
 )
 
-/*
-- INPUT_QUEUE=date_filter_queue
-- INPUT_EXCHANGE_NAME=usd_exchange
-- INPUT_TOPIC=usd_transactions_topic
-- OUTPUT_EXCHANGE_NAME=date_exchange
-- OUTPUT_TOPIC_1=usd_early_period_transactions_topic
-- OUTPUT_TOPIC_2=usd_later_period_transactions_topic
-*/
 func loadConfig() (date_filter.DateFilterConfig, error) {
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
@@ -77,7 +69,7 @@ func run() int {
 		return 1
 	}
 
-	server, err := DateFilter.NewDateFilter(config)
+	server, err := date_filter.NewDateFilter(config)
 	if err != nil {
 		slog.Error("While initializing usd filter", "err", err)
 		return 1
