@@ -71,7 +71,7 @@ func run() int {
 
 	server, err := date_filter.NewDateFilter(config)
 	if err != nil {
-		slog.Error("While initializing usd filter", "err", err)
+		slog.Error("While initializing date filter", "err", err)
 		return 1
 	}
 
