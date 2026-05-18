@@ -40,11 +40,13 @@ services:
     - transactions_saver_0
     environment:
     - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
     - INPUT_QUEUE=date_filter_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
     - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
     - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
-    - PYTHONUNBUFFERED=1
   gateway:
     build:
       context: ./src/
@@ -126,7 +128,9 @@ services:
     - date_filter_0
     environment:
     - INPUT_QUEUE=usd_filter_queue
+    - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
-    - OUTPUT_TOPIC=usd_transactions_topic
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=usd_exchange
+    - OUTPUT_TOPIC=usd_transactions_topic

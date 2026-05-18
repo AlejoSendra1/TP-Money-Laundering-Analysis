@@ -1,6 +1,5 @@
 package usd_filter
 
-/*
 import (
 	"log/slog"
 
@@ -12,11 +11,13 @@ import (
 const USDCurrencyName = "US Dollar"
 
 type USDFilterConfig struct {
-	MomHost     string
-	MomPort     int
-	InputQueue  string
-	InputTopic  string
-	OutputTopic string
+	MomHost            string
+	MomPort            int
+	InputQueue         string // Con 1 replica no es necesario
+	InputTopic         string
+	InputExchangeName  string
+	OutputExchangeName string
+	OutputTopic        string
 }
 
 type USDFilter struct {
@@ -27,13 +28,12 @@ type USDFilter struct {
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-	// TODO: Aca el nombre del exchange tiene que coincidir con el de gateway
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputTopic, []string{config.InputTopic}, connSettings)
+	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputExchangeName, []string{config.InputTopic}, connSettings)
 	if err != nil {
 		return nil, err
 	}
 
-	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputTopic, []string{config.OutputTopic}, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
 	if err != nil {
 		inputExchange.Close()
 		return nil, err
@@ -48,13 +48,13 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 
 func (usdFilter *USDFilter) Run() {
 	usdFilter.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
-		usdFilter.handleMessage(msg, ack, nack)
+		usdFilter.handleMessage(&msg, ack, nack)
 	})
 }
 
-func (usdFilter *USDFilter) handleMessage(msg middleware.Message, ack func(), nack func()) {
-	// TODO: Actualizar DeserializeMessage con transaction en lugar de FruitItem
-	transactionRecords, clientID, isEof, err := inner.DeserializeMessage(msg)
+func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+	// TODO: Una vez que pase el filtro, el campo Currency ya no es necesario
+	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", clientID)
 		nack()
@@ -78,11 +78,12 @@ func (usdFilter *USDFilter) handleMessage(msg middleware.Message, ack func(), na
 	ack()
 }
 
-func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID string) error {
+func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
+	slog.Info("Sent EOF record message, clientID", clientID)
 	return usdFilter.sendOutput([]transaction.Transaction{}, clientID)
 }
 
-func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID string) error {
+func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
 	for _, transactionRecord := range transactionRecords {
 		if transactionRecord.Currency == USDCurrencyName {
 			if err := usdFilter.sendOutput([]transaction.Transaction{transactionRecord}, clientID); err != nil {
@@ -93,9 +94,9 @@ func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.T
 	return nil
 }
 
-func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID string) error {
+func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
 	// TODO: Actualizar SerializeMessage con transaction en lugar de FruitItem
-	message, err := inner.SerializeMessage(transactionRecords, clientID)
+	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
 		return err
@@ -106,4 +107,3 @@ func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transact
 	}
 	return nil
 }
-*/
