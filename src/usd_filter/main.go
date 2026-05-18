@@ -1,6 +1,5 @@
 package main
 
-/*
 import (
 	"errors"
 	"log/slog"
@@ -26,9 +25,19 @@ func loadConfig() (usd_filter.USDFilterConfig, error) {
 		return usd_filter.USDFilterConfig{}, errors.New("INPUT_QUEUE environment variable is required")
 	}
 
+	inputExchangeName := os.Getenv("INPUT_EXCHANGE_NAME")
+	if inputExchangeName == "" {
+		return usd_filter.USDFilterConfig{}, errors.New("INPUT_EXCHANGE_NAME environment variable is required")
+	}
+
 	inputTopic := os.Getenv("INPUT_TOPIC")
 	if inputTopic == "" {
 		return usd_filter.USDFilterConfig{}, errors.New("INPUT_TOPIC environment variable is required")
+	}
+
+	outputExchangeName := os.Getenv("OUTPUT_EXCHANGE_NAME")
+	if outputExchangeName == "" {
+		return usd_filter.USDFilterConfig{}, errors.New("OUTPUT_EXCHANGE_NAME environment variable is required")
 	}
 
 	outputTopic := os.Getenv("OUTPUT_TOPIC")
@@ -37,12 +46,13 @@ func loadConfig() (usd_filter.USDFilterConfig, error) {
 	}
 
 	return usd_filter.USDFilterConfig{
-		Id:          id,
-		MomHost:     momHost,
-		MomPort:     momPort,
-		InputQueue:  inputQueue,
-		InputTopic:  inputTopic,
-		OutputTopic: outputTopic,
+		MomHost:            momHost,
+		MomPort:            momPort,
+		InputQueue:         inputQueue,
+		InputExchangeName:  inputExchangeName,
+		InputTopic:         inputTopic,
+		OutputExchangeName: outputExchangeName,
+		OutputTopic:        outputTopic,
 	}, nil
 }
 
@@ -53,7 +63,7 @@ func run() int {
 		return 1
 	}
 
-	server, err := usdFilter.NewUSDFilter(config)
+	server, err := usd_filter.NewUSDFilter(config)
 	if err != nil {
 		slog.Error("While initializing usd filter", "err", err)
 		return 1
@@ -66,4 +76,3 @@ func run() int {
 func main() {
 	os.Exit(run())
 }
-*/
