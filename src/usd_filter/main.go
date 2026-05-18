@@ -5,8 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-
-	"tp_distribuidos/usd_filter/usd_filter"
+	"tp_distribuidos/usd_filter"
 )
 
 func loadConfig() (usd_filter.USDFilterConfig, error) {
