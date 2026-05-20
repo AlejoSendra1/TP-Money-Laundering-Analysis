@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/q1_amount_filter"
+	"tp_distribuidos/q1_amount_filter/q1_amount_filter"
 )
 
 func loadConfig() (q1_amount_filter.Q1AmountFilterConfig, error) {
@@ -34,24 +35,18 @@ func loadConfig() (q1_amount_filter.Q1AmountFilterConfig, error) {
 		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("INPUT_TOPIC environment variable is required")
 	}
 
-	outputExchangeName := os.Getenv("OUTPUT_EXCHANGE_NAME")
-	if outputExchangeName == "" {
-		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("OUTPUT_EXCHANGE_NAME environment variable is required")
-	}
-
-	outputTopic := os.Getenv("OUTPUT_TOPIC")
-	if outputTopic == "" {
-		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("OUTPUT_TOPIC environment variable is required")
+	outputQueue := os.Getenv("OUTPUT_QUEUE")
+	if outputQueue == "" {
+		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
 	}
 
 	return q1_amount_filter.Q1AmountFilterConfig{
-		MomHost:            momHost,
-		MomPort:            momPort,
-		InputQueue:         inputQueue,
-		InputExchangeName:  inputExchangeName,
-		InputTopic:         inputTopic,
-		OutputExchangeName: outputExchangeName,
-		OutputTopic:        outputTopic,
+		MomHost:           momHost,
+		MomPort:           momPort,
+		InputQueue:        inputQueue,
+		InputExchangeName: inputExchangeName,
+		InputTopic:        inputTopic,
+		OutputQueue:       outputQueue,
 	}, nil
 }
 
