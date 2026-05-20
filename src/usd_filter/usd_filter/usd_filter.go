@@ -95,7 +95,6 @@ func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.T
 }
 
 func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
-	// TODO: Actualizar SerializeMessage con transaction en lugar de FruitItem
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
