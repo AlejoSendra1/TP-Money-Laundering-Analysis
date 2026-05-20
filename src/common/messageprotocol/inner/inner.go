@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	//"errors"
-
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -14,6 +12,18 @@ import (
 type MessageClient struct {
 	ClientID int64         `json:"client_id"`
 	Data     []interface{} `json:"data"`
+}
+
+type querySerializer func(transaction.QueryResult) ([]interface{}, error)
+type queryDeserializer func([]interface{}) (interface{}, error)
+
+var querySerializers = map[transaction.QueryID]querySerializer{
+	transaction.Query1: serializeQuery1,
+	// transaction.Query2: serializeQuery2,
+}
+var queryDeserializers = map[transaction.QueryID]queryDeserializer{
+	transaction.Query1: deserializeQuery1,
+	// transaction.Query2: deserializeQuery2,
 }
 
 func serializeJson(messageClient MessageClient) ([]byte, error) {
@@ -28,19 +38,43 @@ func deserializeJson(message []byte) ([]interface{}, error) {
 	return data, nil
 }
 
+func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryResult) (*middleware.Message, error) {
+	serializer, ok := querySerializers[queryResult.QueryID]
+	if !ok {
+		return nil, fmt.Errorf("type of query not supported for serialize: %d", queryResult.QueryID)
+	}
+
+	serializedTransactions, err := serializer(queryResult)
+	if err != nil {
+		return nil, err
+	}
+
+	data := []interface{}{
+		int(queryResult.QueryID),
+		serializedTransactions,
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+	return &message, nil
+}
+
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
 	data := []interface{}{}
-	for _, transaction := range transactionBatch {
-		formattedTimestamp := transaction.Timestamp.Format("2006/01/02 15:04")
+	for _, tx := range transactionBatch {
+		formattedTimestamp := tx.Timestamp.Format("2006/01/02 15:04")
 		datum := []interface{}{
 			formattedTimestamp,
-			transaction.FromBank,
-			transaction.ToBank,
-			transaction.FromAccount,
-			transaction.ToAccount,
-			transaction.Amount,
-			transaction.Currency,
-			transaction.PaymentFormat,
+			tx.FromBank,
+			tx.ToBank,
+			tx.FromAccount,
+			tx.ToAccount,
+			tx.Amount,
+			tx.Currency,
+			tx.PaymentFormat,
 		}
 		data = append(data, datum)
 	}
@@ -71,6 +105,38 @@ func DeserializeRawTransactionsMessage(message *middleware.Message) (int64, []tr
 	}
 
 	return messageClient.ClientID, transactions, len(transactions) == 0, nil
+}
+
+func DeserializeQueryResultMessage(message *middleware.Message) (int64, *transaction.QueryResult, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, fmt.Errorf("deserializing results query message body: %w", err)
+	}
+
+	queryIDFloat, ok := messageClient.Data[0].(float64)
+	if !ok {
+		return 0, nil, fmt.Errorf("deserializing invalid query id")
+	}
+	queryID := transaction.QueryID(queryIDFloat)
+
+	transactionRecords, ok := messageClient.Data[1].([]interface{})
+	if !ok {
+		return 0, nil, fmt.Errorf("deserializing invalid transactions payload")
+	}
+
+	deserializer, ok := queryDeserializers[queryID]
+	if !ok {
+		return 0, nil, fmt.Errorf("unsupported query id for deserialization: %d", queryID)
+	}
+
+	finalTransactions, err := deserializer(transactionRecords)
+	if err != nil {
+		return 0, nil, err
+	}
+	return messageClient.ClientID, &transaction.QueryResult{
+		QueryID:      queryID,
+		Transactions: finalTransactions,
+	}, nil
 }
 
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.
@@ -113,35 +179,36 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 	}, nil
 }
 
-/*
+// --- Serializer/Deserializer  ---
 
-func DeserializeMessage(message *middleware.Message) ([]transaction.Transaction, error) {
-	data, err := deserializeJson([]byte((*message).Body))
-	if err != nil {
-		return nil, err
+func serializeQuery1(qr transaction.QueryResult) ([]interface{}, error) {
+	serialized := []interface{}{}
+	records, ok := qr.Transactions.([]transaction.LowAmountTransfer)
+	if !ok {
+		return nil, fmt.Errorf("serializeQuery1: unexpected transactions type: %T", qr.Transactions)
 	}
-
-	transactions := []transaction.Transaction{}
-	for _, datum := range data {
-		fruitPair, ok := datum.([]interface{})
-		if !ok {
-			return nil, errors.New("Datum is not an array")
-		}
-
-		fruit, ok := fruitPair[0].(string)
-		if !ok {
-			return nil, errors.New("Datum is not a (fruit, amount) pair")
-		}
-
-		fruitAmount, ok := fruitPair[1].(float64)
-		if !ok {
-			return nil, errors.New("Datum is not a (fruit, amount) pair")
-		}
-
-		fruitRecord := transaction.Transaction{Fruit: fruit, Amount: uint32(fruitAmount)}
-		fruitRecords = append(fruitRecords, fruitRecord)
+	for _, r := range records {
+		datum := []interface{}{r.FromBank, r.FromAccount, r.ToBank, r.ToAccount, r.Amount}
+		serialized = append(serialized, datum)
 	}
+	return serialized, nil
+}
 
+func deserializeQuery1(records []interface{}) (interface{}, error) {
+	transactions := make([]transaction.LowAmountTransfer, 0, len(records))
+	for _, datum := range records {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 5 {
+			return nil, fmt.Errorf("deserializing invalid structure for results query 1")
+		}
+		tx := transaction.LowAmountTransfer{
+			FromBank:    int(fields[0].(float64)),
+			FromAccount: fields[1].(string),
+			ToBank:      int(fields[2].(float64)),
+			ToAccount:   fields[3].(string),
+			Amount:      fields[4].(float64),
+		}
+		transactions = append(transactions, tx)
+	}
 	return transactions, nil
 }
-*/
