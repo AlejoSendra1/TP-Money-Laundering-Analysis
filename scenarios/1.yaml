@@ -12,8 +12,7 @@ services:
     - INPUT_QUEUE=amount_filter_q1_queue
     - INPUT_EXCHANGE_NAME=usd_exchange
     - INPUT_TOPIC=usd_transactions_topic
-    - OUTPUT_EXCHANGE_NAME=results_exchange
-    - OUTPUT_TOPIC=results_topic
+    - OUTPUT_QUEUE=results_queue
   client_0:
     build:
       context: ./src/
