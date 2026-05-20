@@ -79,7 +79,7 @@ func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), n
 }
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Sent EOF record message, clientID", clientID)
+	slog.Info("Sent EOF record message", "clientID", clientID)
 	return usdFilter.sendOutput([]transaction.Transaction{}, clientID)
 }
 
