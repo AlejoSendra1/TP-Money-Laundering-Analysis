@@ -90,6 +90,13 @@ func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) e
 	if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
 		return err
 	}
+
+	// Envio EOF, deberia sincronizas con demas instancias de q1 amount filter
+	queryResult.Transactions = []transaction.LowAmountTransfer{}
+	if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
+		return err
+	}
+
 	delete(q1AmountFilter.accumulated, clientID)
 	// TODO: Crear un join intermedio para juntar la data del client y enviarla toda junta, porque sino el gateway se va a encargar
 	// de juntarlo al haber mas isntancias de q1 amount filter
