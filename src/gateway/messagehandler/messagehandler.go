@@ -21,8 +21,7 @@ func (messageHandler *MessageHandler) SerializeDataMessage(transactionBatch []tr
 }
 
 func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message, error) {
-	data := []transaction.Transaction{}
-	return inner.SerializeMessage(messageHandler.userId, data)
+	return inner.SerializeEOF(messageHandler.userId, true, "gateway") // en este caso no es relevante quien envia
 }
 
 //func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) ([]transaction.Transaction, error) {

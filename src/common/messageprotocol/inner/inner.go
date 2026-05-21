@@ -11,8 +11,22 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
+type MsgType uint32
+
+const (
+	TransactionBatch MsgType = iota + 1
+	Ack
+	EndOfRecords
+	Query1Response
+	Query2Response
+	Query3Response
+	Query4Response
+	Query5Response
+)
+
 type MessageClient struct {
 	ClientID int64         `json:"client_id"`
+	MsgType  MsgType       `json:"msg_type"`
 	Data     []interface{} `json:"data"`
 }
 
@@ -20,16 +34,40 @@ func serializeJson(messageClient MessageClient) ([]byte, error) {
 	return json.Marshal(messageClient)
 }
 
-func deserializeJson(message []byte) ([]interface{}, error) {
-	var data []interface{}
-	if err := json.Unmarshal(message, &data); err != nil {
+func DeserializeMessage(message *middleware.Message) (*MessageClient, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return nil, fmt.Errorf("deserializing message body: %w", err)
+	}
+	return &messageClient, nil
+}
+
+func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middleware.Message, error) {
+	data := []interface{}{}
+
+	// agregamos el tipo de msg
+	data = append(data, []interface{}{
+		mustPropagate,
+		sender,
+	})
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, MsgType: EndOfRecords, Data: data})
+	if err != nil {
 		return nil, err
 	}
-	return data, nil
+
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
 }
 
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
 	data := []interface{}{}
+
+	// agregamos el tipo de msg
+	data = append(data, []interface{}{
+		TransactionBatch,
+	})
 	for _, transaction := range transactionBatch {
 		formattedTimestamp := transaction.Timestamp.Format("2006/01/02 15:04")
 		datum := []interface{}{
@@ -45,7 +83,7 @@ func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction
 		data = append(data, datum)
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := serializeJson(MessageClient{ClientID: clientId, MsgType: TransactionBatch, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -54,6 +92,7 @@ func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction
 	return &message, nil
 }
 
+// ELIMINAR ESTA PORQUERIA
 func DeserializeRawTransactionsMessage(message *middleware.Message) (int64, []transaction.Transaction, bool, error) {
 	var messageClient MessageClient
 	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
@@ -71,6 +110,20 @@ func DeserializeRawTransactionsMessage(message *middleware.Message) (int64, []tr
 	}
 
 	return messageClient.ClientID, transactions, len(transactions) == 0, nil
+}
+
+func DeserializeTransactionBatch(data []interface{}) ([]transaction.Transaction, error) {
+	transactions := make([]transaction.Transaction, 0, len(data))
+
+	for i, datum := range data {
+		transaction, err := sliceToTransaction(datum, i)
+		if err != nil {
+			return transactions, err
+		}
+		transactions = append(transactions, transaction)
+	}
+
+	return transactions, nil
 }
 
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.
@@ -112,36 +165,3 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 		PaymentFormat: paymentFormat,
 	}, nil
 }
-
-/*
-
-func DeserializeMessage(message *middleware.Message) ([]transaction.Transaction, error) {
-	data, err := deserializeJson([]byte((*message).Body))
-	if err != nil {
-		return nil, err
-	}
-
-	transactions := []transaction.Transaction{}
-	for _, datum := range data {
-		fruitPair, ok := datum.([]interface{})
-		if !ok {
-			return nil, errors.New("Datum is not an array")
-		}
-
-		fruit, ok := fruitPair[0].(string)
-		if !ok {
-			return nil, errors.New("Datum is not a (fruit, amount) pair")
-		}
-
-		fruitAmount, ok := fruitPair[1].(float64)
-		if !ok {
-			return nil, errors.New("Datum is not a (fruit, amount) pair")
-		}
-
-		fruitRecord := transaction.Transaction{Fruit: fruit, Amount: uint32(fruitAmount)}
-		fruitRecords = append(fruitRecords, fruitRecord)
-	}
-
-	return transactions, nil
-}
-*/

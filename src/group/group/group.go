@@ -1,0 +1,171 @@
+package group
+
+import (
+	"fmt"
+	"hash/fnv"
+	"log/slog"
+
+	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/middleware"
+	"tp_distribuidos/common/transaction"
+)
+
+const FANOUT = ""
+
+type GroupConfig struct {
+	MomHost               string
+	MomPort               int
+	InputQueue            string
+	InputTopic            string
+	InputExchangeName     string
+	ControlExchangeName   string
+	ControlTopic          string
+	OutputExchangeName    string
+	ID                    int
+	NextFaseWorkersAmount int
+	NextFaseWorkersPrefix string
+}
+
+type Group struct {
+	inputQueue      middleware.Middleware
+	controlExchange middleware.Middleware
+	outputExchange  middleware.ExchangeMiddleware
+	config          GroupConfig
+}
+
+func NewGroupWorker(config GroupConfig) (*Group, error) {
+	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
+
+	// input - transacciones
+	inputQueue, err := middleware.NewQueueMiddleware(config.InputQueue, connSettings)
+	if err != nil {
+		return nil, err
+	}
+	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
+	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT)
+
+	// input - control (particularmente EOF del cliente)
+	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings) // control
+	if err != nil {
+		return nil, err
+	}
+
+	// output
+	outputExchange, err := middleware.NewDinamicExchangeMiddleware(config.OutputExchangeName, connSettings) // modifcar la forma en la que se manejan los topics
+	if err != nil {
+		inputQueue.Close()
+		return nil, err
+	}
+
+	return &Group{
+		inputQueue:      inputQueue,
+		outputExchange:  *outputExchange,
+		controlExchange: controlExchange,
+		config:          config,
+	}, nil
+}
+
+func (groupWorker *Group) Run() {
+	groupWorker.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		groupWorker.handleMessage(&msg, ack, nack)
+	})
+}
+
+func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
+		nack()
+		return
+	}
+
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		if err := groupWorker.handleEndOfRecordMessage(msg.ClientID, msg.Data[0].(bool)); err != nil {
+			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		ack()
+		return
+
+	case inner.TransactionBatch:
+		//obtenemos las transacciones
+		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+
+		// hacemos lo q haya q hacer con las transa
+		if err := groupWorker.handleTransactionBatchMessage(msg.ClientID, transactions); err != nil {
+			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+	default:
+		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
+	}
+	ack()
+}
+
+func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
+	slog.Info("Received EOF record message from ", "clientID", clientID)
+	// se debe propagar entre todos los group workers y estos a todos los bridges analizers
+
+	msg, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%s_%d", "group", groupWorker.config.ID))
+	if err != nil {
+		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
+		return err
+	}
+
+	if mustPropagate {
+		groupWorker.controlExchange.Send(*msg)
+	} else {
+		for i := range groupWorker.config.NextFaseWorkersAmount {
+			topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, i)
+			groupWorker.outputExchange.SendToTopic(*msg, topic) // Error sin handlear
+		}
+	}
+
+	return nil
+}
+
+func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
+	// transacciones para cada worker de la proxima fase
+	workerBatches := make(map[int][]transaction.Transaction)
+
+	for _, transaction := range transactionRecords {
+		// hash determinístico en base a: cuenta de origen
+		hash := fnv.New32a()
+		hash.Write([]byte(transaction.FromAccount))
+		workerIndex := int(hash.Sum32()) % groupWorker.config.NextFaseWorkersAmount
+
+		// vamos acumulando transacciones a pasar
+		workerBatches[workerIndex] = append(workerBatches[workerIndex], transaction)
+	}
+
+	// enviamos cada batch al bridge correspondiente
+	for workerIndex, batch := range workerBatches {
+		topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, workerIndex)
+		if err := groupWorker.sendTransactions(clientID, batch, topic); err != nil {
+			return fmt.Errorf("error sending batch to worker %d: %w", workerIndex, err)
+		}
+	}
+
+	return nil
+}
+
+func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []transaction.Transaction, topic string) error {
+	message, err := inner.SerializeMessage(clientID, transactionRecords)
+	if err != nil {
+		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		return err
+	}
+	if err := groupWorker.outputExchange.SendToTopic(*message, topic); err != nil {
+		slog.Debug("While sending data message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
+}
