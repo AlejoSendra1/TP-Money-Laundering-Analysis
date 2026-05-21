@@ -107,36 +107,36 @@ func DeserializeRawTransactionsMessage(message *middleware.Message) (int64, []tr
 	return messageClient.ClientID, transactions, len(transactions) == 0, nil
 }
 
-func DeserializeQueryResultMessage(message *middleware.Message) (int64, *transaction.QueryResult, error) {
+func DeserializeQueryResultMessage(message *middleware.Message) (int64, *transaction.QueryResult, bool, error) {
 	var messageClient MessageClient
 	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
-		return 0, nil, fmt.Errorf("deserializing results query message body: %w", err)
+		return 0, nil, false, fmt.Errorf("deserializing results query message body: %w", err)
 	}
 
 	queryIDFloat, ok := messageClient.Data[0].(float64)
 	if !ok {
-		return 0, nil, fmt.Errorf("deserializing invalid query id")
+		return 0, nil, false, fmt.Errorf("deserializing invalid query id")
 	}
 	queryID := transaction.QueryID(queryIDFloat)
 
 	transactionRecords, ok := messageClient.Data[1].([]interface{})
 	if !ok {
-		return 0, nil, fmt.Errorf("deserializing invalid transactions payload")
+		return 0, nil, false, fmt.Errorf("deserializing invalid transactions payload")
 	}
 
 	deserializer, ok := queryDeserializers[queryID]
 	if !ok {
-		return 0, nil, fmt.Errorf("unsupported query id for deserialization: %d", queryID)
+		return 0, nil, false, fmt.Errorf("unsupported query id for deserialization: %d", queryID)
 	}
 
 	finalTransactions, err := deserializer(transactionRecords)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, false, err
 	}
 	return messageClient.ClientID, &transaction.QueryResult{
 		QueryID:      queryID,
 		Transactions: finalTransactions,
-	}, nil
+	}, len(transactionRecords) == 0, nil
 }
 
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.

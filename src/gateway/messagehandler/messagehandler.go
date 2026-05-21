@@ -1,6 +1,7 @@
 package messagehandler
 
 import (
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"tp_distribuidos/common/messageprotocol/inner"
@@ -13,6 +14,17 @@ type MessageHandler struct {
 	results               map[transaction.QueryID]transaction.QueryResult // Resultados de las querys
 	completedQueryCounter int                                             // Contador de las cantidad de querys terminadas
 }
+
+type accumulatorFunc func(current, incoming any) any
+
+func appendGeneric[T any](current, incoming any) any {
+	currentSlice := current.([]T)
+	incomingSlice := incoming.([]T)
+	return append(currentSlice, incomingSlice...)
+}
+
+var queryAccumulators = map[transaction.QueryID]accumulatorFunc{
+	transaction.Query1: appendGeneric[transaction.LowAmountTransfer]}
 
 func NewMessageHandler() MessageHandler {
 	n := rand.Int64()
@@ -33,7 +45,7 @@ func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message
 }
 
 func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) (*transaction.QueriesResult, bool, error) {
-	clientID, queryResult, err := inner.DeserializeQueryResultMessage(message)
+	clientID, queryResult, isEOF, err := inner.DeserializeQueryResultMessage(message)
 	if err != nil {
 		return nil, false, err
 	}
@@ -46,20 +58,37 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 		QueryID:      queryResult.QueryID,
 		Transactions: queryResult.Transactions,
 	}
-	messageHandler.completedQueryCounter++
-	if messageHandler.completedQueryCounter == 1 { // Por ahora solo se resolvio la 1ra query (al final sera == 5)
-		queriesResult := &transaction.QueriesResult{
-			ClientID: messageHandler.userId,
-			Results:  make(map[transaction.QueryID]transaction.QueryResult),
+	if isEOF {
+		messageHandler.completedQueryCounter++
+		if messageHandler.completedQueryCounter == 1 { // Por ahora solo se resolvio la 1ra query (al final sera == 5)
+			queriesResult := &transaction.QueriesResult{
+				ClientID: messageHandler.userId,
+				Results:  make(map[transaction.QueryID]transaction.QueryResult),
+			}
+			for queryID, res := range messageHandler.results {
+				queriesResult.Results[queryID] = res
+			}
+			messageHandler.results = make(map[transaction.QueryID]transaction.QueryResult)
+			messageHandler.completedQueryCounter = 0
+			slog.Info("All result queries received, returning...", "clientID", clientID)
+			return queriesResult, true, nil
 		}
-		for queryID, res := range messageHandler.results {
-			queriesResult.Results[queryID] = res
-		}
-		messageHandler.results = make(map[transaction.QueryID]transaction.QueryResult)
-		messageHandler.completedQueryCounter = 0
-		slog.Info("All result queries received, returning...", "clientID", clientID)
-		return queriesResult, true, nil
+		slog.Info("Receive EOF from query, waiting for more...", "queryID", queryResult.QueryID, "clientID", clientID)
+		return nil, true, nil
 	}
-	slog.Info("Result query received, waiting for more...", "clientID", clientID, "queryID", queryResult.QueryID)
+	currentResult, exists := messageHandler.results[queryResult.QueryID]
+	if !exists {
+		messageHandler.results[queryResult.QueryID] = *queryResult // Es la primera vez que se guarda
+		return nil, false, nil
+	}
+
+	accumulator, exists := queryAccumulators[queryResult.QueryID]
+	if !exists {
+		return nil, false, fmt.Errorf("unknown query id during accumulation: %d", queryResult.QueryID)
+	}
+
+	currentResult.Transactions = accumulator(currentResult.Transactions, queryResult.Transactions)
+	messageHandler.results[queryResult.QueryID] = currentResult
+	slog.Info("Result query received, waiting for more...", "queryID", queryResult.QueryID, "clientID", clientID)
 	return nil, true, nil
 }
