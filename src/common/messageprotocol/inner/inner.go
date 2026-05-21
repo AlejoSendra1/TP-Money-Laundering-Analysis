@@ -22,6 +22,8 @@ const (
 	Query3Response
 	Query4Response
 	Query5Response
+	SuspiciousAccount
+	PossibleFraudDestinations
 )
 
 type MessageClient struct {
@@ -66,7 +68,7 @@ func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction
 
 	// agregamos el tipo de msg
 	data = append(data, []interface{}{
-		TransactionBatch,
+		TransactionBatch, // QUITAR DE ACA Y VER Q NO ROMPA TODO - TO DO
 	})
 	for _, transaction := range transactionBatch {
 		formattedTimestamp := transaction.Timestamp.Format("2006/01/02 15:04")
@@ -164,4 +166,103 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 		Currency:      currency,
 		PaymentFormat: paymentFormat,
 	}, nil
+}
+
+// ---------------------------------------------------------
+// especifico de la Query 4 dsp ver como mover de aca ------
+// ----------------------------------------------------------
+func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]struct{}) (*middleware.Message, error) {
+	bridges := []interface{}{}
+	for key, _ := range possibleBridges {
+		bridges = append(bridges, key)
+	}
+	data := []interface{}{
+		susAccount, // plain string at data[0]
+		bridges,    // slice of bridges at data[1]
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientID, MsgType: SuspiciousAccount, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializeSuspiciousMsgData(data []interface{}) (string, []string, error) { // fiaca implementar un type solo para la q4
+	// la data deberia llegar como { fromAccount_Frombank , [ toAccount_toBank , toAccount_toBank , .... ] }
+	transactions := []string{}
+
+	susAccount, ok := data[0].(string)
+	if !ok {
+		return "", transactions, fmt.Errorf("type mismatch on sus account origin")
+	}
+
+	// Type-assert data[1] to []interface{} before ranging
+	bridges, ok := data[1].([]interface{})
+	if !ok {
+		return "", transactions, fmt.Errorf("type mismatch on possible bridges list")
+	}
+
+	for _, possibleBridge := range bridges {
+		possibleBridgeInfo, ok := possibleBridge.(string)
+		if !ok {
+			return "", transactions, fmt.Errorf("type mismatch on sus account possible bridge")
+		}
+		transactions = append(transactions, possibleBridgeInfo)
+	}
+
+	return susAccount, transactions, nil
+}
+
+func SerializesPossibleFraudDestinations(clientID int64, origin string, possibleBridge string, possibleFraudDestinations map[string]struct{}) (*middleware.Message, error) {
+	dest := []interface{}{}
+	for key, _ := range possibleFraudDestinations {
+		dest = append(dest, key)
+	}
+	data := []interface{}{
+		origin,         // plain string at data[0]
+		possibleBridge, // plain string at data[1]
+		dest,           // slice of bridges at data[2]
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientID, MsgType: PossibleFraudDestinations, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializePossibleFraudDestinations(data []interface{}) (string, string, []string, error) { // fiaca implementar un type solo para la q4
+	// la data deberia llegar como { fromAccount_Frombank , toAccount_toBank , [ toAccount_toBank2 , .... ] }
+	possibleFraudDestinations := []string{}
+
+	susAccount, ok := data[0].(string)
+	if !ok {
+		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on sus account origin")
+	}
+
+	bridge, ok := data[1].(string)
+	if !ok {
+		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on bridge")
+	}
+
+	// Type-assert data[2] to []interface{} before ranging
+	destinations, ok := data[2].([]interface{})
+	if !ok {
+		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on possible fraud destinations list")
+	}
+
+	for _, possibleFraudDestination := range destinations {
+		possibleFraudDestinationInfo, ok := possibleFraudDestination.(string)
+		if !ok {
+			return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on sus account possible bridge")
+		}
+		possibleFraudDestinations = append(possibleFraudDestinations, possibleFraudDestinationInfo)
+	}
+
+	return susAccount, bridge, possibleFraudDestinations, nil
 }

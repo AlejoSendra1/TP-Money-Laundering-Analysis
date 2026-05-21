@@ -134,7 +134,7 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 
 func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
 	// transacciones para cada worker de la proxima fase
-	workerBatches := make(map[int][]transaction.Transaction)
+	workerByBatches := make(map[int][]transaction.Transaction)
 
 	for _, transaction := range transactionRecords {
 		// hash determinístico en base a: cuenta de origen
@@ -143,11 +143,11 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 		workerIndex := int(hash.Sum32()) % groupWorker.config.NextFaseWorkersAmount
 
 		// vamos acumulando transacciones a pasar
-		workerBatches[workerIndex] = append(workerBatches[workerIndex], transaction)
+		workerByBatches[workerIndex] = append(workerByBatches[workerIndex], transaction)
 	}
 
 	// enviamos cada batch al bridge correspondiente
-	for workerIndex, batch := range workerBatches {
+	for workerIndex, batch := range workerByBatches {
 		topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, workerIndex)
 		if err := groupWorker.sendTransactions(clientID, batch, topic); err != nil {
 			return fmt.Errorf("error sending batch to worker %d: %w", workerIndex, err)

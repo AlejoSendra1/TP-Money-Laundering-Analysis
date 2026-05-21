@@ -7,10 +7,10 @@ COPY go.mod .
 COPY go.sum .
 COPY common ./common
 RUN go mod download
-COPY usd_filter .
+COPY q4_join .
 # CGO_ENABLED must be disabled to run go binary in Alpine
-RUN CGO_ENABLED=0 GOOS=linux go build -o bin/usd_filter
+RUN CGO_ENABLED=0 GOOS=linux go build -o bin/q4_join
 
 FROM busybox:latest
-COPY --from=builder /build/bin/usd_filter /usd_filter
+COPY --from=builder /build/bin/q4_join /q4_join
 ENTRYPOINT ["./join_q4"]

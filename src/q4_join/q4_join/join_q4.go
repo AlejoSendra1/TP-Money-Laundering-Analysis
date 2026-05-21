@@ -1,4 +1,4 @@
-package bridge_matcher
+package q4_join
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 const FANOUT = ""
 const DestinationThreshold = 5
 
-type BridgeMatcherConfig struct {
+type JoinConfig struct {
 	MomHost               string
 	MomPort               int
 	InputQueue            string
@@ -27,17 +27,17 @@ type BridgeMatcherConfig struct {
 	NextFaseWorkersPrefix string
 }
 
-type BridgeMatcher struct {
+type Join struct {
 	inputQueue      middleware.Middleware
 	controlExchange middleware.Middleware
 	outputExchange  middleware.ExchangeMiddleware
-	config          BridgeMatcherConfig
+	config          JoinConfig
 	//structs no pueden ser keys directamente so:
 	// 1er key: cliente , 2da key: cuenta_banco, 3er key: cuentaDest_bancoDest
 	Registers map[int64]map[string]map[string]struct{}
 }
 
-func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
+func NewJoinWorker(config JoinConfig) (*Join, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 
 	// input - batches con transacciones con origenes que mapean a esta instancia de bridge matcher
@@ -63,7 +63,7 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		return nil, err
 	}
 
-	return &BridgeMatcher{
+	return &Join{
 		inputQueue:      inputQueue,
 		outputExchange:  *outputExchange,
 		controlExchange: controlExchange,
@@ -71,13 +71,13 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 	}, nil
 }
 
-func (bridgeMatcher *BridgeMatcher) Run() {
+func (bridgeMatcher *Join) Run() {
 	bridgeMatcher.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		bridgeMatcher.handleMessage(&msg, ack, nack)
 	})
 }
 
-func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+func (bridgeMatcher *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
@@ -122,7 +122,7 @@ func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Mess
 	ack()
 }
 
-func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
+func (bridgeMatcher *Join) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
 	slog.Info("Received EOF record message from ", "clientID", clientID)
 	// se considera que en este punto ya cominicó todo lo relevante
 
@@ -140,7 +140,7 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, mus
 	return nil
 }
 
-func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
+func (bridgeMatcher *Join) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
 	for _, transaction := range transactionRecords {
 		origin := fmt.Sprintf("%s_%d", transaction.FromAccount, transaction.FromBank)
 		destiny := fmt.Sprintf("%s_%d", transaction.ToAccount, transaction.ToBank)
@@ -168,7 +168,7 @@ func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64
 }
 
 // Notifica a todos los pares/copias, y al join correspondiente, sobre una cuenta sospechosa
-func (bridgeMatcher *BridgeMatcher) notifAll(clientID int64, susAccount string, possibleBridges map[string]struct{}) error {
+func (bridgeMatcher *Join) notifAll(clientID int64, susAccount string, possibleBridges map[string]struct{}) error {
 	msg, err := inner.SerializeSuspiciousAccountInfo(clientID, susAccount, possibleBridges)
 	if err != nil {
 		slog.Debug("While serializing SuspiciousAccountInfo message", "err", err, "clientID", clientID)
@@ -191,7 +191,7 @@ func (bridgeMatcher *BridgeMatcher) notifAll(clientID int64, susAccount string, 
 	return nil
 }
 
-func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int64, data []interface{}) error {
+func (bridgeMatcher *Join) handleSuspiciousAccountMessage(clientID int64, data []interface{}) error {
 	origin, possibleBridges, err := inner.DeserializeSuspiciousMsgData(data)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
