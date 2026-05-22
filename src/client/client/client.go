@@ -19,13 +19,14 @@ import (
 )
 
 const (
-	TIMESTAMP_COLUMN      = 1
-	FROM_BANK_COLUMN      = 2
-	FROM_ACCOUNT_COLUMN   = 3
-	TO_BANK_COLUMN        = 4
-	TO_ACCOUNT_COLUMN     = 5
-	AMOUNT_COLUMN         = 6
-	CURRENCY_COLUMN       = 7
+	TIMESTAMP_COLUMN    = 1
+	FROM_BANK_COLUMN    = 2
+	FROM_ACCOUNT_COLUMN = 3
+	TO_BANK_COLUMN      = 4
+	TO_ACCOUNT_COLUMN   = 5
+	AMOUNT_COLUMN       = 8
+	CURRENCY_COLUMN     = 9
+
 	PAYMENT_FORMAT_COLUMN = 10
 
 	EXPECTED_COLUMNS = 12
@@ -192,13 +193,13 @@ func (client *Client) sendTransactionRecords() error {
 	for scanner.Scan() {
 		columns := strings.Split(scanner.Text(), ",")
 
-		transaction, err := parseTransaction(columns)
+		tx, err := parseTransaction(columns)
 		if err != nil {
 			slog.Debug("Error while parsing transaction record", "err", err)
 			return err
 		}
 
-		batch = append(batch, *transaction)
+		batch = append(batch, *tx)
 		if len(batch) == batchSize {
 			client.transactionsSentCounter += int64(len(batch))
 			if err := client.sendBatch(&batch); err != nil {
