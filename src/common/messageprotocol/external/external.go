@@ -124,3 +124,49 @@ func WriteAck(writer io.Writer) error { // no modif
 func WriteEndOfRecords(writer io.Writer) error { // no modif
 	return writeMsgType(writer, EndOfRecords)
 }
+
+// WriteQueriesResult escribe al cliente los resultados de las queries
+// Por ahora solo soporta Query1
+// Formato: [MsgType][numRecords][records...][EOF]
+// Ejemplo:
+// [Query1Response][numRecords][records...]
+// [Query2Response][numRecords][records...]
+// [Query3Response][numRecords][records...]
+// [Query4Response][numRecords][records...]
+// [Query5Response][numRecords][records...]
+// [EOF]
+func WriteQueriesResult(writer io.Writer, queriesResult *transaction.QueriesResult) error {
+	if queriesResult == nil {
+		return nil
+	}
+
+	for queryID, qr := range queriesResult.Results {
+		switch queryID {
+		case transaction.Query1:
+			// MsgType
+			msg := serializer.SerializeUint32(uint32(Query1Response))
+
+			records, ok := qr.Transactions.([]transaction.LowAmountTransfer)
+			if !ok {
+				continue
+			}
+			// numRecords
+			msg = append(msg, serializer.SerializeUint32(uint32(len(records)))...)
+			// records...
+			for _, r := range records {
+				msg = append(msg, serializer.SerializeUint64(uint64(r.FromBank))...)
+				msg = append(msg, serializer.SerializeString(r.FromAccount)...)
+				msg = append(msg, serializer.SerializeUint64(uint64(r.ToBank))...)
+				msg = append(msg, serializer.SerializeString(r.ToAccount)...)
+				msg = append(msg, serializer.SerializeFloat64(r.Amount)...)
+			}
+
+			if err := safeio.WriteAll(writer, msg); err != nil {
+				return err
+			}
+		default:
+			continue
+		}
+	}
+	return WriteEndOfRecords(writer)
+}
