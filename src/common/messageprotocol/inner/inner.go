@@ -3,6 +3,7 @@ package inner
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	//"errors"
@@ -24,6 +25,7 @@ const (
 	Query5Response
 	SuspiciousAccount
 	PossibleFraudDestinations
+	FraudSource
 )
 
 type MessageClient struct {
@@ -265,4 +267,35 @@ func DeserializePossibleFraudDestinations(data []interface{}) (string, string, [
 	}
 
 	return susAccount, bridge, possibleFraudDestinations, nil
+}
+
+func SerializeQ4SourceAccount(clientID int64, sourceAccount string) (*middleware.Message, error) {
+	sourceAccountData := strings.Split(sourceAccount, "_")
+
+	data := []interface{}{
+		sourceAccountData[0],
+		sourceAccountData[1],
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientID, MsgType: FraudSource, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializeQ4SourceAccount(data []interface{}) (string, string, error) {
+	susAccount, ok := data[0].(string)
+	if !ok {
+		return "", "", fmt.Errorf("type mismatch on sus account origin")
+	}
+
+	susAccountBank, ok := data[1].(string)
+	if !ok {
+		return "", "", fmt.Errorf("type mismatch on bridge")
+	}
+
+	return susAccount, susAccountBank, nil
 }
