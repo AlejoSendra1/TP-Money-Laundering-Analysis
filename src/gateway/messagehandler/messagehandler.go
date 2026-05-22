@@ -54,11 +54,8 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 		return nil, false, nil
 	}
 
-	messageHandler.results[queryResult.QueryID] = transaction.QueryResult{
-		QueryID:      queryResult.QueryID,
-		Transactions: queryResult.Transactions,
-	}
 	if isEOF {
+		slog.Info("Receive EOF from query", "queryID", queryResult.QueryID, "clientID", clientID)
 		messageHandler.completedQueryCounter++
 		if messageHandler.completedQueryCounter == 1 { // Por ahora solo se resolvio la 1ra query (al final sera == 5)
 			queriesResult := &transaction.QueriesResult{
@@ -78,8 +75,9 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 	}
 	currentResult, exists := messageHandler.results[queryResult.QueryID]
 	if !exists {
+		slog.Info("First result query received, waiting for more...", "queryID", queryResult.QueryID, "clientID", clientID)
 		messageHandler.results[queryResult.QueryID] = *queryResult // Es la primera vez que se guarda
-		return nil, false, nil
+		return nil, true, nil
 	}
 
 	accumulator, exists := queryAccumulators[queryResult.QueryID]
