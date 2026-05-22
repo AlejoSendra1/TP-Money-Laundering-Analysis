@@ -141,7 +141,7 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 
 	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
 		for i, client := range clients {
-			allQueriesResult, wasProcessed, err := client.Handler.DeserializeResultMessage(&msg)
+			QueriesResult, wasProcessed, err := client.Handler.DeserializeResultMessage(&msg)
 			if err != nil {
 				slog.Debug("While reading from output queue", "err", err)
 				nack()
@@ -149,35 +149,31 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 				return
 			}
 			// Si el mensaje no pertenece al dueño, se skipea
-			if allQueriesResult == nil && !wasProcessed {
+			if QueriesResult == nil && !wasProcessed {
 				continue
 			}
 
 			// Si devolvió datos pero no es isAllDone, significa que el handler ya guardó el lote
 			// internamente en su mapa, pero todavía faltan más resultados de queries.
-			if wasProcessed && allQueriesResult == nil {
+			if wasProcessed && QueriesResult == nil {
 				clientIndex = -2 // Flag interno para saber que fue procesado pero no terminó
 				return
 			}
 
-			// Si llego aca, significa es el cliente dueño del mensaje, y que ya tiene todas las queries resueltas.
-			// TODO: Implementar WriteAllQueriesResult cuando esten todos los resultados de las queries
-			/*
-				if err := external.WriteAllQueriesResult(client.Conn, allQueriesResult); err != nil {
-					slog.Debug("While writing ALL_QUERIES_RESULT message", "err", err)
-					return
-				}
-				msgType, err := external.ReadMsgType(client.Conn)
-				if err != nil {
-					slog.Debug("While reading message type", "err", err)
-					return
-				}
-				if msgType != external.Ack {
-					slog.Debug("Expected ACK message")
-					return
-				}
-
-			*/
+			// Si llego aca, significa es el cliente dueño del mensaje, y que ya tiene todas las queries resueltas
+			if err := external.WriteQueriesResult(client.Conn, QueriesResult); err != nil {
+				slog.Debug("While writing queries result message", "err", err)
+				return
+			}
+			msgType, err := external.ReadMsgType(client.Conn)
+			if err != nil {
+				slog.Debug("While reading message type", "err", err)
+				return
+			}
+			if msgType != external.Ack {
+				slog.Debug("Expected ACK message")
+				return
+			}
 			clientIndex = i
 			return
 		}
