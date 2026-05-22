@@ -24,6 +24,7 @@ type USDFilter struct {
 	inputExchange  middleware.Middleware
 	outputExchange middleware.Middleware
 	config         USDFilterConfig
+	counter        map[int64]int64 // TODO: Sacar para la demo, solo sirve para debug
 }
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
@@ -43,6 +44,7 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputExchange:  inputExchange,
 		outputExchange: outputExchange,
 		config:         config,
+		counter:        make(map[int64]int64),
 	}, nil
 }
 
@@ -80,15 +82,27 @@ func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), n
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
 	slog.Info("Sent EOF record message", "clientID", clientID)
+	slog.Info("Total USD transactions sent for client", "clientID", clientID, "total_usd_sent", usdFilter.counter[clientID])
+	delete(usdFilter.counter, clientID)
 	return usdFilter.sendOutput([]transaction.Transaction{}, clientID)
 }
 
 func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
-	for _, transactionRecord := range transactionRecords {
-		if transactionRecord.Currency == USDCurrencyName {
-			if err := usdFilter.sendOutput([]transaction.Transaction{transactionRecord}, clientID); err != nil {
-				return err
-			}
+	if _, exist := usdFilter.counter[clientID]; !exist {
+		slog.Info("New client arrived", "clientID", clientID)
+		usdFilter.counter[clientID] = 0
+	}
+	transactions := make([]transaction.Transaction, 0, len(transactionRecords))
+	for _, tr := range transactionRecords {
+		if tr.Currency == USDCurrencyName {
+			transactions = append(transactions, tr)
+		}
+	}
+
+	if len(transactions) != 0 {
+		usdFilter.counter[clientID] += int64(len(transactions))
+		if err := usdFilter.sendOutput(transactions, clientID); err != nil {
+			return err
 		}
 	}
 	return nil
