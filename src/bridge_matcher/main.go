@@ -9,6 +9,16 @@ import (
 )
 
 func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return bridge_matcher.BridgeMatcherConfig{}, errors.New("ID environment variable is required")
+	}
+
+	workerPrefix := os.Getenv("WORKER_PREFIX")
+	if workerPrefix == "" {
+		return bridge_matcher.BridgeMatcherConfig{}, errors.New("WORKER_PREFIX environment variable is required")
+	}
+
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
@@ -19,24 +29,9 @@ func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
-	inputQueue := os.Getenv("INPUT_QUEUE")
-	if inputQueue == "" {
-		return bridge_matcher.BridgeMatcherConfig{}, errors.New("INPUT_QUEUE environment variable is required")
-	}
-
-	inputTopic := os.Getenv("INPUT_TOPIC")
-	if inputTopic == "" {
-		return bridge_matcher.BridgeMatcherConfig{}, errors.New("INPUT_TOPIC environment variable is required")
-	}
-
 	inputExchangeName := os.Getenv("INPUT_EXCHANGE_NAME")
 	if inputExchangeName == "" {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("INPUT_EXCHANGE_NAME environment variable is required")
-	}
-
-	id, err := strconv.Atoi(os.Getenv("ID"))
-	if err != nil {
-		return bridge_matcher.BridgeMatcherConfig{}, errors.New("ID environment variable is required")
 	}
 
 	controlExchange := os.Getenv("CONTROL_EXCHANGE_NAME")
@@ -49,11 +44,6 @@ func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("OUTPUT_EXCHANGE_NAME environment variable is required")
 	}
 
-	prevFaseWorkersAmount, err := strconv.Atoi(os.Getenv("PREV_FASE_WORKERS_AMOUNT"))
-	if err != nil {
-		return bridge_matcher.BridgeMatcherConfig{}, errors.New("PREV_FASE_WORKERS_AMOUNT environment variable is required")
-	}
-
 	nextFaseWorkersAmount, err := strconv.Atoi(os.Getenv("NEXT_FASE_WORKERS_AMOUNT"))
 	if err != nil {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("NEXT_FASE_WORKERS_AMOUNT environment variable is required")
@@ -64,12 +54,16 @@ func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("NEXT_FASE_WORKERS_PREFIX environment variable is required")
 	}
 
+	prevFaseWorkersAmount, err := strconv.Atoi(os.Getenv("PREV_FASE_WORKERS_AMOUNT"))
+	if err != nil {
+		return bridge_matcher.BridgeMatcherConfig{}, errors.New("PREV_FASE_WORKERS_AMOUNT environment variable is required")
+	}
+
 	return bridge_matcher.BridgeMatcherConfig{
 		ID:                    id,
+		WorkerPrefix:          workerPrefix,
 		MomHost:               momHost,
 		MomPort:               momPort,
-		InputQueue:            inputQueue,
-		InputTopic:            inputTopic,
 		InputExchangeName:     inputExchangeName,
 		ControlExchangeName:   controlExchange,
 		OutputExchangeName:    outputExchangeName,

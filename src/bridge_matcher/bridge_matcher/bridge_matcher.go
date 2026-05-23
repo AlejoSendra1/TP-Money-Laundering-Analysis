@@ -16,17 +16,15 @@ const DestinationThreshold = 5
 
 type BridgeMatcherConfig struct {
 	ID                    int
+	WorkerPrefix          string
 	MomHost               string
 	MomPort               int
-	InputQueue            string
-	InputTopic            string
 	InputExchangeName     string
 	ControlExchangeName   string
-	ControlTopic          string
 	OutputExchangeName    string
 	NextFaseWorkersAmount int
 	NextFaseWorkersPrefix string
-	PrevFaseWorkersAmount int /// ver q onda
+	PrevFaseWorkersAmount int
 }
 
 type BridgeMatcher struct {
@@ -44,13 +42,14 @@ type BridgeMatcher struct {
 
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
+	instance_name := fmt.Sprintf("%s_%d", config.WorkerPrefix, config.ID)
 
 	// input - batches con transacciones con origenes que mapean a esta instancia de bridge matcher
-	inputQueue, err := middleware.NewQueueMiddleware(config.InputQueue, connSettings)
+	inputQueue, err := middleware.NewQueueMiddleware(instance_name, connSettings)
 	if err != nil {
 		return nil, err
 	}
-	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
+	inputQueue.BindToTopics(config.InputExchangeName, fmt.Sprintf("%s_%d", instance_name, config.ID))
 	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT)
 
 	// input - control

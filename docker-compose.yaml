@@ -1,13 +1,31 @@
 services:
+  bridge_matcher_0:
+    build:
+      context: ./src/
+      dockerfile: bridge_matcher/Dockerfile
+    container_name: bridge_matcher_0
+    depends_on:
+    - q4_join_0
+    environment:
+    - ID = 0
+    - WORKER_PREFIX=bridge_matcher
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_EXCHANGE_NAME=bridge_matcher_exchange
+    - CONTROL_EXCHANGE_NAME=bridge_matcher_control_exchange
+    - OUTPUT_EXCHANGE_NAME=join_exchange
+    - NEXT_FASE_WORKERS_AMOUNT=1
+    - NEXT_FASE_WORKERS_PREFIX=join
+    - PYTHONUNBUFFERED=1
   client_0:
     build:
       context: ./src/
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-      - gateway
+    - usd_filter_0
     environment:
-    - BATCH_SIZE=10
+    - BATCH_SIZE = 10
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
@@ -16,6 +34,21 @@ services:
     volumes:
     - ./datasets:/datasets
     - ./output:/output
+  date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: date_filter/Dockerfile
+    container_name: date_filter_0
+    depends_on:
+    - group_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=date_filter_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_EXCHANGE_NAME=date_exchange
+    - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
   gateway:
     build:
       context: ./src/
@@ -33,6 +66,41 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+  group_0:
+    build:
+      context: ./src/
+      dockerfile: group/Dockerfile
+    container_name: group_0
+    depends_on:
+    - bridge_matcher_0
+    environment:
+    - ID = 0
+    - WORKER_PREFIX=group
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=group_queue
+    - INPUT_TOPIC=usd_early_period_transactions_topic
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - OUTPUT_EXCHANGE_NAME=bridge_matcher_exchange
+    - NEXT_FASE_WORKERS_AMOUNT=1
+    - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
+    - PYTHONUNBUFFERED=1
+  q4_join_0:
+    build:
+      context: ./src/
+      dockerfile: join/Dockerfile
+    container_name: q4_join_0
+    depends_on:
+    - gateway
+    environment:
+    - ID = 0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=q4_join_queue
+    - INPUT_TOPIC=bridged_transactions_topic
+    - INPUT_EXCHANGE_NAME=bridged_transactions_exchange
+    - OUTPUT_QUEUE_NAME=results_queue
+    - PYTHONUNBUFFERED=1
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -49,19 +117,18 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
-  file_writer:
+  usd_filter_0:
     build:
       context: ./src/
-      dockerfile: filewriterworker/Dockerfile
-    container_name: filewriterworker_0
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_0
     depends_on:
-      - gateway
-    volumes:
-      - ./filewriter_results:/filewriter_results
+    - date_filter_0
     environment:
-    - INPUT_QUEUE=file_writer_queue
+    - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic

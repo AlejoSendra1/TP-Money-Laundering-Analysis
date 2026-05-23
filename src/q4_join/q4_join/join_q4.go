@@ -14,10 +14,9 @@ const DestinationThreshold = 5
 
 type JoinConfig struct {
 	ID                    int
+	WorkerPrefix          string
 	MomHost               string
 	MomPort               int
-	InputQueue            string
-	InputTopic            string
 	InputExchangeName     string
 	OutputQueueName       string
 	PrevFaseWorkersAmount int
@@ -35,13 +34,13 @@ type Join struct {
 
 func NewJoinWorker(config JoinConfig) (*Join, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-
+	instance_name := fmt.Sprintf("%s_%d", config.WorkerPrefix, config.ID)
 	// input - batches con transacciones con origenes que mapean a esta instancia de bridge matcher
-	inputQueue, err := middleware.NewQueueMiddleware(config.InputQueue, connSettings)
+	inputQueue, err := middleware.NewQueueMiddleware(instance_name, connSettings)
 	if err != nil {
 		return nil, err
 	}
-	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
+	inputQueue.BindToTopics(config.InputExchangeName, instance_name)
 
 	// output
 	outputQueue, err := middleware.NewQueueMiddleware(config.OutputQueueName, connSettings) // modifcar la forma en la que se manejan los topics

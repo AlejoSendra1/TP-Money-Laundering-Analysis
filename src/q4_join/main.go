@@ -9,6 +9,16 @@ import (
 )
 
 func loadConfig() (q4_join.JoinConfig, error) {
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return q4_join.JoinConfig{}, errors.New("ID environment variable is required")
+	}
+
+	workerPrefix := os.Getenv("WORKER_PREFIX")
+	if workerPrefix == "" {
+		return q4_join.JoinConfig{}, errors.New("WORKER_PREFIX environment variable is required")
+	}
+
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return q4_join.JoinConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
@@ -34,11 +44,6 @@ func loadConfig() (q4_join.JoinConfig, error) {
 		return q4_join.JoinConfig{}, errors.New("INPUT_EXCHANGE_NAME environment variable is required")
 	}
 
-	id, err := strconv.Atoi(os.Getenv("ID"))
-	if err != nil {
-		return q4_join.JoinConfig{}, errors.New("ID environment variable is required")
-	}
-
 	outputQueueName := os.Getenv("OUTPUT_QUEUE_NAME")
 	if outputQueueName == "" {
 		return q4_join.JoinConfig{}, errors.New("OUTPUT_EXCHANGE_NAME environment variable is required")
@@ -51,10 +56,9 @@ func loadConfig() (q4_join.JoinConfig, error) {
 
 	return q4_join.JoinConfig{
 		ID:                    id,
+		WorkerPrefix:          workerPrefix,
 		MomHost:               momHost,
 		MomPort:               momPort,
-		InputQueue:            inputQueue,
-		InputTopic:            inputTopic,
 		InputExchangeName:     inputExchangeName,
 		OutputQueueName:       outputQueueName,
 		PrevFaseWorkersAmount: prevFaseWorkersAmount,

@@ -9,6 +9,16 @@ import (
 )
 
 func loadConfig() (group.GroupConfig, error) {
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return group.GroupConfig{}, errors.New("ID environment variable is required")
+	}
+
+	workerPrefix := os.Getenv("WORKER_PREFIX")
+	if workerPrefix == "" {
+		return group.GroupConfig{}, errors.New("WORKER_PREFIX environment variable is required")
+	}
+
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return group.GroupConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
@@ -34,11 +44,6 @@ func loadConfig() (group.GroupConfig, error) {
 		return group.GroupConfig{}, errors.New("INPUT_EXCHANGE_NAME environment variable is required")
 	}
 
-	id, err := strconv.Atoi(os.Getenv("ID"))
-	if err != nil {
-		return group.GroupConfig{}, errors.New("ID environment variable is required")
-	}
-
 	controlExchange := os.Getenv("CONTROL_EXCHANGE_NAME")
 	if controlExchange == "" {
 		return group.GroupConfig{}, errors.New("CONTROL_EXCHANGE_NAME environment variable is required")
@@ -61,12 +66,13 @@ func loadConfig() (group.GroupConfig, error) {
 
 	return group.GroupConfig{
 		ID:                    id,
+		WorkerPrefix:          workerPrefix,
 		MomHost:               momHost,
 		MomPort:               momPort,
 		InputQueue:            inputQueue,
 		InputTopic:            inputTopic,
 		InputExchangeName:     inputExchangeName,
-		ControlExchange:       controlExchange,
+		ControlExchangeName:   controlExchange,
 		OutputExchangeName:    outputExchangeName,
 		NextFaseWorkersAmount: nextFaseWorkersAmount,
 		NextFaseWorkersPrefix: nextFaseWorkersPrefix,

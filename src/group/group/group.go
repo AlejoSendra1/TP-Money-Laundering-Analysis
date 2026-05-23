@@ -13,15 +13,15 @@ import (
 const FANOUT = ""
 
 type GroupConfig struct {
+	ID                    int
+	WorkerPrefix          string
 	MomHost               string
 	MomPort               int
 	InputQueue            string
 	InputTopic            string
 	InputExchangeName     string
 	ControlExchangeName   string
-	ControlTopic          string
 	OutputExchangeName    string
-	ID                    int
 	NextFaseWorkersAmount int
 	NextFaseWorkersPrefix string
 }
@@ -42,7 +42,9 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		return nil, err
 	}
 	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
-	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT)
+
+	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT) // sacar esto !!!! TO DO
+	// TODO que un proceso solo maneje el EOF y otro el input queue
 
 	// input - control (particularmente EOF del cliente)
 	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings) // control
