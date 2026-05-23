@@ -79,7 +79,7 @@ func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), n
 }
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Sent EOF record message, clientID", clientID)
+	slog.Info("Sent EOF record message, ", "clientID", clientID)
 	return usdFilter.sendOutput([]transaction.Transaction{}, clientID)
 }
 
@@ -107,3 +107,6 @@ func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transact
 	}
 	return nil
 }
+
+// TO DO
+//2026/05/23 22:14:26 ERROR While deserializing message err="record 0: expected 8 fields, got 2 — contents: [true gateway]" clientID=0

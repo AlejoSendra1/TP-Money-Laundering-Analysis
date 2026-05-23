@@ -68,10 +68,6 @@ func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middlewar
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
 	data := []interface{}{}
 
-	// agregamos el tipo de msg
-	data = append(data, []interface{}{
-		TransactionBatch, // QUITAR DE ACA Y VER Q NO ROMPA TODO - TO DO
-	})
 	for _, transaction := range transactionBatch {
 		formattedTimestamp := transaction.Timestamp.Format("2006/01/02 15:04")
 		datum := []interface{}{
@@ -137,7 +133,7 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 		return transaction.Transaction{}, fmt.Errorf("record %d: expected array, got %T", index, datum)
 	}
 	if len(fields) != 8 {
-		return transaction.Transaction{}, fmt.Errorf("record %d: expected 8 fields, got %d", index, len(fields))
+		return transaction.Transaction{}, fmt.Errorf("record %d: expected 8 fields, got %d — contents: %v", index, len(fields), fields)
 	}
 
 	timestamp, ok1 := fields[0].(string)

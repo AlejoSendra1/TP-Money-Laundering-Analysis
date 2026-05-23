@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-	"tp_distribuidos/q4_join/q4_join"
+	"tp_distribuidos/q4_join"
 )
 
 func loadConfig() (q4_join.JoinConfig, error) {

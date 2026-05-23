@@ -19,16 +19,14 @@ import (
 )
 
 const (
-	TIMESTAMP_COLUMN      = 1
-	FROM_BANK_COLUMN      = 2
-	FROM_ACCOUNT_COLUMN   = 3
-	TO_BANK_COLUMN        = 4
-	TO_ACCOUNT_COLUMN     = 5
-	AMOUNT_COLUMN         = 6
-	CURRENCY_COLUMN       = 7
-	PAYMENT_FORMAT_COLUMN = 10
-
-	EXPECTED_COLUMNS = 12
+	TIMESTAMP_COLUMN      = 0
+	FROM_BANK_COLUMN      = 1
+	FROM_ACCOUNT_COLUMN   = 2
+	TO_BANK_COLUMN        = 3
+	TO_ACCOUNT_COLUMN     = 4
+	AMOUNT_COLUMN         = 5
+	CURRENCY_COLUMN       = 6
+	PAYMENT_FORMAT_COLUMN = 9
 )
 const connectionAttempts = 3
 const connectionAttemptsDelayMs = 300
@@ -118,10 +116,6 @@ func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
 }
 
 func parseTransaction(columns []string) (*transaction.Transaction, error) {
-	if len(columns) < EXPECTED_COLUMNS {
-		return nil, fmt.Errorf("expected %d columns, got %d", EXPECTED_COLUMNS, len(columns))
-	}
-
 	timestamp, err := time.Parse("2006/01/02 15:04", columns[TIMESTAMP_COLUMN])
 	if err != nil {
 		return nil, fmt.Errorf("invalid timestamp %q: %w", columns[TIMESTAMP_COLUMN], err)

@@ -13,4 +13,4 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o bin/q4_join
 
 FROM busybox:latest
 COPY --from=builder /build/bin/q4_join /q4_join
-ENTRYPOINT ["./join_q4"]
+ENTRYPOINT ["./q4_join"]

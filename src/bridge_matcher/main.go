@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-	"tp_distribuidos/bridge_matcher/bridge_matcher"
+	"tp_distribuidos/bridge_matcher"
 )
 
 func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
