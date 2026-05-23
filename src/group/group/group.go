@@ -72,6 +72,7 @@ func (groupWorker *Group) Run() {
 }
 
 func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	slog.Info("Received msg", "body", middlewareMsg.Body)
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
@@ -134,6 +135,7 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 
 func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
 	// transacciones para cada worker de la proxima fase
+	slog.Info("Received Tansaction batch from ", "clientID", clientID)
 	workerByBatches := make(map[int][]transaction.Transaction)
 
 	for _, transaction := range transactionRecords {
@@ -158,6 +160,7 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 }
 
 func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []transaction.Transaction, topic string) error {
+	slog.Info("Sending Tansactions from ", "clientID", clientID, " to topic: ", topic)
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)

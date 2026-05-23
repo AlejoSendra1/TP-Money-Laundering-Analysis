@@ -44,14 +44,9 @@ func loadConfig() (q4_join.JoinConfig, error) {
 		return q4_join.JoinConfig{}, errors.New("OUTPUT_EXCHANGE_NAME environment variable is required")
 	}
 
-	nextFaseWorkersAmount, err := strconv.Atoi(os.Getenv("NEXT_FASE_WORKERS_AMOUNT"))
+	prevFaseWorkersAmount, err := strconv.Atoi(os.Getenv("PREV_FASE_WORKERS_AMOUNT"))
 	if err != nil {
-		return q4_join.JoinConfig{}, errors.New("NEXT_FASE_WORKERS_AMOUNT environment variable is required")
-	}
-
-	nextFaseWorkersPrefix := os.Getenv("NEXT_FASE_WORKERS_PREFIX")
-	if nextFaseWorkersPrefix == "" {
-		return q4_join.JoinConfig{}, errors.New("NEXT_FASE_WORKERS_PREFIX environment variable is required")
+		return q4_join.JoinConfig{}, errors.New("PREV_FASE_WORKERS_AMOUNT environment variable is required")
 	}
 
 	return q4_join.JoinConfig{
@@ -62,8 +57,7 @@ func loadConfig() (q4_join.JoinConfig, error) {
 		InputTopic:            inputTopic,
 		InputExchangeName:     inputExchangeName,
 		OutputQueueName:       outputQueueName,
-		NextFaseWorkersAmount: nextFaseWorkersAmount,
-		NextFaseWorkersPrefix: nextFaseWorkersPrefix,
+		PrevFaseWorkersAmount: prevFaseWorkersAmount,
 	}, nil
 }
 

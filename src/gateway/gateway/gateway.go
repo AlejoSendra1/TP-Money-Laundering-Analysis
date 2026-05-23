@@ -140,6 +140,8 @@ loop:
 func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(), nack func()) {
 	clientIndex := -1
 
+	slog.Info("Received response msg", "body", msg.Body)
+
 	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
 		for i, client := range clients {
 			slog.Debug("A implementar la lectura de las respuestas a enviar al client")

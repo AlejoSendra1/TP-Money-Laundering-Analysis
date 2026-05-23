@@ -93,7 +93,7 @@ services:
     - INPUT_QUEUE=q4_join_queue
     - INPUT_TOPIC=bridged_transactions_topic
     - INPUT_EXCHANGE_NAME=bridged_transactions_exchange
-    - OUTPUT_QUEUE_NAME=transactions_exchange
+    - OUTPUT_QUEUE_NAME=results_queue
     - PYTHONUNBUFFERED=1
   rabbitmq:
     build:

@@ -13,15 +13,14 @@ const FANOUT = ""
 const DestinationThreshold = 5
 
 type JoinConfig struct {
+	ID                    int
 	MomHost               string
 	MomPort               int
 	InputQueue            string
 	InputTopic            string
 	InputExchangeName     string
 	OutputQueueName       string
-	ID                    int
-	NextFaseWorkersAmount int
-	NextFaseWorkersPrefix string
+	PrevFaseWorkersAmount int
 }
 
 type Join struct {
@@ -31,6 +30,7 @@ type Join struct {
 	bridgeSourceRegisters map[int64]map[string]map[string]struct{} // modificar por una estructura TO DO
 	bridgeSinkRegisters   map[int64]map[string]map[string]struct{} // modificar por una estructura TO DO
 	sourceSinkRegisters   map[int64]map[string]map[string][]string
+	bridgeWorkersNotified map[int64][]string
 }
 
 func NewJoinWorker(config JoinConfig) (*Join, error) {
@@ -51,9 +51,13 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 	}
 
 	return &Join{
-		inputQueue:  inputQueue,
-		outputQueue: outputQueue,
-		config:      config,
+		inputQueue:            inputQueue,
+		outputQueue:           outputQueue,
+		config:                config,
+		bridgeSourceRegisters: make(map[int64]map[string]map[string]struct{}),
+		bridgeSinkRegisters:   make(map[int64]map[string]map[string]struct{}),
+		sourceSinkRegisters:   make(map[int64]map[string]map[string][]string),
+		bridgeWorkersNotified: make(map[int64][]string),
 	}, nil
 }
 
@@ -64,6 +68,7 @@ func (join *Join) Run() {
 }
 
 func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	slog.Info("Received msg", "body", middlewareMsg.Body)
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
@@ -73,20 +78,23 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		if err := join.handleEndOfRecordMessage(msg.ClientID, msg.Data[0].(bool)); err != nil {
+		slog.Info("EOR manejado", "client", msg.ClientID, "worker", msg.Data[1].(string))
+		if err := join.handleEndOfRecordMessage(msg.ClientID, msg.Data[1].(string)); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
 		ack()
 		return
-	case inner.SuspiciousAccount: // a modificar TO DO
+	case inner.SuspiciousAccount:
+		slog.Info("Sus account recibida", "client", msg.ClientID)
 		if err := join.handleSuspiciousAccountMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
-	case inner.PossibleFraudDestinations: // a modificar TO DO
+	case inner.PossibleFraudDestinations:
+		slog.Info("Possible fraud recibido", "client", msg.ClientID)
 		if err := join.handlePossibleFraudDestinationsMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
@@ -98,8 +106,13 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 	ack()
 }
 
-func (join *Join) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
+func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Received EOF record message from ", "clientID", clientID)
+
+	join.updateClientEORCondition(clientID, sender)
+	if !join.assertClientEORCondition(clientID) {
+		return nil
+	}
 
 	msg, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%s_%d", "join", join.config.ID)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
@@ -129,6 +142,7 @@ func (join *Join) handleSuspiciousAccountMessage(clientID int64, data []interfac
 
 		// Agregar para cada puente la relacion con el sus
 		join.bridgeSourceRegisters[clientID][possibleBridge][source] = struct{}{}
+		slog.Info("Vinculado bridge con source", "client", clientID, "source", source, "possible bridge", possibleBridge)
 
 	}
 
@@ -144,10 +158,15 @@ func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []
 		return err
 	}
 
+	if join.bridgeSourceRegisters[clientID] == nil {
+		return fmt.Errorf("error handling PossibleFraudDestinationsMessage from %d: %w", clientID, err)
+	}
+
+	if join.bridgeSinkRegisters[clientID] == nil {
+		join.bridgeSinkRegisters[clientID] = make(map[string]map[string]struct{})
+	}
+
 	for _, possibleSink := range possibleSinks {
-		if join.bridgeSinkRegisters[clientID] == nil || join.bridgeSourceRegisters[clientID] == nil {
-			return fmt.Errorf("error handling PossibleFraudDestinationsMessage from %d: %w", clientID, err)
-		}
 		if join.bridgeSinkRegisters[clientID][bridge] == nil {
 			join.bridgeSinkRegisters[clientID][bridge] = make(map[string]struct{})
 		}
@@ -155,7 +174,8 @@ func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []
 			return fmt.Errorf("error in bridge: %s while handling PossibleFraudDestinationsMessage from client %d: %w", bridge, clientID, err)
 		}
 
-		join.bridgeSourceRegisters[clientID][bridge][possibleSink] = struct{}{}
+		join.bridgeSinkRegisters[clientID][bridge][possibleSink] = struct{}{}
+		slog.Info("Vinculado bridge con sink", "client", clientID, "source", source, "possible sink", possibleSink)
 	}
 	// Verificar si se alcanzó el umbral
 	join.updateOriginAccountCondition(clientID, source, bridge, possibleSinks)
@@ -163,6 +183,7 @@ func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []
 }
 
 func (join *Join) updateOriginAccountCondition(clientID int64, source string, bridge string, possibleSinks []string) {
+	// creamos los hashes en caso de inexistencia
 	if join.sourceSinkRegisters[clientID] == nil {
 		join.sourceSinkRegisters[clientID] = make(map[string]map[string][]string)
 	}
@@ -170,16 +191,32 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 		join.sourceSinkRegisters[clientID][source] = make(map[string][]string)
 	}
 
+	// por cada destino actualizamos su listado de puentes con los sinks dados
 	for _, possibleSink := range possibleSinks {
 		if join.sourceSinkRegisters[clientID][source][possibleSink] == nil {
 			join.sourceSinkRegisters[clientID][source][possibleSink] = make([]string, 5, 10)
 		}
-		if !slices.Contains(join.sourceSinkRegisters[clientID][source][possibleSink], possibleSink) {
-			join.sourceSinkRegisters[clientID][source][possibleSink] = append(join.sourceSinkRegisters[clientID][source][possibleSink], possibleSink)
+		if !slices.Contains(join.sourceSinkRegisters[clientID][source][possibleSink], bridge) {
+			join.sourceSinkRegisters[clientID][source][possibleSink] = append(join.sourceSinkRegisters[clientID][source][possibleSink], bridge)
 		}
 		if len(join.sourceSinkRegisters[clientID][source][possibleSink]) == DestinationThreshold {
 			msg, _ := inner.SerializeQ4SourceAccount(clientID, source)
 			join.outputQueue.Send(*msg)
 		}
 	}
+}
+
+func (join *Join) updateClientEORCondition(clientID int64, worker string) {
+	if join.bridgeWorkersNotified[clientID] == nil {
+		join.bridgeWorkersNotified[clientID] = make([]string, 0)
+	}
+	if slices.Contains(join.bridgeWorkersNotified[clientID], worker) {
+		return
+	}
+	join.bridgeWorkersNotified[clientID] = append(join.bridgeWorkersNotified[clientID], worker)
+	slog.Info("EOR manejado", "client", clientID, "worker", worker)
+}
+
+func (join *Join) assertClientEORCondition(clientID int64) bool {
+	return len(join.bridgeWorkersNotified[clientID]) == join.config.PrevFaseWorkersAmount
 }
