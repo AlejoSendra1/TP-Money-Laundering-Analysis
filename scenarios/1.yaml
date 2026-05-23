@@ -22,8 +22,8 @@ services:
     - usd_filter_0
     environment:
     - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input_0.csv
-    - OUTPUT_FILE=/output/output_0.csv
+    - INPUT_FILE=/datasets/input.csv
+    - OUTPUT_FILE=/output/output.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
@@ -78,3 +78,33 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+  usd_filter_1:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_1
+    depends_on:
+      - q1_amount_filter_0
+    environment:
+      - INPUT_QUEUE=usd_filter_queue
+      - INPUT_EXCHANGE_NAME=transactions_exchange
+      - INPUT_TOPIC=transactions_topic
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - OUTPUT_EXCHANGE_NAME=usd_exchange
+      - OUTPUT_TOPIC=usd_transactions_topic
+  usd_filter_2:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_2
+    depends_on:
+      - q1_amount_filter_0
+    environment:
+      - INPUT_QUEUE=usd_filter_queue
+      - INPUT_EXCHANGE_NAME=transactions_exchange
+      - INPUT_TOPIC=transactions_topic
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - OUTPUT_EXCHANGE_NAME=usd_exchange
+      - OUTPUT_TOPIC=usd_transactions_topic

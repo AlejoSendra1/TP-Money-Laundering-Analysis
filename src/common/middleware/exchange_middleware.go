@@ -101,3 +101,8 @@ func (em *ExchangeMiddleware) Send(msg Message) error {
 func (em *ExchangeMiddleware) Close() error {
 	return em.close()
 }
+
+func (em *ExchangeMiddleware) BindToTopics(exchangeName string, topic string) error {
+	// Ya lo hace mas arriba, es solo para cumplir con la interfaz
+	return nil
+}
