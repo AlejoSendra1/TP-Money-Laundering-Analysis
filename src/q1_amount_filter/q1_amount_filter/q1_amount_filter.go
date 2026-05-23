@@ -17,35 +17,37 @@ type Q1AmountFilterConfig struct {
 }
 
 type Q1AmountFilter struct {
-	inputExchange middleware.Middleware
-	outputQueue   middleware.Middleware
-	accumulated   map[int64][]transaction.LowAmountTransfer
-	config        Q1AmountFilterConfig
+	inputQueue  middleware.Middleware
+	outputQueue middleware.Middleware
+	config      Q1AmountFilterConfig
 }
 
 func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputExchangeName, []string{config.InputTopic}, connSettings)
+	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueue, connSettings)
 	if err != nil {
+		return nil, err
+	}
+	if err = inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic); err != nil {
+		inputQueue.Close()
 		return nil, err
 	}
 
 	outputQueue, err := middleware.CreateQueueMiddleware(config.OutputQueue, connSettings)
 	if err != nil {
-		inputExchange.Close()
+		inputQueue.Close()
 		return nil, err
 	}
 
 	return &Q1AmountFilter{
-		inputExchange: inputExchange,
-		outputQueue:   outputQueue,
-		accumulated:   make(map[int64][]transaction.LowAmountTransfer),
-		config:        config,
+		inputQueue:  inputQueue,
+		outputQueue: outputQueue,
+		config:      config,
 	}, nil
 }
 
 func (q1AmountFilter *Q1AmountFilter) Run() {
-	q1AmountFilter.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+	q1AmountFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		q1AmountFilter.handleMessage(&msg, ack, nack)
 	})
 }
@@ -68,51 +70,31 @@ func (q1AmountFilter *Q1AmountFilter) handleMessage(msg *middleware.Message, ack
 		return
 	}
 
-	q1AmountFilter.handleDataMessage(transactionRecords, clientID)
+	if err := q1AmountFilter.handleDataMessage(transactionRecords, clientID); err != nil {
+		slog.Error("While handling data message", "err", err, "clientID", clientID)
+		nack()
+		return
+	}
 	ack()
 }
 
 func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) error {
-	transactions, exists := q1AmountFilter.accumulated[clientID]
-	var queryResult transaction.QueryResult
-	// Si nunca me envio nada, envio vacio
-	if !exists {
-		queryResult = transaction.QueryResult{
-			QueryID:      transaction.Query1,
-			Transactions: []transaction.LowAmountTransfer{},
-		}
-	} else { // Envio lo acumulado
-		queryResult = transaction.QueryResult{
-			QueryID:      transaction.Query1,
-			Transactions: transactions,
-		}
+	queryResult := transaction.QueryResult{
+		QueryID:      transaction.Query1,
+		Transactions: []transaction.LowAmountTransfer{},
 	}
 	if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
 		return err
 	}
-	slog.Info("Sending result query", "clientID", clientID, "total_usd_low_amount", len(transactions))
-	// Envio EOF, deberia sincronizas con demas instancias de q1 amount filter
-	queryResult.Transactions = []transaction.LowAmountTransfer{}
-	if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
-		return err
-	}
-
-	delete(q1AmountFilter.accumulated, clientID)
-	// TODO: Crear un join intermedio para juntar la data del client y enviarla toda junta, porque sino el gateway se va a encargar
-	// de juntarlo al haber mas isntancias de q1 amount filter
-	slog.Info("Sent EOF, all data sent", "clientID", clientID)
+	slog.Info("Sent EOF record message", "clientID", clientID)
 	return nil
 }
 
-func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) {
-	if _, ok := q1AmountFilter.accumulated[clientID]; !ok {
-		slog.Info("New client arrived", "clientID", clientID)
-		q1AmountFilter.accumulated[clientID] = []transaction.LowAmountTransfer{}
-	}
-
+func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
+	transactions := []transaction.LowAmountTransfer{}
 	for _, transactionRecord := range transactionRecords {
 		if transactionRecord.Amount < 50.0 {
-			q1AmountFilter.accumulated[clientID] = append(q1AmountFilter.accumulated[clientID], transaction.LowAmountTransfer{
+			transactions = append(transactions, transaction.LowAmountTransfer{
 				FromBank:    transactionRecord.FromBank,
 				FromAccount: transactionRecord.FromAccount,
 				ToBank:      transactionRecord.ToBank,
@@ -121,6 +103,17 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 			})
 		}
 	}
+
+	if len(transactions) != 0 {
+		queryResult := transaction.QueryResult{
+			QueryID:      transaction.Query1,
+			Transactions: transactions,
+		}
+		if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (q1AmountFilter *Q1AmountFilter) sendOutput(queryResult transaction.QueryResult, clientID int64) error {
