@@ -50,7 +50,7 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 		return nil, false, err
 	}
 	if clientID != messageHandler.userId {
-		slog.Info("ClientID dismatch, skipping...", "clientID", clientID, "messageHandler.userId", messageHandler.userId)
+		// ClientID dismatch, skipping...
 		return nil, false, nil
 	}
 
@@ -87,6 +87,5 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 
 	currentResult.Transactions = accumulator(currentResult.Transactions, queryResult.Transactions)
 	messageHandler.results[queryResult.QueryID] = currentResult
-	slog.Info("Result query received, waiting for more...", "queryID", queryResult.QueryID, "clientID", clientID)
 	return nil, true, nil
 }
