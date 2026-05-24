@@ -139,6 +139,50 @@ func DeserializeQueryResultMessage(message *middleware.Message) (int64, *transac
 	}, len(transactionRecords) == 0, nil
 }
 
+func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages []transaction.PaymentFormatAverage) (*middleware.Message, error) {
+	serializedRecords := []interface{}{}
+
+	for _, rec := range paymentFormatAverages {
+		datum := []interface{}{
+			rec.PaymentFormat,
+			rec.Average,
+			rec.Count,
+		}
+		serializedRecords = append(serializedRecords, datum)
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	if err != nil {
+		return nil, fmt.Errorf("serializing payment format averages: %w", err)
+	}
+
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+func DeserializePaymentFormatAverageMessage(message *middleware.Message) (int64, []transaction.PaymentFormatAverage, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing payment format average body: %w", err)
+	}
+
+	records := make([]transaction.PaymentFormatAverage, 0, len(messageClient.Data))
+	for _, datum := range messageClient.Data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 3 {
+			return 0, nil, false, fmt.Errorf("invalid structure inside payment format average record")
+		}
+
+		rec := transaction.PaymentFormatAverage{
+			PaymentFormat: fields[0].(string),
+			Average:       fields[1].(float64),
+			Count:         int(fields[2].(float64)),
+		}
+		records = append(records, rec)
+	}
+
+	return messageClient.ClientID, records, len(records) == 0, nil
+}
+
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.
 func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, error) {
 	fields, ok := datum.([]interface{})
