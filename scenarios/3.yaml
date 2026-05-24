@@ -88,7 +88,7 @@ services:
       dockerfile: sum/Dockerfile
     container_name: sum_0
     depends_on:
-    - gateway
+    - promediator_0
     environment:
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
@@ -106,7 +106,7 @@ services:
       dockerfile: sum/Dockerfile
     container_name: sum_1
     depends_on:
-    - gateway
+    - promediator_0
     environment:
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
@@ -150,3 +150,37 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+  promediator_0:
+    build:
+      context: ./src/
+      dockerfile: promediator/Dockerfile
+    container_name: promediator_0
+    depends_on:
+    - gateway
+    environment:
+    - ID=0
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - INPUT_EXCHANGE_NAME=sum_results_exchange
+    - OUTPUT_EXCHANGE_NAME=promediator_exchange
+    - SUM_AMOUNT=2
+    - PROMEDIATOR_PREFIX=promediator
+    - Q3_AMOUNT_FILTER_AMOUNT=1
+    - Q3_AMOUNT_FILTER_PREFIX=q3_amount_filter
+  promediator_1:
+    build:
+      context: ./src/
+      dockerfile: promediator/Dockerfile
+    container_name: promediator_1
+    depends_on:
+      - gateway
+    environment:
+      - ID=1
+      - MOM_PORT=5672
+      - MOM_HOST=rabbitmq
+      - INPUT_EXCHANGE_NAME=sum_results_exchange
+      - OUTPUT_EXCHANGE_NAME=promediator_exchange
+      - SUM_AMOUNT=2
+      - PROMEDIATOR_PREFIX=promediator
+      - Q3_AMOUNT_FILTER_AMOUNT=1
+      - Q3_AMOUNT_FILTER_PREFIX=q3_amount_filter
