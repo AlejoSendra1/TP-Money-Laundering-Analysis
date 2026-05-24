@@ -81,6 +81,14 @@ func (em *ExchangeMiddleware) StopConsuming() error {
 }
 
 func (em *ExchangeMiddleware) Send(msg Message) error {
+	return em.send(em.keys, msg)
+}
+
+func (em *ExchangeMiddleware) SendWithKeys(keys []string, msg Message) error {
+	return em.send(keys, msg)
+}
+
+func (em *ExchangeMiddleware) send(keys []string, msg Message) error {
 	if em.isDisconnected() {
 		return ErrMessageMiddlewareDisconnected
 	}
@@ -88,7 +96,7 @@ func (em *ExchangeMiddleware) Send(msg Message) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	for _, key := range em.keys {
+	for _, key := range keys {
 		err := em.publish(msg, ctx, em.exchange, key)
 		if err != nil {
 			return ErrMessageMiddlewareMessage

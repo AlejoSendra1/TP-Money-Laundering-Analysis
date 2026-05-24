@@ -33,6 +33,12 @@ type LowAmountTransfer struct {
 	Amount      float64
 }
 
+type PaymentFormatAverage struct {
+	PaymentFormat string
+	Average       float64
+	Count         int
+}
+
 type QueryResult struct {
 	QueryID      QueryID
 	Transactions interface{}

@@ -46,4 +46,8 @@ type Middleware interface {
 	//Bindea la queue al exchange y su respectivo topic
 	//Solo se utiliza en queue middleware, en exchange no aplica efectos
 	BindToTopics(exchangeName string, topic string) error
+
+	//Envia un mensaje enrutados por keys
+	//Solo se utiliza en exchange middleware, en queue no aplica efectos
+	SendWithKeys(keys []string, msg Message) error
 }
