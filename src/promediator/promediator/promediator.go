@@ -10,15 +10,16 @@ import (
 )
 
 type PromediatorConfig struct {
-	Id                   int
-	MomHost              string
-	MomPort              int
-	InputExchangeName    string
-	OutputExchangeName   string
-	SumAmount            int
-	PromediatorPrefix    string
-	Q3AmountFilterAmount int
-	Q3AmountFilterPrefix string
+	Id                     int
+	MomHost                string
+	MomPort                int
+	InputExchangeName      string
+	OutputExchangeName     string
+	SumAmount              int
+	PromediatorPrefix      string
+	Q3AmountFilterAmount   int
+	Q3AmountFilterPrefix   string
+	TransactionSaverPrefix string
 }
 
 type Promediator struct {
@@ -42,6 +43,7 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		key := fmt.Sprintf("%s_%d", config.Q3AmountFilterPrefix, i)
 		keysOutput = append(keysOutput, key)
 	}
+	keysOutput = append(keysOutput, config.TransactionSaverPrefix) // Key que le sera util a los transaction saver como notificacion
 	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, keysOutput, connSettings)
 	if err != nil {
 		inputExchange.Close()
@@ -121,7 +123,7 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64) error {
 	if err = promediator.outputExchange.Send(*eofMessage); err != nil {
 		return err
 	}
-	slog.Info("Sent eof message to q3 amount filter", "clientID", clientID)
+	slog.Info("Sent eof message to q3 amount filter and transaction saver", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
 	return nil

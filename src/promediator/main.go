@@ -51,16 +51,22 @@ func loadConfig() (promediator.PromediatorConfig, error) {
 		return promediator.PromediatorConfig{}, errors.New("Q3_AMOUNT_FILTER_PREFIX environment variable is required")
 	}
 
+	transactionSaverPrefix := os.Getenv("TRANSACTION_SAVER_PREFIX")
+	if transactionSaverPrefix == "" {
+		return promediator.PromediatorConfig{}, errors.New("TRANSACTION_SAVER_PREFIX environment variable is required")
+	}
+
 	return promediator.PromediatorConfig{
-		Id:                   id,
-		MomHost:              momHost,
-		MomPort:              momPort,
-		InputExchangeName:    inputExchangeName,
-		OutputExchangeName:   outputExchangeName,
-		SumAmount:            sumAmount,
-		PromediatorPrefix:    promediatorPrefix,
-		Q3AmountFilterAmount: q3AmountFilterAmount,
-		Q3AmountFilterPrefix: q3AmountFilterPrefix,
+		Id:                     id,
+		MomHost:                momHost,
+		MomPort:                momPort,
+		InputExchangeName:      inputExchangeName,
+		OutputExchangeName:     outputExchangeName,
+		SumAmount:              sumAmount,
+		PromediatorPrefix:      promediatorPrefix,
+		Q3AmountFilterAmount:   q3AmountFilterAmount,
+		Q3AmountFilterPrefix:   q3AmountFilterPrefix,
+		TransactionSaverPrefix: transactionSaverPrefix,
 	}, nil
 }
 
