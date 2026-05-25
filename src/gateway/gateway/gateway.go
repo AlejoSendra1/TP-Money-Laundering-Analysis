@@ -11,6 +11,9 @@ import (
 
 	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/common/messageprotocol/external"
+	"tp_distribuidos/common/messageprotocol/external/safeio"
+	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/messagehandler"
 )
@@ -144,11 +147,71 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 
 	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
 		for i, client := range clients {
+			msg, err := inner.DeserializeMessage(&msg)
+			if err != nil {
+				slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
+				nack()
+				return
+			}
+
+			if client.Handler.id != msg.ClientID {
+				continue
+			}
+
+			switch msg.MsgType {
+			case inner.Query4Response:
+				// no hace falta hacer nada en realidad, se manda derecho al cliente
+				serialization, err := serializer.SerializeQuery4Response(*msg)
+				if err != nil {
+					slog.Error("While serealizing response", "err", err, "clientID", msg.ClientID, "content", msg.Data)
+					nack()
+					return
+				}
+				gateway.sendResponse(client.Conn, serialization)
+
+			case inner.QueryResponse:
+				// una vez que se reciben todos los results se notifica al cliente y se borra
+				clientEnded, err := client.Handler.handleQueryResponse(msg.MsgType)
+				if err != nil {
+					slog.Error("While handling query response", "err", err, "clientID", msg.ClientID, "content", msg.Data)
+					nack()
+					return
+				}
+
+				if clientEnded {
+					clientIndex = i // seteamos el valor para eliminar al cliente
+				}
+
+			default:
+				slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID, "content", msg.Data)
+				return
+			}
+		}
+		slog.Warn("No client handler could process this message", "message", msg)
+		nack()
+	})
+
+	if clientIndex >= 0 {
+		slog.Info("Client received all result queries, removing from registry", "clientIndex", clientIndex)
+		gateway.registry.Remove(clientIndex)
+		ack()
+		return
+	}
+}
+
+/*
+func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(), nack func()) {
+	clientIndex := -1
+
+	slog.Info("Received response msg", "body", msg.Body)
+
+	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
+		for i, client := range clients {
+
 			QueriesResult, wasProcessed, err := client.Handler.DeserializeResultMessage(&msg)
 			if err != nil {
 				slog.Debug("While reading from output queue", "err", err)
 				nack()
-				gateway.outputExchange.StopConsuming()
 				return
 			}
 			// Si el mensaje no pertenece al dueño, se skipea
@@ -197,6 +260,7 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 		return
 	}
 }
+*/
 
 func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
 	transactions, err := external.ReadTransactionBatch(client.Conn)
@@ -238,6 +302,24 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 	if err := external.WriteAck(client.Conn); err != nil {
 		slog.Debug("While writing ACK message", "err", err)
 		return err
+	}
+	return nil
+}
+
+func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
+
+	if err := safeio.WriteAll(socket, data); err != nil {
+		slog.Debug("While writing queries result message", "err", err)
+		return fmt.Errorf("While writing queries result message: %w", err)
+	}
+	msgType, err := external.ReadMsgType(socket)
+	if err != nil {
+		slog.Debug("While reading message type", "err", err)
+		return fmt.Errorf("While reading queries result message: %w", err)
+	}
+	if msgType != external.Ack {
+		slog.Debug("Expected ACK message")
+		return fmt.Errorf("Waiting for ack msg: %w", err)
 	}
 	return nil
 }

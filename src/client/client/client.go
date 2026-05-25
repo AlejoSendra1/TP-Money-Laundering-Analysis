@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"tp_distribuidos/common/csvwriter"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/external/safeio"
 	"tp_distribuidos/common/messageprotocol/serializer"
@@ -46,6 +47,7 @@ type Client struct {
 	conn                    net.Conn
 	running                 atomic.Bool
 	config                  ClientConfig
+	writer                  csvwriter.CSVWriter
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -54,7 +56,17 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{transactionsSentCounter: 0, conn: conn, config: config}
+	writer, err := csvwriter.NewCSVWriter("client_output.csv")
+	if err != nil {
+		return nil, err
+	}
+
+	client := &Client{
+		transactionsSentCounter: 0,
+		conn:                    conn,
+		config:                  config,
+		writer:                  *writer,
+	}
 	client.running.Store(true)
 	return client, nil
 }
@@ -251,6 +263,11 @@ func (client *Client) recvQueriesResult() error {
 			if err = client.writeQuery1CSV(records); err != nil {
 				return err
 			}
+		case external.Query4Response:
+			if err := handleQuery4Response(); err != nil {
+				return err
+			}
+
 		default:
 			return fmt.Errorf("unexpected message type while receiving queries result: %d", msgType)
 		}
@@ -394,4 +411,25 @@ func (client *Client) readFloat64(fieldName string) (float64, error) {
 		return 0, err
 	}
 	return serializer.DeserializeFloat64(bytes), nil
+}
+
+func (Client *Client) handleQuery4Response() error {
+	toRead, err := Client.readUint32()
+	if err != nil {
+		return err
+	}
+
+	read, err := safeio.ReadAll(Client.conn, toRead)
+	if err != nil {
+		return err
+	}
+
+	toWrite, err := serializer.DeserializeQuery4Response(read)
+	if err != nil {
+		return err
+	}
+
+	Client.writer.
+
+	return nil
 }

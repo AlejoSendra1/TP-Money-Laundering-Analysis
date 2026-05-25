@@ -4,15 +4,19 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
 
+const QUERYS_AMOUNT
+
 type MessageHandler struct {
 	userId                int64
 	results               map[transaction.QueryID]transaction.QueryResult // Resultados de las querys
 	completedQueryCounter int                                             // Contador de las cantidad de querys terminadas
+	endOfRecordsReceived  []inner.MsgType
 }
 
 type accumulatorFunc func(current, incoming any) any
@@ -30,8 +34,9 @@ func NewMessageHandler() MessageHandler {
 	n := rand.Int64()
 	return MessageHandler{
 		userId:                n,
-		results:               make(map[transaction.QueryID]transaction.QueryResult),
+		results:               make(map[transaction.QueryID]transaction.QueryResult), // no deberia ser necesario
 		completedQueryCounter: 0,
+		endOfRecordsReceived:  make([]inner.MsgType, 0),
 	}
 }
 
@@ -88,4 +93,16 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 	currentResult.Transactions = accumulator(currentResult.Transactions, queryResult.Transactions)
 	messageHandler.results[queryResult.QueryID] = currentResult
 	return nil, true, nil
+}
+
+func (messageHandler *MessageHandler) handleQueryResponse(message *inner.MessageClient) (bool, error) {
+	if slices.Contains(messageHandler.endOfRecordsReceived, message.MsgType) {
+		return false, nil
+	}
+	messageHandler.endOfRecordsReceived = append(messageHandler.endOfRecordsReceived, message.MsgType)
+	if len(messageHandler.endOfRecordsReceived) == QUERYS_AMOUNT {
+		return true, nil
+	}
+
+	return false, nil
 }

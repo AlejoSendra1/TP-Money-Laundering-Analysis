@@ -17,6 +17,7 @@ const (
 	TransactionBatch MsgType = iota + 1
 	Ack
 	EndOfRecords
+	QueryResponse
 	Query1Response
 	Query2Response
 	Query3Response
@@ -45,7 +46,7 @@ var queryDeserializers = map[transaction.QueryID]queryDeserializer{
 	// transaction.Query2: deserializeQuery2,
 }
 
-func serializeJson(messageClient MessageClient) ([]byte, error) {
+func SerializeJson(messageClient MessageClient) ([]byte, error) {
 	return json.Marshal(messageClient)
 }
 
@@ -67,7 +68,7 @@ func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middlewar
 		sender,
 	})
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, MsgType: EndOfRecords, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: EndOfRecords, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryRe
 		serializedTransactions,
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction
 		data = append(data, datum)
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, MsgType: TransactionBatch, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: TransactionBatch, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages 
 		serializedRecords = append(serializedRecords, datum)
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment format averages: %w", err)
 	}
@@ -342,7 +343,7 @@ func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleB
 		bridges,    // slice of bridges at data[1]
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientID, MsgType: SuspiciousAccount, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: SuspiciousAccount, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +389,7 @@ func SerializesPossibleFraudDestinations(clientID int64, origin string, possible
 		dest,           // slice of bridges at data[2]
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientID, MsgType: PossibleFraudDestinations, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: PossibleFraudDestinations, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +437,7 @@ func SerializeQ4SourceAccount(clientID int64, sourceAccount string) (*middleware
 		sourceAccountData[1],
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientID, MsgType: FraudSource, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: FraudSource, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -457,4 +458,15 @@ func DeserializeQ4SourceAccount(data []interface{}) (string, string, error) {
 	}
 
 	return susAccount, susAccountBank, nil
+}
+
+/// resultados ---------------------- mover
+
+func DeserializeQueryResult(middlewareMsg *middleware.Message) (MessageClient, error) {
+	msg, err := DeserializeMessage(middlewareMsg)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
+		nack()
+		return
+	}
 }

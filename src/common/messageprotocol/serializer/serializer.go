@@ -3,8 +3,11 @@ package serializer
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"math"
 	"time"
+	"tp_distribuidos/common/messageprotocol/external"
+	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/transaction"
 )
 
@@ -84,4 +87,29 @@ func SerializeFloat64(value float64) []byte {
 func DeserializeFloat64(bytes []byte) float64 {
 	bits := binary.BigEndian.Uint64(bytes)
 	return math.Float64frombits(bits)
+}
+
+func SerializeQuery4Response(response inner.MessageClient) ([]byte, error) {
+	msgType := make([]byte, 4)
+	binary.BigEndian.PutUint32(msgType, uint32(external.Query4Response))
+
+	serialization, err := json.Marshal(response.Data)
+	if err != nil {
+		return msgType, nil
+	}
+
+	serialization = appendLenght(serialization)
+
+	bytes := append(msgType, serialization...)
+	return bytes, nil
+}
+
+func DeserializeQuery4Response(bytes []byte) ([]interface{}, error) {
+	var data []interface{}
+
+	if err := json.Unmarshal(bytes, data); err != nil {
+		return data, fmt.Errorf("Deserializing message body: %w", err)
+	}
+
+	return data, nil
 }

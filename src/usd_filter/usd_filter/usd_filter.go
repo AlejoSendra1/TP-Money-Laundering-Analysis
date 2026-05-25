@@ -93,7 +93,6 @@ func (usdFilter *USDFilter) handleMessage(middlewareMsg *middleware.Message, ack
 		ack()
 	default:
 		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
-
 	}
 }
 
