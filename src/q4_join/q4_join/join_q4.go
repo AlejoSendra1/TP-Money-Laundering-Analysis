@@ -67,7 +67,7 @@ func (join *Join) Run() {
 }
 
 func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	slog.Info("Received msg", "body", middlewareMsg.Body)
+	//slog.Info("Received msg", "body", middlewareMsg.Body)
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
@@ -77,8 +77,15 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		slog.Info("EOR manejado", "client", msg.ClientID, "worker", msg.Data[1].(string))
-		if err := join.handleEndOfRecordMessage(msg.ClientID, msg.Data[1].(string)); err != nil {
+		slog.Info("Received msg", "type", "EOF")
+		_, sender, err := inner.DeserializeEOR(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+
+		if err := join.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
@@ -118,9 +125,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	join.outputQueue.Send(*msg) // Error sin handlear
-
-	return nil
+	return join.outputQueue.Send(*msg)
 }
 
 func (join *Join) handleSuspiciousAccountMessage(clientID int64, data []interface{}) error {

@@ -49,7 +49,7 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 	if err != nil {
 		return nil, err
 	}
-	inputQueue.BindToTopics(config.InputExchangeName, fmt.Sprintf("%s_%d", instance_name, config.ID))
+	inputQueue.BindToTopics(config.InputExchangeName, instance_name)
 	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT)
 
 	// input - control
@@ -84,7 +84,7 @@ func (bridgeMatcher *BridgeMatcher) Run() {
 }
 
 func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	slog.Info("Received msg", "body", middlewareMsg.Body)
+	//slog.Info("Received msg", "body", middlewareMsg.Body)
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
@@ -94,7 +94,13 @@ func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Mess
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		if err := bridgeMatcher.handleEndOfRecordMessage(msg.ClientID, msg.Data[1].(string)); err != nil {
+		_, sender, err := inner.DeserializeEOR(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		if err := bridgeMatcher.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
@@ -104,6 +110,7 @@ func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Mess
 
 	case inner.TransactionBatch:
 		//obtenemos las transacciones
+		//slog.Info("Received msg", "type", "tranasction batch")
 		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
 		if err != nil {
 			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
@@ -240,7 +247,6 @@ func (bridgeMatcher *BridgeMatcher) sendSuspiciousAccounts() error {
 	for client, register := range bridgeMatcher.Registers {
 		for origin, destinos := range register {
 			// se verifica si se pasó el humbral y se envian los datos
-			slog.Info("Sending sus account for check", "clientID", client, "Sus_Account", origin)
 			if len(destinos) >= DestinationThreshold {
 				slog.Info("Suspicious account found", "origin", origin, "bridges", destinos)
 				if err := bridgeMatcher.notifAll(client, origin, destinos); err != nil {

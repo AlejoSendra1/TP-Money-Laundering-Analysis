@@ -3,6 +3,7 @@ package inner
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -47,6 +48,7 @@ func DeserializeMessage(message *middleware.Message) (*MessageClient, error) {
 }
 
 func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middleware.Message, error) {
+	slog.Info("serializando eof")
 	data := []interface{}{}
 
 	// agregamos el tipo de msg
@@ -63,6 +65,23 @@ func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middlewar
 	message := middleware.Message{Body: string(body)}
 
 	return &message, nil
+}
+func DeserializeEOR(data []interface{}) (bool, string, error) {
+	info, ok := (data[0]).([]interface{})
+	if !ok {
+		return false, "", fmt.Errorf("Unexpected data in eor msg, received data %v", data)
+	}
+	// deserializacion de los datos
+	mustPropagate, ok := (info[0]).(bool)
+	if !ok {
+		return false, "", fmt.Errorf("Unexpected data in eor msg, expected bool, received data %v", data)
+	}
+
+	sender, ok := (info[1]).(string)
+	if !ok {
+		return false, "", fmt.Errorf("Unexpected data in eor msg, expected sender string, received data %v", data)
+	}
+	return mustPropagate, sender, nil
 }
 
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {

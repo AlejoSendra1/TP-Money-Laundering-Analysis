@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"sync"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -31,6 +32,7 @@ type Group struct {
 	controlExchange middleware.Middleware
 	outputExchange  middleware.ExchangeMiddleware
 	config          GroupConfig
+	controlMutex    sync.Mutex
 }
 
 func NewGroupWorker(config GroupConfig) (*Group, error) {
@@ -41,10 +43,11 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
 
 	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT) // sacar esto !!!! TO DO
 	// TODO que un proceso solo maneje el EOF y otro el input queue
+
+	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
 
 	// input - control (particularmente EOF del cliente)
 	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings) // control
@@ -64,17 +67,31 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		outputExchange:  *outputExchange,
 		controlExchange: controlExchange,
 		config:          config,
+		controlMutex:    sync.Mutex{},
 	}, nil
 }
 
 func (groupWorker *Group) Run() {
+	done := make(chan struct{})
+
+	go func() {
+		groupWorker.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+			groupWorker.controlMutex.Lock()
+			groupWorker.handleMessage(&msg, ack, nack)
+			groupWorker.controlMutex.Unlock()
+		})
+		close(done)
+	}()
+
 	groupWorker.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		groupWorker.handleMessage(&msg, ack, nack)
 	})
+
+	<-done
 }
 
 func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	slog.Info("Received msg", "body", middlewareMsg.Body)
+	//slog.Info("Received msg", "body", middlewareMsg.Body)
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
@@ -84,7 +101,13 @@ func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack f
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		if err := groupWorker.handleEndOfRecordMessage(msg.ClientID, msg.Data[0].(bool)); err != nil {
+		mustPropagate, _, err := inner.DeserializeEOR(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		if err := groupWorker.handleEndOfRecordMessage(msg.ClientID, mustPropagate); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
@@ -94,6 +117,7 @@ func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack f
 
 	case inner.TransactionBatch:
 		//obtenemos las transacciones
+		slog.Info("Received msg", "type", "tranasction batch")
 		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
 		if err != nil {
 			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
@@ -124,20 +148,21 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 	}
 
 	if mustPropagate {
+		groupWorker.controlMutex.Lock()
 		groupWorker.controlExchange.Send(*msg)
+		groupWorker.controlMutex.Unlock()
 	} else {
 		for i := range groupWorker.config.NextFaseWorkersAmount {
 			topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, i)
 			groupWorker.outputExchange.SendToTopic(*msg, topic) // Error sin handlear
 		}
 	}
-
 	return nil
 }
 
 func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
 	// transacciones para cada worker de la proxima fase
-	slog.Info("Received Tansaction batch from ", "clientID", clientID)
+	//slog.Info("Received Tansaction batch from ", "clientID", clientID)
 	workerByBatches := make(map[int][]transaction.Transaction)
 
 	for _, transaction := range transactionRecords {
@@ -162,7 +187,7 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 }
 
 func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []transaction.Transaction, topic string) error {
-	slog.Info("Sending Tansactions from ", "clientID", clientID, " to topic: ", topic)
+	//slog.Info("Sending Tansactions from ", "clientID", clientID, " to topic: ", topic)
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
@@ -172,5 +197,6 @@ func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []
 		slog.Debug("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
+	//slog.Info("Batch enviado", "destinatario", topic)
 	return nil
 }

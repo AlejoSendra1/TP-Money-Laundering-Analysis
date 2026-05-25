@@ -124,6 +124,7 @@ loop:
 			}
 
 		case external.EndOfRecords:
+			slog.Info("Received EOF msg", "client", client)
 			if err := gateway.handleEndOfRecordsMessage(client); err != nil {
 				slog.Debug("While handling end of records message", "err", err)
 				return

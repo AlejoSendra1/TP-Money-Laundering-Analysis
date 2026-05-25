@@ -1,6 +1,7 @@
 package messagehandler
 
 import (
+	"log/slog"
 	"math/rand/v2"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -21,7 +22,8 @@ func (messageHandler *MessageHandler) SerializeDataMessage(transactionBatch []tr
 }
 
 func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message, error) {
-	return inner.SerializeEOF(messageHandler.userId, true, "gateway") // en este caso no es relevante quien envia
+	slog.Info("serializando eof")
+	return inner.SerializeEOF(messageHandler.userId, true, "gateway")
 }
 
 //func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) ([]transaction.Transaction, error) {

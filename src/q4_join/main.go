@@ -29,16 +29,6 @@ func loadConfig() (q4_join.JoinConfig, error) {
 		return q4_join.JoinConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
-	inputQueue := os.Getenv("INPUT_QUEUE")
-	if inputQueue == "" {
-		return q4_join.JoinConfig{}, errors.New("INPUT_QUEUE environment variable is required")
-	}
-
-	inputTopic := os.Getenv("INPUT_TOPIC")
-	if inputTopic == "" {
-		return q4_join.JoinConfig{}, errors.New("INPUT_TOPIC environment variable is required")
-	}
-
 	inputExchangeName := os.Getenv("INPUT_EXCHANGE_NAME")
 	if inputExchangeName == "" {
 		return q4_join.JoinConfig{}, errors.New("INPUT_EXCHANGE_NAME environment variable is required")
