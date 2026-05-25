@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -24,6 +25,8 @@ type TransactionsSaverConfig struct {
 	OutputQueue              string
 	NotificationExchangeName string
 	NotificationTopic        string
+	ControlExchangeName      string
+	ControlTopic             string
 	PromediatorAmount        int
 }
 
@@ -31,6 +34,7 @@ type TransactionsSaver struct {
 	inputQueue           middleware.Middleware
 	outputQueue          middleware.Middleware
 	notificationExchange middleware.Middleware
+	controlExchange      middleware.Middleware
 	config               TransactionsSaverConfig
 
 	clientStates map[int64]*ClientState
@@ -42,6 +46,7 @@ type ClientState struct {
 	notificationEOFs int
 	receivedFlowEOF  bool
 	flushed          bool
+	qtyTx            int
 }
 
 func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, error) {
@@ -65,7 +70,12 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		inputQueue.Close()
 		return nil, err
 	}
-
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		return nil, err
+	}
 	notificationExchange, err := middleware.CreateExchangeMiddleware(config.NotificationExchangeName, []string{config.NotificationTopic}, connSettings)
 	if err != nil {
 		inputQueue.Close()
@@ -76,6 +86,7 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		inputQueue:           inputQueue,
 		outputQueue:          outputQueue,
 		notificationExchange: notificationExchange,
+		controlExchange:      controlExchange,
 		config:               config,
 		clientStates:         make(map[int64]*ClientState),
 	}, nil
@@ -86,8 +97,12 @@ func (transactionsSaver *TransactionsSaver) Run() {
 		transactionsSaver.handleMessage(&msg, ack, nack)
 	})
 
-	transactionsSaver.notificationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+	go transactionsSaver.notificationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		transactionsSaver.handleNotificationMessage(&msg, ack, nack)
+	})
+
+	transactionsSaver.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		transactionsSaver.handleControlMessage(&msg, ack, nack)
 	})
 }
 
@@ -116,13 +131,17 @@ func (transactionsSaver *TransactionsSaver) handleMessage(msg *middleware.Messag
 	ack()
 }
 func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID int64) error {
-	transactionsSaver.mu.Lock()
-	defer transactionsSaver.mu.Unlock()
-
-	state := transactionsSaver.getOrCreateClientState(clientID)
-	state.receivedFlowEOF = true
-	slog.Info("Received EOF from flow, try send EOF to output", "clientID", clientID)
-	return transactionsSaver.tryFinalizeLocked(clientID, state)
+	controlEOFMessage := control.ControlMessage{Type: control.TypeEOF, ClientID: clientID}
+	message, err := control.SerializeControlMessage(controlEOFMessage)
+	if err != nil {
+		slog.Debug("While serializing control message", "err", err, "clientID", clientID)
+		return err
+	}
+	if err := transactionsSaver.controlExchange.Send(*message); err != nil {
+		slog.Debug("While sending control message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
 }
 
 func (transactionsSaver *TransactionsSaver) handleNotificationMessage(msg *middleware.Message, ack, nack func()) {
@@ -175,6 +194,8 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 	defer transactionsSaver.mu.Unlock()
 
 	state := transactionsSaver.getOrCreateClientState(clientID)
+	state.qtyTx += len(transactionRecords)
+
 	if state.flushed {
 		return transactionsSaver.sendToOutput(clientID, transactions)
 	}
@@ -183,6 +204,26 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 			fmt.Sprintf("client_%d_instance_%d.jsonl", clientID, transactionsSaver.config.Id))
 	}
 	return transactionsSaver.storeTransactions(transactions, state.filePath)
+}
+
+func (transactionsSaver *TransactionsSaver) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err)
+		nack()
+		return
+	}
+	transactionsSaver.mu.Lock()
+	defer transactionsSaver.mu.Unlock()
+
+	state := transactionsSaver.getOrCreateClientState(controlMessage.ClientID)
+	state.receivedFlowEOF = true
+	slog.Info("Received EOF from instance, try send EOF to output", "clientID", controlMessage.ClientID)
+	if err = transactionsSaver.tryFinalizeLocked(controlMessage.ClientID, state); err != nil {
+		nack()
+		return
+	}
+	ack()
 }
 
 func (transactionsSaver *TransactionsSaver) storeTransactions(transactions []transaction.ThresholdFilteredTransfer, storageFilePath string) error {
@@ -273,6 +314,7 @@ func (transactionsSaver *TransactionsSaver) tryFinalizeLocked(clientID int64, st
 
 	transactionsSaver.cleanupClientState(clientID, state)
 	slog.Info("Client processing completed - EOF sent and state cleaned", "clientID", clientID)
+	slog.Info("Quantity transactions", "qty", state.qtyTx)
 	return nil
 }
 

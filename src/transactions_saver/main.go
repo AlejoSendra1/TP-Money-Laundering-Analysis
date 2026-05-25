@@ -62,6 +62,16 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 	if notificationTopic == "" {
 		return transactions_saver.TransactionsSaverConfig{}, errors.New("NOTIFICATION_TOPIC_NAME environment variable is required")
 	}
+
+	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
+	if controlExchangeName == "" {
+		return transactions_saver.TransactionsSaverConfig{}, errors.New("CONTROL_EXCHANGE_NAME environment variable is required")
+	}
+	controlTopic := os.Getenv("CONTROL_TOPIC_NAME")
+	if controlTopic == "" {
+		return transactions_saver.TransactionsSaverConfig{}, errors.New("CONTROL_TOPIC_NAME environment variable is required")
+	}
+
 	return transactions_saver.TransactionsSaverConfig{
 		Id:                       id,
 		MomHost:                  momHost,
@@ -73,6 +83,8 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 		OutputQueue:              outputQueue,
 		NotificationExchangeName: notificationExchangeName,
 		NotificationTopic:        notificationTopic,
+		ControlExchangeName:      controlExchangeName,
+		ControlTopic:             controlTopic,
 		PromediatorAmount:        promediatorAmount,
 	}, nil
 }
