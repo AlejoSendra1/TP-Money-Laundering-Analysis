@@ -156,33 +156,50 @@ services:
       dockerfile: promediator/Dockerfile
     container_name: promediator_0
     depends_on:
-    - gateway
+    - transactions_saver_0
     environment:
     - ID=0
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_EXCHANGE_NAME=sum_results_exchange
     - OUTPUT_EXCHANGE_NAME=promediator_exchange
+    - OUTPUT_TOPIC_NAME=promediator_results_topic
     - SUM_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
-    - Q3_AMOUNT_FILTER_AMOUNT=1
-    - Q3_AMOUNT_FILTER_PREFIX=q3_amount_filter
-    - TRANSACTION_SAVER_PREFIX=transaction_saver
   promediator_1:
     build:
       context: ./src/
       dockerfile: promediator/Dockerfile
     container_name: promediator_1
     depends_on:
-    - gateway
+    - transactions_saver_0
     environment:
     - ID=1
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_EXCHANGE_NAME=sum_results_exchange
     - OUTPUT_EXCHANGE_NAME=promediator_exchange
+    - OUTPUT_TOPIC_NAME=promediator_results_topic
     - SUM_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
-    - Q3_AMOUNT_FILTER_AMOUNT=1
-    - Q3_AMOUNT_FILTER_PREFIX=q3_amount_filter
-    - TRANSACTION_SAVER_PREFIX=transaction_saver
+  transactions_saver_0:
+    build:
+      context: ./src/
+      dockerfile: transactions_saver/Dockerfile
+    container_name: transactions_saver_0
+    depends_on:
+      - gateway
+    volumes:
+      - ./src/transactions_saver/cache:/storage
+    environment:
+    - ID=0
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - STORAGE_DIR=/storage
+    - INPUT_QUEUE=transactions_saver_queue
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - INPUT_TOPIC=usd_later_period_transactions_topic
+    - OUTPUT_QUEUE=transactions_saver_exchange
+    - NOTIFICATION_EXCHANGE_NAME=promediator_exchange
+    - NOTIFICATION_TOPIC_NAME=promediator_results_topic
+    - PROMEDIATOR_AMOUNT=2
