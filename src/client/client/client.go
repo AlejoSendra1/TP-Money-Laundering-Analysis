@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"tp_distribuidos/common/messageprotocol/external"
+	"tp_distribuidos/common/messageprotocol/external/safeio"
+	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/transaction"
 )
 
@@ -83,14 +86,14 @@ func (client *Client) Run() error {
 		}
 		return nil
 	}
-	/*
-		if err := client.recvFruitTop(); err != nil {
-			if client.running.Load() {
-				return err
-			}
-			return nil
+
+	if err := client.recvQueriesResult(); err != nil {
+		if client.running.Load() {
+			return err
 		}
-	*/
+		return nil
+	}
+
 	return nil
 }
 
@@ -187,13 +190,13 @@ func (client *Client) sendTransactionRecords() error {
 	for scanner.Scan() {
 		columns := strings.Split(scanner.Text(), ",")
 
-		transaction, err := parseTransaction(columns)
+		tx, err := parseTransaction(columns)
 		if err != nil {
 			slog.Debug("Error while parsing transaction record", "err", err)
 			return err
 		}
 
-		batch = append(batch, *transaction)
+		batch = append(batch, *tx)
 		if len(batch) == batchSize {
 			client.transactionsSentCounter += int64(len(batch))
 			if err := client.sendBatch(&batch); err != nil {
@@ -219,38 +222,176 @@ func (client *Client) sendTransactionRecords() error {
 	return nil
 }
 
-/*
-func (client *Client) recvFruitTop() error {
-	if err := client.expectMsgType(external.FruitTop); err != nil {
+// recvQueriesResult lee la respuesta de las queries
+// Por ahora soporta solo Query1
+// Formato: [MsgType][numRecords][records...][EOF]
+// Ejemplo:
+// [Query1Response][numRecords][records...]
+// [Query2Response][numRecords][records...]
+// [Query3Response][numRecords][records...]
+// [Query4Response][numRecords][records...]
+// [Query5Response][numRecords][records...]
+// [EOF]
+func (client *Client) recvQueriesResult() error {
+	// MsgType
+	msgType, err := external.ReadMsgType(client.conn)
+	if err != nil {
+		slog.Debug("While reading message type for queries result", "err", err)
 		return err
 	}
+	slog.Info("Read message type for queries result", "msgType", msgType)
 
-	fruitTop, err := external.ReadFruitTop(client.conn)
-	if err != nil {
-		slog.Debug("Error while reading FruitTop message", "err", err)
+	for queriesRead := 0; queriesRead < 1; queriesRead++ { // En el futuro sera 5...
+		switch msgType {
+		case external.Query1Response:
+			records, err := client.readQuery1Records()
+			if err != nil {
+				return err
+			}
+			if err = client.writeQuery1CSV(records); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unexpected message type while receiving queries result: %d", msgType)
+		}
+	}
+	if err := client.expectEndOfRecords(); err != nil {
 		return err
 	}
 	if err := external.WriteAck(client.conn); err != nil {
-		slog.Debug("Error while writing ack message", "err", err)
+		slog.Debug("While writing ACK after queries result", "err", err)
 		return err
 	}
+	return nil
+}
 
+func (client *Client) readQuery1Records() ([]transaction.LowAmountTransfer, error) {
+	count, err := client.readUint32()
+	if err != nil {
+		slog.Debug("While reading query1 records count", "err", err)
+		return nil, err
+	}
+	slog.Info("Read query1 records count", "count", count)
+
+	records := make([]transaction.LowAmountTransfer, 0, int(count))
+	for i := 0; i < int(count); i++ {
+		record, err := client.readLowAmountTransferRecord()
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (client *Client) readLowAmountTransferRecord() (transaction.LowAmountTransfer, error) {
+	fromBank, err := client.readUint64AsInt("FromBank")
+	if err != nil {
+		return transaction.LowAmountTransfer{}, err
+	}
+	fromAccount, err := client.readLengthPrefixedString("FromAccount")
+	if err != nil {
+		return transaction.LowAmountTransfer{}, err
+	}
+	toBank, err := client.readUint64AsInt("ToBank")
+	if err != nil {
+		return transaction.LowAmountTransfer{}, err
+	}
+	toAccount, err := client.readLengthPrefixedString("ToAccount")
+	if err != nil {
+		return transaction.LowAmountTransfer{}, err
+	}
+	amount, err := client.readFloat64("Amount")
+	if err != nil {
+		return transaction.LowAmountTransfer{}, err
+	}
+	return transaction.LowAmountTransfer{
+		FromBank:    fromBank,
+		FromAccount: fromAccount,
+		ToBank:      toBank,
+		ToAccount:   toAccount,
+		Amount:      amount,
+	}, nil
+}
+
+func (client *Client) expectEndOfRecords() error {
+	msgType, err := external.ReadMsgType(client.conn)
+	if err != nil {
+		slog.Debug("While reading message type for queries result EOF", "err", err)
+		return err
+	}
+	if msgType != external.EndOfRecords {
+		slog.Debug("Expected EndOfRecords message type after reading queries result, got", "msgType", msgType)
+		return fmt.Errorf("expected EndOfRecords message type after reading queries result, got %d", msgType)
+	}
+	return nil
+}
+
+func (client *Client) writeQuery1CSV(records []transaction.LowAmountTransfer) error {
 	outputFile, err := os.Create(client.config.OutputFile)
 	if err != nil {
 		slog.Debug("Error while creating output file", "err", err)
 		return err
 	}
-	outputFileWriter := csv.NewWriter(outputFile)
+	defer outputFile.Close()
 
-	for _, fruitRecord := range fruitTop {
-		line := []string{fruitRecord.Fruit, strconv.Itoa(int(fruitRecord.Amount))}
-		if err := outputFileWriter.Write(line); err != nil {
-			slog.Debug("Error while writing output file", "err", err)
+	writer := csv.NewWriter(outputFile)
+	defer writer.Flush()
+
+	if err := writer.Write([]string{"From Bank", "Account", "To Bank", "Account.1", "Amount Paid"}); err != nil {
+		slog.Debug("Error while writing CSV header", "err", err)
+		return err
+	}
+
+	for _, r := range records {
+		line := []string{strconv.Itoa(r.FromBank), r.FromAccount, strconv.Itoa(r.ToBank), r.ToAccount, fmt.Sprintf("%.2f", r.Amount)}
+		if err := writer.Write(line); err != nil {
+			slog.Debug("Error while writing CSV line", "err", err)
 			return err
 		}
 	}
-	outputFileWriter.Flush()
 
 	return nil
 }
-*/
+
+// ---- HELPERS ----
+
+func (client *Client) readUint32() (uint32, error) {
+	bytes, err := safeio.ReadAll(client.conn, serializer.UINT32_SIZE)
+	if err != nil {
+		return 0, err
+	}
+	return serializer.DeserializeUint32(bytes), nil
+}
+
+func (client *Client) readUint64AsInt(fieldName string) (int, error) {
+	bytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE)
+	if err != nil {
+		slog.Debug("While reading field", "field", fieldName, "err", err)
+		return 0, err
+	}
+	return int(serializer.DeserializeUint64(bytes)), nil
+}
+
+func (client *Client) readLengthPrefixedString(fieldName string) (string, error) {
+	length, err := client.readUint32()
+	if err != nil {
+		slog.Debug("While reading string length", "field", fieldName, "err", err)
+		return "", err
+	}
+	bytes, err := safeio.ReadAll(client.conn, length)
+	if err != nil {
+		slog.Debug("While reading string bytes", "field", fieldName, "err", err)
+		return "", err
+	}
+	return serializer.DeserializeString(bytes), nil
+}
+
+func (client *Client) readFloat64(fieldName string) (float64, error) {
+	bytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE)
+	if err != nil {
+		slog.Debug("While reading field", "field", fieldName, "err", err)
+		return 0, err
+	}
+	return serializer.DeserializeFloat64(bytes), nil
+}

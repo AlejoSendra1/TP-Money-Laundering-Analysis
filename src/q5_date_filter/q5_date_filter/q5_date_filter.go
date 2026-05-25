@@ -77,7 +77,6 @@ func (q5DateFilter *Q5DateFilter) handleMessage(msg *middleware.Message, ack fun
 }
 
 func (q5DateFilter *Q5DateFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Sending end of record message, clientID", clientID)
 	if err := q5DateFilter.sendOutput([]transaction.Transaction{}, clientID); err != nil {
 		return err
 	}
@@ -94,7 +93,6 @@ func (q5DateFilter *Q5DateFilter) handleDataMessage(transactionRecords []transac
 	}
 
 	if len(transactions) != 0 {
-		slog.Info("Sending data message", "clientID", clientID, "transactions", transactions)
 		if err := q5DateFilter.sendOutput(transactions, clientID); err != nil {
 			return err
 		}

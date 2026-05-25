@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	//"errors"
-
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -33,6 +31,18 @@ type MessageClient struct {
 	ClientID int64         `json:"client_id"`
 	MsgType  MsgType       `json:"msg_type"`
 	Data     []interface{} `json:"data"`
+}
+
+type querySerializer func(transaction.QueryResult) ([]interface{}, error)
+type queryDeserializer func([]interface{}) (interface{}, error)
+
+var querySerializers = map[transaction.QueryID]querySerializer{
+	transaction.Query1: serializeQuery1,
+	// transaction.Query2: serializeQuery2,
+}
+var queryDeserializers = map[transaction.QueryID]queryDeserializer{
+	transaction.Query1: deserializeQuery1,
+	// transaction.Query2: deserializeQuery2,
 }
 
 func serializeJson(messageClient MessageClient) ([]byte, error) {
@@ -82,6 +92,30 @@ func DeserializeEOR(data []interface{}) (bool, string, error) {
 		return false, "", fmt.Errorf("Unexpected data in eor msg, expected sender string, received data %v", data)
 	}
 	return mustPropagate, sender, nil
+}
+
+func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryResult) (*middleware.Message, error) {
+	serializer, ok := querySerializers[queryResult.QueryID]
+	if !ok {
+		return nil, fmt.Errorf("type of query not supported for serialize: %d", queryResult.QueryID)
+	}
+
+	serializedTransactions, err := serializer(queryResult)
+	if err != nil {
+		return nil, err
+	}
+
+	data := []interface{}{
+		int(queryResult.QueryID),
+		serializedTransactions,
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+	return &message, nil
 }
 
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
@@ -145,6 +179,82 @@ func DeserializeTransactionBatch(data []interface{}) ([]transaction.Transaction,
 	return transactions, nil
 }
 
+func DeserializeQueryResultMessage(message *middleware.Message) (int64, *transaction.QueryResult, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing results query message body: %w", err)
+	}
+
+	queryIDFloat, ok := messageClient.Data[0].(float64)
+	if !ok {
+		return 0, nil, false, fmt.Errorf("deserializing invalid query id")
+	}
+	queryID := transaction.QueryID(queryIDFloat)
+
+	transactionRecords, ok := messageClient.Data[1].([]interface{})
+	if !ok {
+		return 0, nil, false, fmt.Errorf("deserializing invalid transactions payload")
+	}
+
+	deserializer, ok := queryDeserializers[queryID]
+	if !ok {
+		return 0, nil, false, fmt.Errorf("unsupported query id for deserialization: %d", queryID)
+	}
+
+	finalTransactions, err := deserializer(transactionRecords)
+	if err != nil {
+		return 0, nil, false, err
+	}
+	return messageClient.ClientID, &transaction.QueryResult{
+		QueryID:      queryID,
+		Transactions: finalTransactions,
+	}, len(transactionRecords) == 0, nil
+}
+
+func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages []transaction.PaymentFormatAverage) (*middleware.Message, error) {
+	serializedRecords := []interface{}{}
+
+	for _, rec := range paymentFormatAverages {
+		datum := []interface{}{
+			rec.PaymentFormat,
+			rec.Average,
+			rec.Count,
+		}
+		serializedRecords = append(serializedRecords, datum)
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	if err != nil {
+		return nil, fmt.Errorf("serializing payment format averages: %w", err)
+	}
+
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+func DeserializePaymentFormatAverageMessage(message *middleware.Message) (int64, []transaction.PaymentFormatAverage, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing payment format average body: %w", err)
+	}
+
+	records := make([]transaction.PaymentFormatAverage, 0, len(messageClient.Data))
+	for _, datum := range messageClient.Data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 3 {
+			return 0, nil, false, fmt.Errorf("invalid structure inside payment format average record")
+		}
+
+		rec := transaction.PaymentFormatAverage{
+			PaymentFormat: fields[0].(string),
+			Average:       fields[1].(float64),
+			Count:         int(fields[2].(float64)),
+		}
+		records = append(records, rec)
+	}
+
+	return messageClient.ClientID, records, len(records) == 0, nil
+}
+
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.
 func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, error) {
 	fields, ok := datum.([]interface{})
@@ -183,6 +293,40 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 		Currency:      currency,
 		PaymentFormat: paymentFormat,
 	}, nil
+}
+
+// --- Serializer/Deserializer  ---
+
+func serializeQuery1(qr transaction.QueryResult) ([]interface{}, error) {
+	serialized := []interface{}{}
+	records, ok := qr.Transactions.([]transaction.LowAmountTransfer)
+	if !ok {
+		return nil, fmt.Errorf("serializeQuery1: unexpected transactions type: %T", qr.Transactions)
+	}
+	for _, r := range records {
+		datum := []interface{}{r.FromBank, r.FromAccount, r.ToBank, r.ToAccount, r.Amount}
+		serialized = append(serialized, datum)
+	}
+	return serialized, nil
+}
+
+func deserializeQuery1(records []interface{}) (interface{}, error) {
+	transactions := make([]transaction.LowAmountTransfer, 0, len(records))
+	for _, datum := range records {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 5 {
+			return nil, fmt.Errorf("deserializing invalid structure for results query 1")
+		}
+		tx := transaction.LowAmountTransfer{
+			FromBank:    int(fields[0].(float64)),
+			FromAccount: fields[1].(string),
+			ToBank:      int(fields[2].(float64)),
+			ToAccount:   fields[3].(string),
+			Amount:      fields[4].(float64),
+		}
+		transactions = append(transactions, tx)
+	}
+	return transactions, nil
 }
 
 // ---------------------------------------------------------

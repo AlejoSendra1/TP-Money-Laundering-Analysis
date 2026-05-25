@@ -106,3 +106,8 @@ func (qm *QueueMiddleware) BindToTopics(exchangeName string, topic string) error
 func (qm *QueueMiddleware) Close() error {
 	return qm.close()
 }
+
+func (qm *QueueMiddleware) SendWithKeys(keys []string, msg Message) error {
+	// Aca es innecesario las keys, es solo para cumplir con la interfaz
+	return qm.Send(msg)
+}

@@ -20,7 +20,7 @@ type DateFilterConfig struct {
 }
 
 type DateFilter struct {
-	inputExchange   middleware.Middleware
+	inputQueue      middleware.Middleware
 	outputExchanges map[string]middleware.Middleware
 	config          DateFilterConfig
 	approved        int
@@ -29,24 +29,25 @@ type DateFilter struct {
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-	// TODO: Aca el nombre del exchange tiene que coincidir con el de usd filter,
-	// y cada instancia Date Filter debe usar la misma InputQueue
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputExchangeName, []string{config.InputTopic}, connSettings)
+
+	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueue, connSettings)
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: Aca el nombre del exchange tiene que coincidir con el de group,
-	// sum y transaction saver
+	err = inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
+	if err != nil {
+		inputQueue.Close()
+		return nil, err
+	}
 	outputExchangeTopic1, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic1}, connSettings)
 	if err != nil {
-		inputExchange.Close()
+		inputQueue.Close()
 		return nil, err
 	}
 
 	outputExchangeTopic2, err := middleware.CreateExchangeMiddleware("config.OutputExchangeName", []string{config.OutputTopic2}, connSettings) // solo para probar
 	if err != nil {
-		inputExchange.Close()
+		inputQueue.Close()
 		outputExchangeTopic1.Close()
 		return nil, err
 	}
@@ -57,7 +58,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 	}
 
 	return &DateFilter{
-		inputExchange:   inputExchange,
+		inputQueue:      inputQueue,
 		outputExchanges: outputExchanges,
 		config:          config,
 		approved:        0,
@@ -66,7 +67,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 }
 
 func (dateFilter *DateFilter) Run() {
-	dateFilter.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+	dateFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		dateFilter.handleMessage(&msg, ack, nack)
 	})
 }
@@ -126,6 +127,7 @@ func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
 			return err
 		}
 	}
+	slog.Info("Sent EOF record message", "clientID", clientID)
 	return nil
 }
 

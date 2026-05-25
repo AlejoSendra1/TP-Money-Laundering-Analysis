@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
-	"time"
 
 	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/common/messageprotocol/external"
@@ -30,7 +29,7 @@ type Gateway struct {
 	batchCounter   int64 // para debug porposes
 	registry       clientregistry.ClientRegistry
 	inputQueue     middleware.Middleware
-	OutputExchange middleware.Middleware
+	outputExchange middleware.Middleware
 	listener       net.Listener
 	running        atomic.Bool
 }
@@ -56,7 +55,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
-	gateway := &Gateway{batchCounter: 0, OutputExchange: outputExchange, inputQueue: inputQueue, listener: listener}
+	gateway := &Gateway{batchCounter: 0, outputExchange: outputExchange, inputQueue: inputQueue, listener: listener}
 	gateway.running.Store(true)
 	return gateway, nil
 }
@@ -89,7 +88,7 @@ func (gateway *Gateway) Run() error {
 		go gateway.handleClientRequest(client)
 	}
 
-	gateway.OutputExchange.StopConsuming()
+	gateway.outputExchange.StopConsuming()
 	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
 		for _, client := range clients {
 			client.Conn.Close()
@@ -145,45 +144,54 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 
 	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
 		for i, client := range clients {
-			slog.Debug("A implementar la lectura de las respuestas a enviar al client")
-			slog.Debug("se removera al cliente en 20 s", i, client)
-			time.Sleep(20 * time.Second)
-			/*
-				fruitTop, err := client.Handler.DeserializeResultMessage(&msg)
-				if err != nil {
-					slog.Debug("While reading from output queue", "err", err)
-					nack()
-					gateway.outputQueue.StopConsuming()
-					return
-				}
-
-				// The message handler can't process this message
-				if fruitTop == nil {
-					continue
-				}
-
-				if err := external.WriteFruitTop(client.Conn, fruitTop); err != nil {
-					slog.Debug("While writing FRUIT_TOP message", "err", err)
-					return
-				}
-				msgType, err := external.ReadMsgType(client.Conn)
-				if err != nil {
-					slog.Debug("While reading message type", "err", err)
-					return
-				}
-				if msgType != external.Ack {
-					slog.Debug("Expected ACK message")
-					return
-				}
-				clientIndex = i
+			QueriesResult, wasProcessed, err := client.Handler.DeserializeResultMessage(&msg)
+			if err != nil {
+				slog.Debug("While reading from output queue", "err", err)
+				nack()
+				gateway.outputExchange.StopConsuming()
 				return
-			*/
+			}
+			// Si el mensaje no pertenece al dueño, se skipea
+			if QueriesResult == nil && !wasProcessed {
+				continue
+			}
+
+			// Si devolvió datos pero no es isAllDone, significa que el handler ya guardó el lote
+			// internamente en su mapa, pero todavía faltan más resultados de queries.
+			if wasProcessed && QueriesResult == nil {
+				clientIndex = -2 // Flag interno para saber que fue procesado pero no terminó
+				return
+			}
+
+			// Si llego aca, significa es el cliente dueño del mensaje, y que ya tiene todas las queries resueltas
+			if err := external.WriteQueriesResult(client.Conn, QueriesResult); err != nil {
+				slog.Debug("While writing queries result message", "err", err)
+				return
+			}
+			msgType, err := external.ReadMsgType(client.Conn)
+			if err != nil {
+				slog.Debug("While reading message type", "err", err)
+				return
+			}
+			if msgType != external.Ack {
+				slog.Debug("Expected ACK message")
+				return
+			}
+			clientIndex = i
+			return
 		}
 		slog.Warn("No client handler could process this message")
 		nack()
 	})
 
+	// El mensaje fue procesado, pero no fue enviado al cliente
+	if clientIndex == -2 {
+		ack() // El dato ya fue procesado por el gateway
+		return
+	}
+
 	if clientIndex >= 0 {
+		slog.Info("Client received all result queries, removing from registry", "clientIndex", clientIndex)
 		gateway.registry.Remove(clientIndex)
 		ack()
 		return
@@ -201,7 +209,7 @@ func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.Clie
 		slog.Debug("While serializing data message", "err", err)
 		return err
 	}
-	if err := gateway.OutputExchange.Send(*message); err != nil {
+	if err := gateway.outputExchange.Send(*message); err != nil {
 		slog.Debug("While sending data message", "err", err)
 		return err
 	}
@@ -223,7 +231,7 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 		slog.Debug("While serializing END_OF_RECORDS message", "err", err)
 		return err
 	}
-	if err := gateway.OutputExchange.Send(*message); err != nil {
+	if err := gateway.outputExchange.Send(*message); err != nil {
 		slog.Debug("While sending eof message", "err", err)
 		return err
 	}

@@ -21,7 +21,7 @@ type USDFilterConfig struct {
 }
 
 type USDFilter struct {
-	inputExchange  middleware.Middleware
+	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
 	config         USDFilterConfig
 	approved       int // para debug
@@ -30,19 +30,23 @@ type USDFilter struct {
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputExchangeName, []string{config.InputTopic}, connSettings)
+	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueue, connSettings)
 	if err != nil {
 		return nil, err
 	}
-
+	err = inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
+	if err != nil {
+		inputQueue.Close()
+		return nil, err
+	}
 	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
 	if err != nil {
-		inputExchange.Close()
+		inputQueue.Close()
 		return nil, err
 	}
 
 	return &USDFilter{
-		inputExchange:  inputExchange,
+		inputQueue:     inputQueue,
 		outputExchange: outputExchange,
 		config:         config,
 		approved:       0,
@@ -51,7 +55,7 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 }
 
 func (usdFilter *USDFilter) Run() {
-	usdFilter.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+	usdFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		usdFilter.handleMessage(&msg, ack, nack)
 	})
 }
@@ -126,7 +130,6 @@ func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.T
 }
 
 func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
-	// TODO: Actualizar SerializeMessage con transaction en lugar de FruitItem
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)

@@ -1,18 +1,4 @@
 services:
-  q3_amount_filter_0:
-    build:
-      context: ./src/
-      dockerfile: amount_filter/Dockerfile # ojo cuando se junten las querys
-    container_name: q3_amount_filter_0
-    depends_on:
-    - gateway
-    environment:
-    - MOM_HOST=rabbitmq
-    - CONTROL_TOPIC=promediator_control_topic
-    - INPUT_QUEUE=q3_amount_filter_queue
-    - INPUT_TOPIC=usd_later_period_transactions_topic
-    - OUTPUT_TOPIC=results_topic
-    - PYTHONUNBUFFERED=1
   client_0:
     build:
       context: ./src/
@@ -20,8 +6,9 @@ services:
     container_name: client_0
     depends_on:
     - usd_filter_0
+    - usd_filter_1
     environment:
-    - BATCH_SIZE = 10
+    - BATCH_SIZE=10
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
@@ -37,7 +24,22 @@ services:
     container_name: date_filter_0
     depends_on:
     - sum_0
-    - transactions_saver_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=date_filter_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_EXCHANGE_NAME=date_exchange
+    - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
+    - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+  date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: date_filter/Dockerfile
+    container_name: date_filter_1
+    depends_on:
+    - sum_0
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -64,18 +66,6 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-  promediator_0:
-    build:
-      context: ./src/
-      dockerfile: promediator/Dockerfile
-    container_name: promediator_0
-    depends_on:
-    - transactions_saver_0
-    environment:
-    - MOM_HOST=rabbitmq
-    - INPUT_TOPIC=amounts_sum_results_topic
-    - OUTPUT_TOPIC=promediator_control_topic
-    - PYTHONUNBUFFERED=1
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -100,25 +90,34 @@ services:
     depends_on:
     - promediator_0
     environment:
+    - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_QUEUE=sum_queue
     - INPUT_TOPIC=usd_early_period_transactions_topic
-    - OUTPUT_TOPIC=amounts_sum_results_topic
-    - PYTHONUNBUFFERED=1
-  transactions_saver_0:
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - CONTROL_EXCHANGE_NAME=sum_control_exchange
+    - CONTROL_EXCHANGE_TOPIC=sum_control_topic
+    - OUTPUT_EXCHANGE_NAME=sum_results_exchange
+    - PROMEDIATOR_AMOUNT=2
+    - PROMEDIATOR_PREFIX=promediator
+  sum_1:
     build:
       context: ./src/
-      dockerfile: transactions_saver/Dockerfile
-    container_name: transactions_saver_0
+      dockerfile: sum/Dockerfile
+    container_name: sum_1
     depends_on:
-    - q3_amount_filter_0
+    - promediator_0
     environment:
+    - MOM_PORT=5672
     - MOM_HOST=rabbitmq
-    - INPUT_QUEUE=transactions_saver_queue
-    - INPUT_TOPIC=usd_later_period_transactions_topic
-    - CONTROL_TOPIC=promediator_control_topic
-    - OUTPUT_TOPIC=stored_transactions_topic
-    - PYTHONUNBUFFERED=1
+    - INPUT_QUEUE=sum_queue
+    - INPUT_TOPIC=usd_early_period_transactions_topic
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - CONTROL_EXCHANGE_NAME=sum_control_exchange
+    - CONTROL_EXCHANGE_TOPIC=sum_control_topic
+    - OUTPUT_EXCHANGE_NAME=sum_results_exchange
+    - PROMEDIATOR_AMOUNT=2
+    - PROMEDIATOR_PREFIX=promediator
   usd_filter_0:
     build:
       context: ./src/
@@ -126,6 +125,7 @@ services:
     container_name: usd_filter_0
     depends_on:
     - date_filter_0
+    - date_filter_1
     environment:
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
@@ -134,3 +134,55 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+  usd_filter_1:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_1
+    depends_on:
+    - date_filter_0
+    - date_filter_1
+    environment:
+    - INPUT_QUEUE=usd_filter_queue
+    - INPUT_EXCHANGE_NAME=transactions_exchange
+    - INPUT_TOPIC=transactions_topic
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=usd_exchange
+    - OUTPUT_TOPIC=usd_transactions_topic
+  promediator_0:
+    build:
+      context: ./src/
+      dockerfile: promediator/Dockerfile
+    container_name: promediator_0
+    depends_on:
+    - gateway
+    environment:
+    - ID=0
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - INPUT_EXCHANGE_NAME=sum_results_exchange
+    - OUTPUT_EXCHANGE_NAME=promediator_exchange
+    - SUM_AMOUNT=2
+    - PROMEDIATOR_PREFIX=promediator
+    - Q3_AMOUNT_FILTER_AMOUNT=1
+    - Q3_AMOUNT_FILTER_PREFIX=q3_amount_filter
+    - TRANSACTION_SAVER_PREFIX=transaction_saver
+  promediator_1:
+    build:
+      context: ./src/
+      dockerfile: promediator/Dockerfile
+    container_name: promediator_1
+    depends_on:
+    - gateway
+    environment:
+    - ID=1
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - INPUT_EXCHANGE_NAME=sum_results_exchange
+    - OUTPUT_EXCHANGE_NAME=promediator_exchange
+    - SUM_AMOUNT=2
+    - PROMEDIATOR_PREFIX=promediator
+    - Q3_AMOUNT_FILTER_AMOUNT=1
+    - Q3_AMOUNT_FILTER_PREFIX=q3_amount_filter
+    - TRANSACTION_SAVER_PREFIX=transaction_saver
