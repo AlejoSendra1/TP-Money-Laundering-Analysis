@@ -59,6 +59,16 @@ func loadConfig() (q3_amount_filter.Q3AmountFilterConfig, error) {
 		return q3_amount_filter.Q3AmountFilterConfig{}, errors.New("TRANSACTIONS_SAVER_AMOUNT environment variable is required and must be a number")
 	}
 
+	controlExchange := os.Getenv("CONTROL_EXCHANGE_NAME")
+	if controlExchange == "" {
+		return q3_amount_filter.Q3AmountFilterConfig{}, errors.New("CONTROL_EXCHANGE_NAME environment variable is required")
+	}
+
+	controlTopic := os.Getenv("CONTROL_TOPIC_NAME")
+	if controlTopic == "" {
+		return q3_amount_filter.Q3AmountFilterConfig{}, errors.New("CONTROL_TOPIC_NAME environment variable is required")
+	}
+
 	return q3_amount_filter.Q3AmountFilterConfig{
 		MomHost:                  momHost,
 		MomPort:                  momPort,
@@ -69,6 +79,8 @@ func loadConfig() (q3_amount_filter.Q3AmountFilterConfig, error) {
 		PromediatorAmount:        promediatorAmount,
 		NotificationExchange:     notificationExchange,
 		NotificationTopic:        notificationTopic,
+		ControlExchange:          controlExchange,
+		ControlTopic:             controlTopic,
 		TransactionsSaverAmount:  transactionsSaverAmount,
 	}, nil
 }

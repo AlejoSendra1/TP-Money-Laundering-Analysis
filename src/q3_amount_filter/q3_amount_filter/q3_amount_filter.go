@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -17,6 +18,8 @@ type Q3AmountFilterConfig struct {
 	InputQueue               string
 	NotificationExchange     string
 	NotificationTopic        string
+	ControlExchange          string
+	ControlTopic             string
 	PromediatorAmount        int
 	TransactionsSaverAmount  int
 	OutputQueue              string
@@ -27,6 +30,7 @@ type Q3AmountFilter struct {
 	inputQueue           middleware.Middleware
 	outputQueue          middleware.Middleware
 	notificationExchange middleware.Middleware
+	controlExchange      middleware.Middleware
 	eofCounterAvg        map[int64]int
 	eofCounterTs         map[int64]int
 	averages             map[int64]map[string]float64
@@ -56,11 +60,20 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		return nil, err
 	}
 
-	notificationExchange, err := middleware.NewExchangeMiddleware(config.NotificationExchange, []string{config.NotificationTopic}, connSettings)
+	notificationExchange, err := middleware.CreateExchangeMiddleware(config.NotificationExchange, []string{config.NotificationTopic}, connSettings)
 	if err != nil {
 		inputPromediator.Close()
 		inputTransactionSaver.Close()
 		outputQueue.Close()
+		return nil, err
+	}
+
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{config.ControlTopic}, connSettings)
+	if err != nil {
+		inputPromediator.Close()
+		inputTransactionSaver.Close()
+		outputQueue.Close()
+		notificationExchange.Close()
 		return nil, err
 	}
 
@@ -69,8 +82,9 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		inputQueue:           inputTransactionSaver,
 		outputQueue:          outputQueue,
 		notificationExchange: notificationExchange,
+		controlExchange:      controlExchange,
 		averages:             make(map[int64]map[string]float64),
-		qtyTx:                make(map[int64]int),
+		qtyTx:                make(map[int64]int), // Para debug
 		eofCounterAvg:        make(map[int64]int),
 		eofCounterTs:         make(map[int64]int),
 		config:               config,
@@ -80,6 +94,10 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 func (q3AmountFilter *Q3AmountFilter) Run() {
 	go q3AmountFilter.promediatorExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		q3AmountFilter.handlePromediatorMessage(&msg, ack, nack)
+	})
+
+	go q3AmountFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		q3AmountFilter.handleControlMessage(&msg, ack, nack)
 	})
 
 	q3AmountFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
@@ -111,9 +129,15 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(msg *middleware.M
 
 func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(clientID int64) error {
 	slog.Info("Averages EOF arrived from promediator", "clientID", clientID)
-
+	needNotify := false
+	q3AmountFilter.mu.Lock()
 	q3AmountFilter.eofCounterAvg[clientID] += 1
 	if q3AmountFilter.eofCounterAvg[clientID] == q3AmountFilter.config.PromediatorAmount {
+		needNotify = true
+	}
+	q3AmountFilter.mu.Unlock()
+
+	if needNotify {
 		msg, err := inner.SerializePaymentFormatAverageMessage(clientID, []transaction.PaymentFormatAverage{})
 		if err != nil {
 			slog.Error("While serializing notification message", "err", err)
@@ -131,6 +155,8 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 }
 
 func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) {
+	// Ensure initialization happens under lock to avoid races
+	q3AmountFilter.mu.Lock()
 	if _, ok := q3AmountFilter.averages[clientID]; !ok {
 		slog.Info("New average arrived from promediator", "clientID", clientID)
 		q3AmountFilter.averages[clientID] = make(map[string]float64)
@@ -138,9 +164,46 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormat
 		q3AmountFilter.eofCounterAvg[clientID] = 0
 		q3AmountFilter.eofCounterTs[clientID] = 0
 	}
-
 	for _, rec := range paymentFormatAverageRecords {
 		q3AmountFilter.averages[clientID][rec.PaymentFormat] = rec.Average
+	}
+	q3AmountFilter.mu.Unlock()
+}
+
+func (q3AmountFilter *Q3AmountFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Info("While deserializing control message", "err", err)
+		nack()
+		return
+	}
+
+	slog.Info("Receive EOF from other instance")
+	clientID := controlMessage.ClientID
+
+	shouldSendEOF := false
+	var qty int
+	q3AmountFilter.mu.Lock()
+	q3AmountFilter.eofCounterTs[clientID] += 1
+	if q3AmountFilter.eofCounterTs[clientID] == q3AmountFilter.config.TransactionsSaverAmount {
+		shouldSendEOF = true
+		qty = q3AmountFilter.qtyTx[clientID]
+	}
+	q3AmountFilter.mu.Unlock()
+
+	if shouldSendEOF {
+		eofResult := transaction.QueryResult{
+			QueryID:      transaction.Query3,
+			Transactions: []transaction.ThresholdFilteredTransfer{},
+		}
+		if err := q3AmountFilter.sendOutput(eofResult, clientID); err != nil {
+			return
+		}
+		slog.Info("Sent EOF to gateway", "clientID", clientID)
+		slog.Info("Size transactions sent", "clientID", clientID, "qtyTx", qty)
+		q3AmountFilter.cleanupClient(clientID)
+	} else {
+		slog.Info("Waiting for more transactions saver EOFs", "clientID", clientID)
 	}
 }
 
@@ -172,30 +235,26 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(msg *middlew
 
 func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverEndOfRecordMessage(clientID int64) error {
 	slog.Info("Received Transaction Saver EOF", "clientID", clientID)
-
-	q3AmountFilter.eofCounterTs[clientID] += 1
-	if q3AmountFilter.eofCounterTs[clientID] == q3AmountFilter.config.TransactionsSaverAmount {
-		eofResult := transaction.QueryResult{
-			QueryID:      transaction.Query3,
-			Transactions: []transaction.ThresholdFilteredTransfer{},
-		}
-		if err := q3AmountFilter.sendOutput(eofResult, clientID); err != nil {
-			return err
-		}
-		slog.Info("Sent EOF to gateway", "clientID", clientID)
-		slog.Info("Size transactions sent", "clientID", clientID, "qtyTx", q3AmountFilter.qtyTx[clientID])
-	} else {
-		slog.Info("Waiting for more transactions saver EOFs", "clientID", clientID)
+	controlEOFMessage := control.ControlMessage{Type: control.TypeEOF, ClientID: clientID}
+	message, err := control.SerializeControlMessage(controlEOFMessage)
+	if err != nil {
+		slog.Debug("While serializing control message", "err", err, "clientID", clientID)
+		return err
 	}
-
+	if err := q3AmountFilter.controlExchange.Send(*message); err != nil {
+		slog.Debug("While sending control message", "err", err, "clientID", clientID)
+		return err
+	}
 	return nil
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverDataMessage(transactionRecords []transaction.ThresholdFilteredTransfer, clientID int64) error {
-	if _, ok := q3AmountFilter.averages[clientID]; !ok {
-		slog.Info("New client arrived from transaction saver", "clientID", clientID)
-		q3AmountFilter.averages[clientID] = map[string]float64{}
-		slog.Info("ESTA MAL; NO ME DEBERIA LLEGAR LAS TRANSACCIONES DE UN CLIENTE QUE AUN NO SE SU PROMEDIO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+	q3AmountFilter.mu.Lock()
+	_, ok := q3AmountFilter.averages[clientID]
+	q3AmountFilter.mu.Unlock()
+
+	if !ok {
+		slog.Info("New client arrived from transaction saver without averages", "clientID", clientID)
 		return fmt.Errorf("transactions arrived for client %d before receiving averages", clientID)
 	}
 
@@ -206,10 +265,22 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverDataMessage(transact
 }
 
 func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []transaction.ThresholdFilteredTransfer, clientID int64) error {
-	clientAverages := q3AmountFilter.averages[clientID]
+	q3AmountFilter.mu.Lock()
+	clientAverages, ok := q3AmountFilter.averages[clientID]
+	if !ok {
+		q3AmountFilter.mu.Unlock()
+		slog.Info("No averages for client during processing", "clientID", clientID)
+		return fmt.Errorf("no averages for client %d", clientID)
+	}
+	averagesCopy := make(map[string]float64, len(clientAverages))
+	for k, v := range clientAverages {
+		averagesCopy[k] = v
+	}
+	q3AmountFilter.mu.Unlock()
+
 	transactions := make([]transaction.ThresholdFilteredTransfer, 0, len(transactionsRecord))
 	for _, tx := range transactionsRecord {
-		avg, exists := clientAverages[tx.PaymentFormat]
+		avg, exists := averagesCopy[tx.PaymentFormat]
 		if !exists || avg == 0 {
 			slog.Info("Average not found for payment format, skipping transaction", "clientID", clientID, "paymentFormat", tx.PaymentFormat)
 			continue
@@ -223,8 +294,12 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 			})
 		}
 	}
-	q3AmountFilter.qtyTx[clientID] += len(transactions)
-	if len(transactions) != 0 {
+
+	if len(transactions) > 0 {
+		q3AmountFilter.mu.Lock()
+		q3AmountFilter.qtyTx[clientID] += len(transactions)
+		q3AmountFilter.mu.Unlock()
+
 		queryResult := transaction.QueryResult{
 			QueryID:      transaction.Query3,
 			Transactions: transactions,
@@ -234,6 +309,15 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 		}
 	}
 	return nil
+}
+
+func (q3AmountFilter *Q3AmountFilter) cleanupClient(clientID int64) {
+	q3AmountFilter.mu.Lock()
+	defer q3AmountFilter.mu.Unlock()
+	delete(q3AmountFilter.averages, clientID)
+	delete(q3AmountFilter.qtyTx, clientID)
+	delete(q3AmountFilter.eofCounterAvg, clientID)
+	delete(q3AmountFilter.eofCounterTs, clientID)
 }
 
 func (q3AmountFilter *Q3AmountFilter) sendOutput(queryResult transaction.QueryResult, clientID int64) error {
