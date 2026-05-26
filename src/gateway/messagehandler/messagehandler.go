@@ -13,6 +13,8 @@ type MessageHandler struct {
 	userId                int64
 	results               map[transaction.QueryID]transaction.QueryResult // Resultados de las querys
 	completedQueryCounter int                                             // Contador de las cantidad de querys terminadas
+	eofCountByQuery       map[transaction.QueryID]int                     // EOFs recibidos por query
+	eofExpectedByQuery    map[transaction.QueryID]int                     // Cantidad de EOFs esperados por query
 }
 
 type accumulatorFunc func(current, incoming any) any
@@ -26,12 +28,14 @@ func appendGeneric[T any](current, incoming any) any {
 var queryAccumulators = map[transaction.QueryID]accumulatorFunc{
 	transaction.Query1: appendGeneric[transaction.LowAmountTransfer]}
 
-func NewMessageHandler() MessageHandler {
+func NewMessageHandler(eofExpectedByQuery map[transaction.QueryID]int) MessageHandler {
 	n := rand.Int64()
 	return MessageHandler{
 		userId:                n,
 		results:               make(map[transaction.QueryID]transaction.QueryResult),
 		completedQueryCounter: 0,
+		eofCountByQuery:       make(map[transaction.QueryID]int),
+		eofExpectedByQuery:    eofExpectedByQuery,
 	}
 }
 
@@ -88,4 +92,29 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 	currentResult.Transactions = accumulator(currentResult.Transactions, queryResult.Transactions)
 	messageHandler.results[queryResult.QueryID] = currentResult
 	return nil, true, nil
+}
+
+func (messageHandler *MessageHandler) DeserializeResultMessage_2(message *middleware.Message) (*transaction.QueriesResult, bool, error) {
+	clientID, queryResult, isEOF, err := inner.DeserializeQueryResultMessage(message)
+	if err != nil {
+		return nil, false, err
+	}
+	if clientID != messageHandler.userId {
+		return nil, false, nil
+	}
+
+	if isEOF {
+		messageHandler.eofCountByQuery[queryResult.QueryID]++
+		expected := messageHandler.eofExpectedByQuery[queryResult.QueryID]
+		if messageHandler.eofCountByQuery[queryResult.QueryID] == expected {
+			delete(messageHandler.eofCountByQuery, queryResult.QueryID)
+			delete(messageHandler.results, queryResult.QueryID)
+		}
+		return nil, true, nil
+	}
+
+	return &transaction.QueriesResult{
+		ClientID: messageHandler.userId,
+		Results:  map[transaction.QueryID]transaction.QueryResult{queryResult.QueryID: *queryResult},
+	}, true, nil
 }
