@@ -8,7 +8,7 @@ services:
     - usd_filter_0
     environment:
     - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input_0.csv
+    - INPUT_FILE=/datasets/input_2_query.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -19,16 +19,43 @@ services:
   q2_counter_0:
     build:
       context: ./src/
-      dockerfile: counter/Dockerfile
+      dockerfile: counter_q2/Dockerfile
     container_name: q2_counter_0
     depends_on:
-    - q2_join_0
+      rabbitmq:
+        condition: service_healthy
     environment:
+    - ID=0
     - MOM_HOST=rabbitmq
-    - INPUT_QUEUE=q2_counter_queue
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
     - INPUT_TOPIC=usd_transactions_topic
-    - OUTPUT_TOPIC=max_amount_counted_topic
-    - PYTHONUNBUFFERED=1
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
+  q2_counter_1:
+    build:
+      context: ./src/
+      dockerfile: counter_q2/Dockerfile
+    container_name: q2_counter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
   gateway:
     build:
       context: ./src/
@@ -49,16 +76,37 @@ services:
   q2_join_0:
     build:
       context: ./src/
-      dockerfile: join/Dockerfile
+      dockerfile: join_q2/Dockerfile
     container_name: q2_join_0
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     environment:
+    - ID=0
     - MOM_HOST=rabbitmq
-    - INPUT_QUEUE=q2_join_queue
-    - INPUT_TOPIC=max_amount_counted_topic
-    - OUTPUT_TOPIC=results_topic
-    - PYTHONUNBUFFERED=1
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=aggregation_q2_queue
+    - QUERY_ID=2
+    - BATCH_SIZE=100
+  q2_join_1:
+    build:
+      context: ./src/
+      dockerfile: join_q2/Dockerfile
+    container_name: q2_join_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=aggregation_q2_queue
+    - QUERY_ID=2
+    - BATCH_SIZE=100
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -75,6 +123,8 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
+    logging:
+      driver: none
   usd_filter_0:
     build:
       context: ./src/
@@ -88,5 +138,5 @@ services:
     - INPUT_TOPIC=transactions_topic
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - OUTPUT_EXCHANGE_NAME=usd_exchange
+    - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
