@@ -33,6 +33,13 @@ type LowAmountTransfer struct {
 	Amount      float64
 }
 
+type ThresholdFilteredTransfer struct {
+	FromBank      int
+	FromAccount   string
+	PaymentFormat string
+	Amount        float64
+}
+
 type PaymentFormatAverage struct {
 	PaymentFormat string
 	Average       float64

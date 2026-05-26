@@ -183,6 +183,27 @@ func DeserializePaymentFormatAverageMessage(message *middleware.Message) (int64,
 	return messageClient.ClientID, records, len(records) == 0, nil
 }
 
+func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers []transaction.ThresholdFilteredTransfer) (*middleware.Message, error) {
+	serializedRecords := []interface{}{}
+
+	for _, rec := range bankPeakTransfers {
+		datum := []interface{}{
+			rec.FromBank,
+			rec.FromAccount,
+			rec.PaymentFormat,
+			rec.Amount,
+		}
+		serializedRecords = append(serializedRecords, datum)
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	if err != nil {
+		return nil, fmt.Errorf("serializing bank peak transfer: %w", err)
+	}
+
+	return &middleware.Message{Body: string(body)}, nil
+}
+
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.
 func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, error) {
 	fields, ok := datum.([]interface{})

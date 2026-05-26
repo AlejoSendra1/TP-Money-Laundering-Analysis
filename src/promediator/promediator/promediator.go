@@ -2,7 +2,6 @@ package promediator
 
 import (
 	"fmt"
-	"hash/fnv"
 	"log/slog"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -10,16 +9,14 @@ import (
 )
 
 type PromediatorConfig struct {
-	Id                     int
-	MomHost                string
-	MomPort                int
-	InputExchangeName      string
-	OutputExchangeName     string
-	SumAmount              int
-	PromediatorPrefix      string
-	Q3AmountFilterAmount   int
-	Q3AmountFilterPrefix   string
-	TransactionSaverPrefix string
+	Id                 int
+	MomHost            string
+	MomPort            int
+	InputExchangeName  string
+	OutputExchangeName string
+	OutputTopic        string
+	SumAmount          int
+	PromediatorPrefix  string
 }
 
 type Promediator struct {
@@ -38,13 +35,7 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		return nil, err
 	}
 
-	keysOutput := []string{}
-	for i := range config.Q3AmountFilterAmount {
-		key := fmt.Sprintf("%s_%d", config.Q3AmountFilterPrefix, i)
-		keysOutput = append(keysOutput, key)
-	}
-	keysOutput = append(keysOutput, config.TransactionSaverPrefix) // Key que le sera util a los transaction saver como notificacion
-	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, keysOutput, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
 	if err != nil {
 		inputExchange.Close()
 		return nil, err
@@ -105,8 +96,11 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64) error {
 				PaymentFormat: average.PaymentFormat,
 				Average:       average.Average / float64(average.Count),
 				Count:         average.Count}
-			key := promediator.getKeyForExchange(clientID, average.PaymentFormat)
-			if err := promediator.sendToOutputExchange([]string{key}, []transaction.PaymentFormatAverage{avg}, clientID); err != nil {
+			msg, err := inner.SerializePaymentFormatAverageMessage(clientID, []transaction.PaymentFormatAverage{avg})
+			if err != nil {
+				return err
+			}
+			if err := promediator.outputExchange.Send(*msg); err != nil {
 				slog.Error("While sending payment format average to output exchange", "err", err, "clientID", clientID, "paymentFormat", average.PaymentFormat)
 				return err
 			}
@@ -173,13 +167,6 @@ func (promediator *Promediator) sendToOutputExchange(keys []string, paymentForma
 		return err
 	}
 	return nil
-}
-
-func (promediator *Promediator) getKeyForExchange(clientID int64, paymentFormat string) string {
-	hash := fnv.New32a()
-	hash.Write([]byte(fmt.Sprintf("%d-%s", clientID, paymentFormat)))
-	idx := int(hash.Sum32()) % promediator.config.Q3AmountFilterAmount
-	return fmt.Sprintf("%s_%d", promediator.config.Q3AmountFilterPrefix, idx)
 }
 
 func (promediator *Promediator) getPaymentFormats(clientID int64) []transaction.PaymentFormatAverage {
