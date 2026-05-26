@@ -2,12 +2,31 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
-
 	"tp_distribuidos/gateway"
 )
+
+func getEOFExpectedByQueryFromEnv() map[int]int {
+	eofExpected := make(map[int]int)
+	for i := 1; i <= 5; i++ {
+		key := fmt.Sprintf("QUERY%d_EOF", i)
+		val := os.Getenv(key)
+		if val == "" {
+			slog.Error("Missing EOF env variable", "key", key)
+			os.Exit(1)
+		}
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			slog.Error("Invalid EOF env variable", "key", key, "value", val)
+			os.Exit(1)
+		}
+		eofExpected[i] = n
+	}
+	return eofExpected
+}
 
 func loadConfig() (gateway.GatewayConfig, error) {
 	inputQueueName := os.Getenv("INPUT_QUEUE")
@@ -45,6 +64,8 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
+	eofExpectedByQuery := getEOFExpectedByQueryFromEnv()
+
 	return gateway.GatewayConfig{
 		InputQueueName:     inputQueueName,
 		OutputExchangeName: outputExchangeName,
@@ -53,6 +74,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		ServerPort:         serverPort,
 		MomHost:            momHost,
 		MomPort:            momPort,
+		EOFExpectedByQuery: eofExpectedByQuery,
 	}, nil
 }
 
