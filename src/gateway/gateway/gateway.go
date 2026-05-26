@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sync/atomic"
+	"strconv"
 	"syscall"
 
 	"tp_distribuidos/clientregistry"
@@ -23,6 +23,7 @@ type GatewayConfig struct {
 	ServerPort         string
 	MomHost            string
 	MomPort            int
+	EOFExpectedByQuery map[int]int
 }
 
 type Gateway struct {
@@ -32,6 +33,7 @@ type Gateway struct {
 	outputExchange middleware.Middleware
 	listener       net.Listener
 	running        atomic.Bool
+	config         GatewayConfig
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -55,7 +57,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
-	gateway := &Gateway{batchCounter: 0, outputExchange: outputExchange, inputQueue: inputQueue, listener: listener}
+	gateway := &Gateway{batchCounter: 0, outputExchange: outputExchange, inputQueue: inputQueue, listener: listener, config: config}
 	gateway.running.Store(true)
 	return gateway, nil
 }
@@ -81,7 +83,7 @@ func (gateway *Gateway) Run() error {
 
 		slog.Info("Client connected...")
 
-		handler := messagehandler.NewMessageHandler()
+		handler := messagehandler.NewMessageHandler(gateway.config.EOFExpectedByQuery)
 		client := clientregistry.ClientState{Conn: conn, Handler: &handler}
 		gateway.registry.Add(client)
 
@@ -136,6 +138,7 @@ loop:
 	}
 }
 
+/*
 func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(), nack func()) {
 	clientIndex := -1
 
@@ -193,6 +196,33 @@ func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(),
 		ack()
 		return
 	}
+}
+*/
+
+func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(), nack func()) {
+	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
+		for _, client := range clients {
+			queriesResult, wasProcessed, err := client.Handler.DeserializeResultMessage_2(&msg)
+			if err != nil {
+				slog.Error("While deserializing result message", "err", err)
+				nack()
+				return
+			}
+			if !wasProcessed {
+				continue
+			}
+			if queriesResult != nil {
+				if err := external.WriteQueriesResult(client.Conn, queriesResult); err != nil {
+					slog.Error("While writing queries result to client", "err", err)
+					nack()
+					return
+				}
+			}
+			ack()
+			return
+		}
+		nack()
+	})
 }
 
 func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
