@@ -27,7 +27,7 @@ type TransactionsSaverConfig struct {
 	NotificationTopic        string
 	ControlExchangeName      string
 	ControlTopic             string
-	PromediatorAmount        int
+	Q3AmountFilterAmount     int
 }
 
 type TransactionsSaver struct {
@@ -86,6 +86,7 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()
+		controlExchange.Close()
 		return nil, err
 	}
 	return &TransactionsSaver{
@@ -168,7 +169,7 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessage(msg *middl
 
 	clientState.mu.Lock()
 	clientState.notificationEOFs++
-	if clientState.notificationEOFs != transactionsSaver.config.PromediatorAmount {
+	if clientState.notificationEOFs != transactionsSaver.config.Q3AmountFilterAmount {
 		clientState.mu.Unlock()
 		ack()
 		return

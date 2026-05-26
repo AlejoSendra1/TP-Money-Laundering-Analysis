@@ -54,9 +54,9 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 		return transactions_saver.TransactionsSaverConfig{}, errors.New("NOTIFICATION_EXCHANGE_NAME environment variable is required")
 	}
 
-	promediatorAmount, err := strconv.Atoi(os.Getenv("PROMEDIATOR_AMOUNT"))
+	q3AmountFilterAmount, err := strconv.Atoi(os.Getenv("Q3_AMOUNT_FILTER_AMOUNT"))
 	if err != nil {
-		return transactions_saver.TransactionsSaverConfig{}, errors.New("PROMEDIATOR_AMOUNT environment variable is required and must be a number")
+		return transactions_saver.TransactionsSaverConfig{}, errors.New("Q3_AMOUNT_FILTER_AMOUNT environment variable is required and must be a number")
 	}
 	notificationTopic := os.Getenv("NOTIFICATION_TOPIC_NAME")
 	if notificationTopic == "" {
@@ -85,7 +85,7 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 		NotificationTopic:        notificationTopic,
 		ControlExchangeName:      controlExchangeName,
 		ControlTopic:             controlTopic,
-		PromediatorAmount:        promediatorAmount,
+		Q3AmountFilterAmount:     q3AmountFilterAmount,
 	}, nil
 }
 
