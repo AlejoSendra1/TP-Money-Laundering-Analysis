@@ -24,13 +24,22 @@ type Transaction struct {
 	Currency      string    // Moneda original (ej: "USD", "EUR", "ARS")
 	PaymentFormat string    // Formato (ej: "Wire", "ACH", "Cheque")
 }
-
 type LowAmountTransfer struct {
 	FromBank    int
 	FromAccount string
 	ToBank      int
 	ToAccount   string
 	Amount      float64
+}
+type PaymentFormatAverage struct {
+	PaymentFormat string
+	Average       float64
+	Count         int
+}
+type MaxBankTransaction struct {
+	BankCode int
+	Account  string
+	Amount   float64
 }
 
 type ThresholdFilteredTransfer struct {
@@ -39,18 +48,10 @@ type ThresholdFilteredTransfer struct {
 	PaymentFormat string
 	Amount        float64
 }
-
-type PaymentFormatAverage struct {
-	PaymentFormat string
-	Average       float64
-	Count         int
-}
-
 type QueryResult struct {
 	QueryID      QueryID
 	Transactions interface{}
 }
-
 type QueriesResult struct {
 	ClientID int64
 	Results  map[QueryID]QueryResult
