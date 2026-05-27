@@ -41,6 +41,13 @@ type MaxBankTransaction struct {
 	Account  string
 	Amount   float64
 }
+
+type ThresholdFilteredTransfer struct {
+	FromBank      int
+	FromAccount   string
+	PaymentFormat string
+	Amount        float64
+}
 type QueryResult struct {
 	QueryID      QueryID
 	Transactions interface{}

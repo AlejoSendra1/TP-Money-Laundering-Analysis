@@ -19,11 +19,13 @@ type queryDeserializer func([]interface{}) (interface{}, error)
 
 var querySerializers = map[transaction.QueryID]querySerializer{
 	transaction.Query1: serializeQuery1,
+	transaction.Query3: serializeQuery3,
 	transaction.Query2: serializeQuery2,
 	transaction.Query5: serializeQuery5,
 }
 var queryDeserializers = map[transaction.QueryID]queryDeserializer{
 	transaction.Query1: deserializeQuery1,
+	transaction.Query3: deserializeQuery3,
 	transaction.Query2: deserializeQuery2,
 	transaction.Query5: deserializeQuery5,
 }
@@ -185,6 +187,52 @@ func DeserializePaymentFormatAverageMessage(message *middleware.Message) (int64,
 	return messageClient.ClientID, records, len(records) == 0, nil
 }
 
+func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers []transaction.ThresholdFilteredTransfer) (*middleware.Message, error) {
+	serializedRecords := []interface{}{}
+
+	for _, rec := range bankPeakTransfers {
+		datum := []interface{}{
+			rec.FromBank,
+			rec.FromAccount,
+			rec.PaymentFormat,
+			rec.Amount,
+		}
+		serializedRecords = append(serializedRecords, datum)
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	if err != nil {
+		return nil, fmt.Errorf("serializing bank peak transfer: %w", err)
+	}
+
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+func DeserializeThresholdFilteredTransferMessage(message *middleware.Message) (int64, []transaction.ThresholdFilteredTransfer, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing threshold filtered transfer body: %w", err)
+	}
+
+	records := make([]transaction.ThresholdFilteredTransfer, 0, len(messageClient.Data))
+	for _, datum := range messageClient.Data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 4 {
+			return 0, nil, false, fmt.Errorf("invalid structure inside payment format average record")
+		}
+
+		rec := transaction.ThresholdFilteredTransfer{
+			FromBank:      int(fields[0].(float64)),
+			FromAccount:   fields[1].(string),
+			PaymentFormat: fields[2].(string),
+			Amount:        fields[3].(float64),
+		}
+		records = append(records, rec)
+	}
+
+	return messageClient.ClientID, records, len(records) == 0, nil
+}
+
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.
 func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, error) {
 	fields, ok := datum.([]interface{})
@@ -253,6 +301,37 @@ func deserializeQuery1(records []interface{}) (interface{}, error) {
 			ToBank:      int(fields[2].(float64)),
 			ToAccount:   fields[3].(string),
 			Amount:      fields[4].(float64),
+		}
+		transactions = append(transactions, tx)
+	}
+	return transactions, nil
+}
+
+func serializeQuery3(qr transaction.QueryResult) ([]interface{}, error) {
+	serialized := []interface{}{}
+	records, ok := qr.Transactions.([]transaction.ThresholdFilteredTransfer)
+	if !ok {
+		return nil, fmt.Errorf("serializeQuery3: unexpected transactions type: %T", qr.Transactions)
+	}
+	for _, r := range records {
+		datum := []interface{}{r.FromBank, r.FromAccount, r.PaymentFormat, r.Amount}
+		serialized = append(serialized, datum)
+	}
+	return serialized, nil
+}
+
+func deserializeQuery3(records []interface{}) (interface{}, error) {
+	transactions := make([]transaction.ThresholdFilteredTransfer, 0, len(records))
+	for _, datum := range records {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 4 {
+			return nil, fmt.Errorf("deserializing invalid structure for results query 3")
+		}
+		tx := transaction.ThresholdFilteredTransfer{
+			FromBank:      int(fields[0].(float64)),
+			FromAccount:   fields[1].(string),
+			PaymentFormat: fields[2].(string),
+			Amount:        fields[3].(float64),
 		}
 		transactions = append(transactions, tx)
 	}

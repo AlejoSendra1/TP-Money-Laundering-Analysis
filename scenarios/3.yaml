@@ -17,6 +17,24 @@ services:
     volumes:
     - ./datasets:/datasets
     - ./output:/output
+  client_1:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_1
+    depends_on:
+      - usd_filter_0
+      - usd_filter_1
+    environment:
+      - BATCH_SIZE=10
+      - INPUT_FILE=/datasets/input_1.csv
+      - OUTPUT_FILE=/output/output_1.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
+    volumes:
+      - ./datasets:/datasets
+      - ./output:/output
   date_filter_0:
     build:
       context: ./src/
@@ -188,7 +206,7 @@ services:
       dockerfile: transactions_saver/Dockerfile
     container_name: transactions_saver_0
     depends_on:
-      - gateway
+      - q3_amount_filter_0
     volumes:
       - ./src/transactions_saver/cache:/storage
     environment:
@@ -199,19 +217,19 @@ services:
     - INPUT_QUEUE=transactions_saver_queue
     - INPUT_EXCHANGE_NAME=date_exchange
     - INPUT_TOPIC=usd_later_period_transactions_topic
-    - OUTPUT_QUEUE=transactions_saver_exchange
-    - NOTIFICATION_EXCHANGE_NAME=promediator_exchange
-    - NOTIFICATION_TOPIC_NAME=promediator_results_topic
+    - OUTPUT_QUEUE=q3_amount_filter_queue
+    - NOTIFICATION_EXCHANGE_NAME=notification_exchange
+    - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
     - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
     - CONTROL_TOPIC_NAME=transactions_saver_control_topic
-    - PROMEDIATOR_AMOUNT=2
+    - Q3_AMOUNT_FILTER_AMOUNT=2
   transactions_saver_1:
     build:
       context: ./src/
       dockerfile: transactions_saver/Dockerfile
     container_name: transactions_saver_1
     depends_on:
-      - gateway
+      - q3_amount_filter_0
     volumes:
       - ./src/transactions_saver/cache:/storage
     environment:
@@ -222,9 +240,49 @@ services:
       - INPUT_QUEUE=transactions_saver_queue
       - INPUT_EXCHANGE_NAME=date_exchange
       - INPUT_TOPIC=usd_later_period_transactions_topic
-      - OUTPUT_QUEUE=transactions_saver_exchange
-      - NOTIFICATION_EXCHANGE_NAME=promediator_exchange
-      - NOTIFICATION_TOPIC_NAME=promediator_results_topic
+      - OUTPUT_QUEUE=q3_amount_filter_queue
+      - NOTIFICATION_EXCHANGE_NAME=notification_exchange
+      - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
       - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
       - CONTROL_TOPIC_NAME=transactions_saver_control_topic
+      - Q3_AMOUNT_FILTER_AMOUNT=2
+  q3_amount_filter_0:
+    build:
+      context: ./src/
+      dockerfile: q3_amount_filter/Dockerfile
+    container_name: q3_amount_filter_0
+    depends_on:
+      - gateway
+    environment:
+      - MOM_PORT=5672
+      - MOM_HOST=rabbitmq
+      - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
+      - INPUT_PROMEDIATOR_TOPIC=promediator_results_topic
+      - INPUT_QUEUE=q3_amount_filter_queue
+      - NOTIFICATION_EXCHANGE_NAME=notification_exchange
+      - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
+      - CONTROL_EXCHANGE_NAME=q3_amount_filter_control_exchange
+      - CONTROL_TOPIC_NAME=q3_amount_filter_control_topic
+      - OUTPUT_QUEUE=results_queue
       - PROMEDIATOR_AMOUNT=2
+      - TRANSACTIONS_SAVER_AMOUNT=2
+  q3_amount_filter_1:
+    build:
+      context: ./src/
+      dockerfile: q3_amount_filter/Dockerfile
+    container_name: q3_amount_filter_1
+    depends_on:
+      - gateway
+    environment:
+      - MOM_PORT=5672
+      - MOM_HOST=rabbitmq
+      - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
+      - INPUT_PROMEDIATOR_TOPIC=promediator_results_topic
+      - INPUT_QUEUE=q3_amount_filter_queue
+      - NOTIFICATION_EXCHANGE_NAME=notification_exchange
+      - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
+      - CONTROL_EXCHANGE_NAME=q3_amount_filter_control_exchange
+      - CONTROL_TOPIC_NAME=q3_amount_filter_control_topic
+      - OUTPUT_QUEUE=results_queue
+      - PROMEDIATOR_AMOUNT=2
+      - TRANSACTIONS_SAVER_AMOUNT=2

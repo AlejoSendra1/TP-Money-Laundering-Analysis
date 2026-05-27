@@ -117,7 +117,7 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64) error {
 	if err = promediator.outputExchange.Send(*eofMessage); err != nil {
 		return err
 	}
-	slog.Info("Sent eof message to q3 amount filter and transaction saver", "clientID", clientID)
+	slog.Info("Sent eof message to q3 amount filter", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
 	return nil
