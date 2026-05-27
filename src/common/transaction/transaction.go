@@ -49,3 +49,14 @@ type QueriesResult struct {
 	ClientID int64
 	Results  map[QueryID]QueryResult
 }
+type PaymentRecord struct {
+	Timestamp     time.Time
+	Amount        float64
+	Currency      string
+	PaymentFormat string
+}
+
+type PaymentFormatCount struct {
+	PaymentFormat string
+	Count         int
+}
