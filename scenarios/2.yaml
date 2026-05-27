@@ -6,6 +6,7 @@ services:
     container_name: client_0
     depends_on:
     - usd_filter_0
+    - usd_filter_1
     environment:
     - BATCH_SIZE=10
     - INPUT_FILE=/datasets/input_2_query.csv
@@ -36,6 +37,7 @@ services:
     - COUNTER_AMOUNT=2
     - COUNTER_Q2_CONTROL=counter_q2_control
     - BATCH_SIZE=100
+    - USD_FILTER_AMOUNT=2
   q2_counter_1:
     build:
       context: ./src/
@@ -56,6 +58,7 @@ services:
     - COUNTER_AMOUNT=2
     - COUNTER_Q2_CONTROL=counter_q2_control
     - BATCH_SIZE=100
+    - USD_FILTER_AMOUNT=2
   gateway:
     build:
       context: ./src/
@@ -132,6 +135,7 @@ services:
     container_name: usd_filter_0
     depends_on:
     - q2_counter_0
+    - q2_counter_1
     environment:
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
@@ -142,3 +146,21 @@ services:
     - OUTPUT_TOPIC=usd_transactions_topic
     - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
     - CONTROL_TOPIC=usd_filter_control_topic
+  usd_filter_1:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_1
+    depends_on:
+      - q2_counter_0
+      - q2_counter_1
+    environment:
+      - INPUT_QUEUE=usd_filter_queue
+      - INPUT_EXCHANGE_NAME=transactions_exchange
+      - INPUT_TOPIC=transactions_topic
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
+      - OUTPUT_TOPIC=usd_transactions_topic
+      - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+      - CONTROL_TOPIC=usd_filter_control_topic
