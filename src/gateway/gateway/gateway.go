@@ -114,7 +114,7 @@ loop:
 	for {
 		msgType, err := external.ReadMsgType(client.Conn)
 		if err != nil {
-			slog.Info("While reading message type", "err", err)
+			slog.Error("While reading message type", "err", err)
 			return
 		}
 
@@ -160,23 +160,22 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			}
 
 			switch msg.MsgType {
-			case inner.Query4Response:
-				// no hace falta hacer nada en realidad, se manda derecho al cliente
-				slog.Info("Q4 response received", "Content", msg.Data)
-				serialization, err := serializer.SerializeQuery4Response(*msg)
+			case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
+				slog.Info("response received", "query", msg.MsgType, "Content", msg.Data)
+
+				serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), *msg) // ojo aprovechamos el hecho de que ambos protocolos tienen mismo queryreslts
 				if err != nil {
 					slog.Error("While serealizing response", "err", err, "clientID", msg.ClientID, "content", msg.Data)
 					nack()
 					return
 				}
 				gateway.sendResponse(client.Conn, serialization)
-				slog.Info("Enviando resultados de Q4", "Content", msg.Data)
+				slog.Info("Enviando resultados", "query", msg.MsgType, "Content", msg.Data)
 				if err != nil {
 					slog.Error("While sending Q4 results to client", "err", err, "clientID", msg.ClientID, "content", msg.Data)
 					nack()
 					return
 				}
-
 			case inner.EndOfRecords:
 				// una vez que se reciben todos los results se notifica al cliente y se borra
 				clientEnded, err := client.Handler.HandleQueryEOR(msg)
@@ -212,69 +211,6 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		return
 	}
 }
-
-/*
-func (gateway *Gateway) handleClientResponse(msg middleware.Message, ack func(), nack func()) {
-	clientIndex := -1
-
-	slog.Info("Received response msg", "body", msg.Body)
-
-	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
-		for i, client := range clients {
-
-			QueriesResult, wasProcessed, err := client.Handler.DeserializeResultMessage(&msg)
-			if err != nil {
-				slog.Info("While reading from output queue", "err", err)
-				nack()
-				return
-			}
-			// Si el mensaje no pertenece al dueño, se skipea
-			if QueriesResult == nil && !wasProcessed {
-				continue
-			}
-
-			// Si devolvió datos pero no es isAllDone, significa que el handler ya guardó el lote
-			// internamente en su mapa, pero todavía faltan más resultados de queries.
-			if wasProcessed && QueriesResult == nil {
-				clientIndex = -2 // Flag interno para saber que fue procesado pero no terminó
-				return
-			}
-
-			// Si llego aca, significa es el cliente dueño del mensaje, y que ya tiene todas las queries resueltas
-			if err := external.WriteQueriesResult(client.Conn, QueriesResult); err != nil {
-				slog.Info("While writing queries result message", "err", err)
-				return
-			}
-			msgType, err := external.ReadMsgType(client.Conn)
-			if err != nil {
-				slog.Info("While reading message type", "err", err)
-				return
-			}
-			if msgType != external.Ack {
-				slog.Info("Expected ACK message")
-				return
-			}
-			clientIndex = i
-			return
-		}
-		slog.Warn("No client handler could process this message")
-		nack()
-	})
-
-	// El mensaje fue procesado, pero no fue enviado al cliente
-	if clientIndex == -2 {
-		ack() // El dato ya fue procesado por el gateway
-		return
-	}
-
-	if clientIndex >= 0 {
-		slog.Info("Client received all result queries, removing from registry", "clientIndex", clientIndex)
-		gateway.registry.Remove(clientIndex)
-		ack()
-		return
-	}
-}
-*/
 
 func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
 	transactions, err := external.ReadTransactionBatch(client.Conn)
@@ -328,7 +264,7 @@ func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
 	}
 	msgType, err := external.ReadMsgType(socket)
 	if err != nil {
-		slog.Info("While reading message type", "err", err)
+		slog.Error("While reading message type", "err", err)
 		return fmt.Errorf("While reading queries result message: %w", err)
 	}
 	if msgType != external.Ack {

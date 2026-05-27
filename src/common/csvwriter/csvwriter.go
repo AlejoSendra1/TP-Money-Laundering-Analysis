@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/transaction"
 )
 
@@ -87,14 +88,61 @@ func transactionToRow(tx transaction.Transaction) []string {
 
 // WriteQ4Result receives the []interface{} from SerializeQ4SourceAccount's data field,
 // which contains [part0, part1] from strings.Split(sourceAccount, "_")
-func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
-	slog.Info("Escribiendo la Q4")
+func (c *CSVWriter) WriteResult(queryCode uint32, data []interface{}) error {
+	slog.Info("Escribiendo")
 
-	if len(data) != 2 {
-		slog.Error("Error data len es distinta de 2", "data", data)
-		return fmt.Errorf("expected 2 elements in Q4 data, got %v", data...)
+	switch queryCode {
+	case uint32(external.Query1Response):
+		if err := c.WriteQ1Result(data); err != nil {
+			slog.Error("writing transaction", "Error", err)
+			return fmt.Errorf("writing transaction %w", err)
+		}
+	case uint32(external.Query4Response):
+		if err := c.WriteQ4Result(data); err != nil {
+			slog.Error("writing transaction", "Error", err)
+			return fmt.Errorf("writing transaction %w", err)
+		}
 	}
 
+	return c.writer.Error()
+}
+
+func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
+	slog.Info("Writing q1 result", "data", data)
+	for _, transaction := range data {
+
+		fields, ok := transaction.([]interface{})
+		if !ok {
+			slog.Error("While writing q1 result", "data", data)
+			return fmt.Errorf("record: expected array, got %T", transaction)
+		}
+
+		fromBank, ok2 := fields[0].(float64)
+		fromAccount, ok3 := fields[1].(string)
+		toBank, ok4 := fields[2].(float64)
+		toAccount, ok5 := fields[3].(string)
+		amount, ok6 := fields[4].(float64)
+
+		if !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
+			return fmt.Errorf("record type mismatch in one or more fields")
+		}
+		myInt := int(fromBank)
+		fromBankS := strconv.Itoa(myInt)
+		myInt = int(toBank)
+		toBankS := strconv.Itoa(myInt)
+		amountS := strconv.FormatFloat(amount, 'f', 2, 64)
+
+		if err := c.writer.Write([]string{"Q1", fromBankS, fromAccount, toBankS, toAccount, amountS}); err != nil {
+			return fmt.Errorf("writing q4 result: %w", err)
+		}
+	}
+	c.writer.Flush()
+	c.counter++
+
+	return c.writer.Error()
+}
+
+func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 	part0, ok := data[0].(string)
 	if !ok {
 		slog.Error("Error data 0 no se pudo parsear a string", "data", data)
@@ -107,7 +155,8 @@ func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 		return fmt.Errorf("expected string at index 1, got %T", data[1])
 	}
 
-	if err := c.writer.Write([]string{part0, part1}); err != nil {
+	// quitar string
+	if err := c.writer.Write([]string{"Q4", part0, part1}); err != nil {
 		return fmt.Errorf("writing q4 result: %w", err)
 	}
 	c.writer.Flush()

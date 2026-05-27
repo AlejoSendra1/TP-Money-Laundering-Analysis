@@ -1,7 +1,6 @@
 package messagehandler
 
 import (
-	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"slices"
@@ -49,6 +48,7 @@ func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message
 	return inner.SerializeEOF(messageHandler.UserId, true, "gateway")
 }
 
+/*
 func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) (*transaction.QueriesResult, bool, error) {
 	clientID, queryResult, isEOF, err := inner.DeserializeQueryResultMessage(message)
 	if err != nil {
@@ -94,6 +94,7 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 	messageHandler.results[queryResult.QueryID] = currentResult
 	return nil, true, nil
 }
+*/
 
 func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClient) (bool, error) {
 	if slices.Contains(messageHandler.endOfRecordsReceived, message.MsgType) {

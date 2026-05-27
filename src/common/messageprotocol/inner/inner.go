@@ -17,12 +17,12 @@ const (
 	TransactionBatch MsgType = iota + 1
 	Ack
 	EndOfRecords
-	QueryEOR
 	Query1Response
 	Query2Response
 	Query3Response
 	Query4Response
 	Query5Response
+	QueryEOR
 	SuspiciousAccount
 	PossibleFraudDestinations
 	ReadyForEOR
@@ -99,30 +99,6 @@ func DeserializeEOR(data []interface{}) (bool, string, error) {
 	return mustPropagate, sender, nil
 }
 
-func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryResult) (*middleware.Message, error) {
-	serializer, ok := querySerializers[queryResult.QueryID]
-	if !ok {
-		return nil, fmt.Errorf("type of query not supported for serialize: %d", queryResult.QueryID)
-	}
-
-	serializedTransactions, err := serializer(queryResult)
-	if err != nil {
-		return nil, err
-	}
-
-	data := []interface{}{
-		int(queryResult.QueryID),
-		serializedTransactions,
-	}
-
-	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
-	if err != nil {
-		return nil, err
-	}
-	message := middleware.Message{Body: string(body)}
-	return &message, nil
-}
-
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
 	data := []interface{}{}
 
@@ -184,38 +160,6 @@ func DeserializeTransactionBatch(data []interface{}) ([]transaction.Transaction,
 	return transactions, nil
 }
 
-func DeserializeQueryResultMessage(message *middleware.Message) (int64, *transaction.QueryResult, bool, error) {
-	var messageClient MessageClient
-	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
-		return 0, nil, false, fmt.Errorf("deserializing results query message body: %w", err)
-	}
-
-	queryIDFloat, ok := messageClient.Data[0].(float64)
-	if !ok {
-		return 0, nil, false, fmt.Errorf("deserializing invalid query id")
-	}
-	queryID := transaction.QueryID(queryIDFloat)
-
-	transactionRecords, ok := messageClient.Data[1].([]interface{})
-	if !ok {
-		return 0, nil, false, fmt.Errorf("deserializing invalid transactions payload")
-	}
-
-	deserializer, ok := queryDeserializers[queryID]
-	if !ok {
-		return 0, nil, false, fmt.Errorf("unsupported query id for deserialization: %d", queryID)
-	}
-
-	finalTransactions, err := deserializer(transactionRecords)
-	if err != nil {
-		return 0, nil, false, err
-	}
-	return messageClient.ClientID, &transaction.QueryResult{
-		QueryID:      queryID,
-		Transactions: finalTransactions,
-	}, len(transactionRecords) == 0, nil
-}
-
 func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages []transaction.PaymentFormatAverage) (*middleware.Message, error) {
 	serializedRecords := []interface{}{}
 
@@ -273,7 +217,7 @@ func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers
 		serializedRecords = append(serializedRecords, datum)
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
 	if err != nil {
 		return nil, fmt.Errorf("serializing bank peak transfer: %w", err)
 	}
@@ -412,6 +356,32 @@ func deserializeQuery1(records []interface{}) (interface{}, error) {
 		transactions = append(transactions, tx)
 	}
 	return transactions, nil
+}
+
+// ---------------------------------------------------------
+// especifico de la Query 1 ------
+// ----------------------------------------------------------
+func SerializeQuery1ResultMessage(clientId int64, queryResult []transaction.LowAmountTransfer) (*middleware.Message, error) {
+	data := []interface{}{}
+
+	for _, transaction := range queryResult {
+		datum := []interface{}{
+			transaction.FromBank,
+			transaction.FromAccount,
+			transaction.ToBank,
+			transaction.ToAccount,
+			transaction.Amount,
+		}
+		data = append(data, datum)
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: Query1Response, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
 }
 
 // ---------------------------------------------------------
@@ -616,7 +586,7 @@ func SerializePaymentRecordMessage(clientId int64, records []transaction.Payment
 			r.PaymentFormat,
 		})
 	}
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment records: %w", err)
 	}
@@ -666,7 +636,7 @@ func SerializePaymentFormatCountMessage(clientId int64, records []transaction.Pa
 	for _, r := range records {
 		data = append(data, []interface{}{r.PaymentFormat, r.Count})
 	}
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment format counts: %w", err)
 	}
@@ -707,7 +677,7 @@ func SerializeMaxBankTransactionMessage(clientId int64, records []transaction.Ma
 	for _, r := range records {
 		data = append(data, []interface{}{r.BankCode, r.Account, r.Amount})
 	}
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("serializing max bank transactions: %w", err)
 	}

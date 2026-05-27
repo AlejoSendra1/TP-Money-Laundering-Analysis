@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 	"tp_distribuidos/common/messageprotocol/inner"
@@ -94,10 +95,9 @@ func SerializeEOR() []byte {
 	return msgType
 }
 
-func SerializeQuery4Response(response inner.MessageClient) ([]byte, error) {
+func SerializeQueryResponse(queryCode uint32, response inner.MessageClient) ([]byte, error) {
 	msgType := make([]byte, 4)
-	//binary.BigEndian.PutUint32(msgType, uint32(external.Query4Response))
-	binary.BigEndian.PutUint32(msgType, uint32(7))
+	binary.BigEndian.PutUint32(msgType, queryCode)
 
 	serialization, err := json.Marshal(response.Data)
 	if err != nil {
@@ -110,10 +110,11 @@ func SerializeQuery4Response(response inner.MessageClient) ([]byte, error) {
 	return bytes, nil
 }
 
-func DeserializeQuery4Response(bytes []byte) ([]interface{}, error) {
+func DeserializeQueryResponse(bytes []byte) ([]interface{}, error) {
 	var data []interface{}
 
 	if err := json.Unmarshal(bytes, &data); err != nil {
+		slog.Error("Deserializando query", "data", bytes)
 		return data, fmt.Errorf("Deserializing message body: %w", err)
 	}
 

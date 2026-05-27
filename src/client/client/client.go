@@ -123,7 +123,7 @@ func (client *Client) handleSignals() {
 func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
 	msgType, err := external.ReadMsgType(client.conn)
 	if err != nil {
-		slog.Info("Error while reading message type", "err", err)
+		slog.Error("Error while reading message type", "err", err)
 		return err
 	}
 	if msgType != expectedMsgType {
@@ -251,22 +251,24 @@ func (client *Client) recvQueriesResult() error {
 	slog.Info("Waiting for answers")
 	msgType, err := external.ReadMsgType(client.conn)
 	if err != nil {
-		slog.Info("While reading message type for queries result", "err", err)
+		slog.Error("While reading message type for queries result", "err", err)
 		return err
 	}
 	slog.Info("Read message type for queries result", "msgType", msgType)
 	for msgType != external.EndOfRecords { // En el futuro sera 5...
 		switch msgType {
-		case external.Query1Response:
-			records, err := client.readQuery1Records()
-			if err != nil {
-				return err
-			}
-			if err = client.writeQuery1CSV(records); err != nil {
-				return err
-			}
-		case external.Query4Response:
-			if err := client.handleQuery4Response(); err != nil {
+		/*
+			case external.Query1Response:
+				records, err := client.readQuery1Records()
+				if err != nil {
+					return err
+				}
+				if err = client.writeQuery1CSV(records); err != nil {
+					return err
+				}
+		*/
+		case external.Query1Response, external.Query2Response, external.Query3Response, external.Query4Response, external.Query5Response:
+			if err := client.handleQueryResponse(uint32(msgType)); err != nil {
 				return err
 			}
 		default:
@@ -277,6 +279,12 @@ func (client *Client) recvQueriesResult() error {
 			slog.Info("While writing ACK after queries result", "err", err)
 			return err
 		}
+
+		msgType, err = external.ReadMsgType(client.conn)
+		if err != nil {
+			return err
+		}
+
 	}
 
 	slog.Info("End of records received, closing")
@@ -340,7 +348,7 @@ func (client *Client) readLowAmountTransferRecord() (transaction.LowAmountTransf
 func (client *Client) expectEndOfRecords() error {
 	msgType, err := external.ReadMsgType(client.conn)
 	if err != nil {
-		slog.Info("While reading message type for queries result EOF", "err", err)
+		slog.Error("While reading message type for queries result EOF", "err", err)
 		return err
 	}
 	if msgType != external.EndOfRecords {
@@ -419,8 +427,8 @@ func (client *Client) readFloat64(fieldName string) (float64, error) {
 	return serializer.DeserializeFloat64(bytes), nil
 }
 
-func (Client *Client) handleQuery4Response() error {
-	slog.Info("Leyendo query 4")
+func (Client *Client) handleQueryResponse(queryCode uint32) error {
+	slog.Info("Leyendo query")
 
 	toRead, err := Client.readUint32()
 	if err != nil {
@@ -433,13 +441,12 @@ func (Client *Client) handleQuery4Response() error {
 		return err
 	}
 
-	toWrite, err := serializer.DeserializeQuery4Response(read)
+	toWrite, err := serializer.DeserializeQueryResponse(read)
 	slog.Info("Data obtenida", "value", toWrite)
 	if err != nil {
 		return err
 	}
 
-	Client.writer.WriteQ4Result(toWrite)
-
+	Client.writer.WriteResult(queryCode, toWrite)
 	return nil
 }
