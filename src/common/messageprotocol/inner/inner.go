@@ -543,6 +543,8 @@ func DeserializeQ4SourceAccount(data []interface{}) (string, string, error) {
 	}
 
 	return susAccount, susAccountBank, nil
+}
+
 func serializeQuery3(qr transaction.QueryResult) ([]interface{}, error) {
 	serialized := []interface{}{}
 	records, ok := qr.Transactions.([]transaction.ThresholdFilteredTransfer)
