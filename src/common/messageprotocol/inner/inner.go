@@ -734,3 +734,40 @@ func deserializeQuery5(records []interface{}) (interface{}, error) {
 	}
 	return transactions, nil
 }
+
+// para todas las queris
+func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryResult) (*middleware.Message, error) {
+	serializer, ok := querySerializers[queryResult.QueryID]
+	if !ok {
+		return nil, fmt.Errorf("type of query not supported for serialize: %d", queryResult.QueryID)
+	}
+
+	serializedTransactions, err := serializer(queryResult)
+	if err != nil {
+		return nil, err
+	}
+
+	data := []interface{}{
+		serializedTransactions,
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: MsgType(int(queryResult.QueryID)), Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+	return &message, nil
+}
+
+func SerializeQueryEOR(clientID int64, queryID transaction.QueryID) (*middleware.Message, error) {
+	data := []interface{}{
+		int(queryID),
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: EndOfRecords, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+	return &message, nil
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/common/messageprotocol/external"
+	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/transaction"
 )
 
@@ -97,11 +98,20 @@ func (c *CSVWriter) WriteResult(queryCode uint32, data []interface{}) error {
 			slog.Error("writing transaction", "Error", err)
 			return fmt.Errorf("writing transaction %w", err)
 		}
+	case uint32(inner.Query2Response):
+		return c.writeQ2Result(data)
+	case uint32(inner.Query3Response):
+		return c.writeQ3Result(data)
 	case uint32(external.Query4Response):
 		if err := c.WriteQ4Result(data); err != nil {
 			slog.Error("writing transaction", "Error", err)
 			return fmt.Errorf("writing transaction %w", err)
 		}
+	case uint32(inner.Query5Response):
+		return c.writeQ5Result(data)
+	default:
+		return fmt.Errorf("unsupported query code: %d", queryCode)
+
 	}
 
 	return c.writer.Error()
@@ -142,6 +152,68 @@ func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
 	return c.writer.Error()
 }
 
+// Q2: [bankCode float64, account string, amount float64]
+func (c *CSVWriter) writeQ2Result(data []interface{}) error {
+	records, ok := data[0].([]interface{})
+	if !ok {
+		return fmt.Errorf("q2: expected nested []interface{}, got %T", data[0])
+	}
+	for _, rec := range records {
+		fields, ok := rec.([]interface{})
+		if !ok || len(fields) != 3 {
+			return fmt.Errorf("q2: invalid record structure: %v", rec)
+		}
+		bankCode, ok1 := fields[0].(float64)
+		account, ok2 := fields[1].(string)
+		amount, ok3 := fields[2].(float64)
+		if !ok1 || !ok2 || !ok3 {
+			return fmt.Errorf("q2: type mismatch in fields: %v", fields)
+		}
+		row := []string{
+			"Q2",
+			strconv.Itoa(int(bankCode)),
+			account,
+			strconv.FormatFloat(amount, 'f', 2, 64),
+		}
+		if err := c.writer.Write(row); err != nil {
+			return fmt.Errorf("q2: writing row: %w", err)
+		}
+	}
+	c.writer.Flush()
+	c.counter++
+	return c.writer.Error()
+}
+
+// Q3: [fromBank float64, fromAccount string, paymentFormat string, amount float64]
+func (c *CSVWriter) writeQ3Result(records []interface{}) error {
+	for _, rec := range records {
+		fields, ok := rec.([]interface{})
+		if !ok || len(fields) != 4 {
+			return fmt.Errorf("q3: invalid record structure: %v", rec)
+		}
+		fromBank, ok1 := fields[0].(float64)
+		fromAccount, ok2 := fields[1].(string)
+		paymentFormat, ok3 := fields[2].(string)
+		amount, ok4 := fields[3].(float64)
+		if !ok1 || !ok2 || !ok3 || !ok4 {
+			return fmt.Errorf("q3: type mismatch in fields: %v", fields)
+		}
+		row := []string{
+			"Q3",
+			strconv.Itoa(int(fromBank)),
+			fromAccount,
+			paymentFormat,
+			strconv.FormatFloat(amount, 'f', 2, 64),
+		}
+		if err := c.writer.Write(row); err != nil {
+			return fmt.Errorf("q3: writing row: %w", err)
+		}
+	}
+	c.writer.Flush()
+	c.counter++
+	return c.writer.Error()
+}
+
 func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 	part0, ok := data[0].(string)
 	if !ok {
@@ -162,5 +234,31 @@ func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 	c.writer.Flush()
 	c.counter++
 
+	return c.writer.Error()
+}
+
+// Q5: [paymentFormat string, count float64]
+func (c *CSVWriter) writeQ5Result(records []interface{}) error {
+	for _, rec := range records {
+		fields, ok := rec.([]interface{})
+		if !ok || len(fields) != 2 {
+			return fmt.Errorf("q5: invalid record structure: %v", rec)
+		}
+		paymentFormat, ok1 := fields[0].(string)
+		count, ok2 := fields[1].(float64)
+		if !ok1 || !ok2 {
+			return fmt.Errorf("q5: type mismatch in fields: %v", fields)
+		}
+		row := []string{
+			"Q5",
+			paymentFormat,
+			strconv.Itoa(int(count)),
+		}
+		if err := c.writer.Write(row); err != nil {
+			return fmt.Errorf("q5: writing row: %w", err)
+		}
+	}
+	c.writer.Flush()
+	c.counter++
 	return c.writer.Error()
 }

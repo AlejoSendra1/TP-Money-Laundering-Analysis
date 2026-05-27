@@ -7,7 +7,10 @@ import (
 type QueryID int
 
 const (
-	Query1 QueryID = iota + 1
+	A QueryID = iota + 1 // PARA Q COINCIDA CON LOS INNER
+	B
+	C
+	Query1
 	Query2
 	Query3
 	Query4

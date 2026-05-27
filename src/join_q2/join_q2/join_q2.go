@@ -34,10 +34,9 @@ type bankEntry struct {
 // keeps the max-amount entry per bank, and flushes to the output queue once all
 // counter_q2 EOFs have arrived.
 type JoinQ2 struct {
-	config        JoinQ2Config
-	inputExchange middleware.Middleware
-	outputQueue   middleware.Middleware
-
+	config           JoinQ2Config
+	inputExchange    middleware.Middleware
+	outputQueue      middleware.Middleware
 	mutex            sync.Mutex
 	topByClient      map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
 	eofCountByClient map[int64]int               // tracks how many counter_q2 EOFs have arrived per client
@@ -172,7 +171,7 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 		}
 		chunk := rows[i:end]
 		msg, err := inner.SerializeQueryResultMessage(clientID, transaction.QueryResult{
-			QueryID:      joinQ2.config.QueryID,
+			QueryID:      transaction.Query2,
 			Transactions: chunk,
 		})
 		if err != nil {
@@ -188,10 +187,8 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 
 // sendEOF sends an EOF marker to the output queue.
 func (joinQ2 *JoinQ2) sendEOF(clientID int64) error {
-	msg, err := inner.SerializeQueryResultMessage(clientID, transaction.QueryResult{
-		QueryID:      joinQ2.config.QueryID,
-		Transactions: []transaction.MaxBankTransaction{},
-	})
+
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query2)
 	if err != nil {
 		return fmt.Errorf("serializing EOF: %w", err)
 	}

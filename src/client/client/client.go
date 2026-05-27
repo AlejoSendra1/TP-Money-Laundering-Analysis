@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"tp_distribuidos/common/csvwriter"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/external/safeio"
+	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/transaction"
 )
@@ -255,19 +257,13 @@ func (client *Client) recvQueriesResult() error {
 		return err
 	}
 	slog.Info("Read message type for queries result", "msgType", msgType)
-	for msgType != external.EndOfRecords { // En el futuro sera 5...
-		switch msgType {
-		/*
-			case external.Query1Response:
-				records, err := client.readQuery1Records()
-				if err != nil {
-					return err
-				}
-				if err = client.writeQuery1CSV(records); err != nil {
-					return err
-				}
-		*/
-		case external.Query1Response, external.Query2Response, external.Query3Response, external.Query4Response, external.Query5Response:
+	for inner.MsgType(msgType) != inner.EndOfRecords { // En el futuro sera 5...
+		switch inner.MsgType(msgType) {
+		case inner.Query2Response, inner.Query3Response, inner.Query5Response:
+			if err := client.handleQueryResponseWithQueryResult(uint32(msgType)); err != nil {
+				return err
+			}
+		case inner.Query1Response, inner.Query4Response:
 			if err := client.handleQueryResponse(uint32(msgType)); err != nil {
 				return err
 			}
@@ -369,11 +365,6 @@ func (client *Client) writeQuery1CSV(records []transaction.LowAmountTransfer) er
 	writer := csv.NewWriter(outputFile)
 	defer writer.Flush()
 
-	if err := writer.Write([]string{"From Bank", "Account", "To Bank", "Account.1", "Amount Paid"}); err != nil {
-		slog.Info("Error while writing CSV header", "err", err)
-		return err
-	}
-
 	for _, r := range records {
 		line := []string{strconv.Itoa(r.FromBank), r.FromAccount, strconv.Itoa(r.ToBank), r.ToAccount, fmt.Sprintf("%.2f", r.Amount)}
 		if err := writer.Write(line); err != nil {
@@ -449,4 +440,28 @@ func (Client *Client) handleQueryResponse(queryCode uint32) error {
 
 	Client.writer.WriteResult(queryCode, toWrite)
 	return nil
+}
+
+// igual q arriba
+func (client *Client) handleQueryResponseWithQueryResult(queryCode uint32) error {
+	slog.Info("Leyendo query resultado", "queryCode", queryCode)
+
+	// leer length prefix
+	toRead, err := client.readUint32()
+	if err != nil {
+		return fmt.Errorf("reading length for query %d: %w", queryCode, err)
+	}
+
+	raw, err := safeio.ReadAll(client.conn, toRead)
+	if err != nil {
+		return fmt.Errorf("reading body for query %d: %w", queryCode, err)
+	}
+
+	// deserializar el []interface{} de records
+	var records []interface{}
+	if err := json.Unmarshal(raw, &records); err != nil {
+		return fmt.Errorf("unmarshaling query %d result: %w", queryCode, err)
+	}
+
+	return client.writer.WriteResult(queryCode, records)
 }

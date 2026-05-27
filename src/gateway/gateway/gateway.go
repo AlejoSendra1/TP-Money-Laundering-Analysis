@@ -172,7 +172,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 				gateway.sendResponse(client.Conn, serialization)
 				slog.Info("Enviando resultados", "query", msg.MsgType, "Content", msg.Data)
 				if err != nil {
-					slog.Error("While sending Q4 results to client", "err", err, "clientID", msg.ClientID, "content", msg.Data)
+					slog.Error("While sending results to client", "err", err, "clientID", msg.ClientID, "content", msg.Data)
 					nack()
 					return
 				}
