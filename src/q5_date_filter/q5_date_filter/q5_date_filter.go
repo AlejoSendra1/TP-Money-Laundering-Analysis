@@ -2,56 +2,79 @@ package q5_date_filter
 
 import (
 	"log/slog"
+	"sync"
 	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
 
 type Q5DateFilterConfig struct {
-	MomHost            string
-	MomPort            int
-	InputQueue         string
-	InputExchangeName  string
-	InputTopic         string
-	OutputExchangeName string
-	OutputTopic        string
+	MomHost             string
+	MomPort             int
+	InputQueue          string
+	InputExchangeName   string
+	InputTopic          string
+	OutputExchangeName  string
+	OutputTopic         string
+	ControlExchangeName string
+	ControlTopic        string
 }
 
 type Q5DateFilter struct {
-	inputExchange  middleware.Middleware
-	outputExchange middleware.Middleware
-	config         Q5DateFilterConfig
+	inputQueue      middleware.Middleware
+	outputExchange  middleware.Middleware
+	controlExchange middleware.Middleware
+	config          Q5DateFilterConfig
+	mu              sync.Mutex
 }
 
 func NewQ5DateFilter(config Q5DateFilterConfig) (*Q5DateFilter, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputExchangeName, []string{config.InputTopic}, connSettings)
+	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueue, connSettings)
 	if err != nil {
+		return nil, err
+	}
+	err = inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
+	if err != nil {
+		inputQueue.Close()
 		return nil, err
 	}
 
 	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
 	if err != nil {
-		inputExchange.Close()
+		inputQueue.Close()
 		return nil, err
 	}
 
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchange.Close()
+		return nil, err
+	}
 	return &Q5DateFilter{
-		inputExchange:  inputExchange,
-		outputExchange: outputExchange,
-		config:         config,
+		inputQueue:      inputQueue,
+		outputExchange:  outputExchange,
+		controlExchange: controlExchange,
+		config:          config,
 	}, nil
 }
 
 func (q5DateFilter *Q5DateFilter) Run() {
-	q5DateFilter.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+	go q5DateFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		q5DateFilter.handleControlMessage(&msg, ack, nack)
+	})
+
+	q5DateFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		q5DateFilter.handleMessage(&msg, ack, nack)
 	})
 }
 
 func (q5DateFilter *Q5DateFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
-	// TODO: Una vez que pase el filtro, el campo TimeStamp ya no es necesario
+	q5DateFilter.mu.Lock()
+	defer q5DateFilter.mu.Unlock()
 	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", clientID)
@@ -77,7 +100,14 @@ func (q5DateFilter *Q5DateFilter) handleMessage(msg *middleware.Message, ack fun
 }
 
 func (q5DateFilter *Q5DateFilter) handleEndOfRecordMessage(clientID int64) error {
-	if err := q5DateFilter.sendOutput([]transaction.Transaction{}, clientID); err != nil {
+	slog.Info("Arrived EOF record message", "clientID", clientID)
+	ctrlMsg, err := control.SerializeControlMessage(control.ControlMessage{Type: control.TypeEOF, ClientID: clientID})
+	if err != nil {
+		slog.Error("While serializing control message", "err", err)
+		return err
+	}
+	if err = q5DateFilter.controlExchange.Send(*ctrlMsg); err != nil {
+		slog.Error("While sending control message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -99,6 +129,25 @@ func (q5DateFilter *Q5DateFilter) handleDataMessage(transactionRecords []transac
 	}
 
 	return nil
+}
+
+func (q5DateFilter *Q5DateFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	q5DateFilter.mu.Lock()
+	defer q5DateFilter.mu.Unlock()
+	slog.Info("Arrived control message", "msg", msg)
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err)
+		nack()
+		return
+	}
+	if err = q5DateFilter.sendOutput([]transaction.Transaction{}, controlMessage.ClientID); err != nil {
+		slog.Error("While sending EOF message", "err", err, "clientID", controlMessage.ClientID)
+		nack()
+		return
+	}
+	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	ack()
 }
 
 func (q5DateFilter *Q5DateFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
