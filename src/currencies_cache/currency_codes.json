@@ -1,0 +1,18 @@
+{
+  "Australian Dollar": "AUD",
+  "Bitcoin":           "BTC",
+  "Brazil Real":       "BRL",
+  "Canadian Dollar":   "CAD",
+  "Euro":              "EUR",
+  "Mexican Peso":      "MXN",
+  "Ruble":             "RUB",
+  "Rupee":             "INR",
+  "Saudi Riyal":       "SAR",
+  "Shekel":            "ILS",
+  "Swiss Franc":       "CHF",
+  "UK Pound":          "GBP",
+  "US Dollar":         "USD",
+  "Yen":               "JPY",
+  "Yuan":              "CNY"
+}
+
