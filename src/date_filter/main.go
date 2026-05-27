@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-
 	"tp_distribuidos/date_filter"
 )
 
@@ -50,15 +49,31 @@ func loadConfig() (date_filter.DateFilterConfig, error) {
 
 	}
 
+	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
+	if controlExchangeName == "" {
+		return date_filter.DateFilterConfig{}, errors.New("CONTROL_EXCHANGE_NAME environment variable is required")
+	}
+	controlTopic := os.Getenv("CONTROL_TOPIC")
+	if controlTopic == "" {
+		return date_filter.DateFilterConfig{}, errors.New("CONTROL_TOPIC environment variable is required")
+	}
+	usdFilterAmount, err := strconv.Atoi(os.Getenv("USD_FILTER_AMOUNT"))
+	if err != nil {
+		return date_filter.DateFilterConfig{}, errors.New("USD_FILTER_AMOUNT environment variable is required and must be a number")
+	}
+
 	return date_filter.DateFilterConfig{
-		MomHost:            momHost,
-		MomPort:            momPort,
-		InputQueue:         inputQueue,
-		InputExchangeName:  inputExchangeName,
-		InputTopic:         inputTopic,
-		OutputExchangeName: outputExchangeName,
-		OutputTopic1:       outputTopic1,
-		OutputTopic2:       outputTopic2,
+		MomHost:             momHost,
+		MomPort:             momPort,
+		InputQueue:          inputQueue,
+		InputExchangeName:   inputExchangeName,
+		InputTopic:          inputTopic,
+		OutputExchangeName:  outputExchangeName,
+		OutputTopic1:        outputTopic1,
+		OutputTopic2:        outputTopic2,
+		ControlExchangeName: controlExchangeName,
+		ControlTopic:        controlTopic,
+		USDFilterAmount:     usdFilterAmount,
 	}, nil
 }
 

@@ -140,3 +140,5 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic

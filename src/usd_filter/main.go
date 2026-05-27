@@ -44,14 +44,26 @@ func loadConfig() (usd_filter.USDFilterConfig, error) {
 		return usd_filter.USDFilterConfig{}, errors.New("OUTPUT_TOPIC environment variable is required")
 	}
 
+	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
+	if controlExchangeName == "" {
+		return usd_filter.USDFilterConfig{}, errors.New("CONTROL_EXCHANGE_NAME environment variable is required")
+	}
+
+	controlTopic := os.Getenv("CONTROL_TOPIC")
+	if controlTopic == "" {
+		return usd_filter.USDFilterConfig{}, errors.New("CONTROL_TOPIC environment variable is required")
+	}
+
 	return usd_filter.USDFilterConfig{
-		MomHost:            momHost,
-		MomPort:            momPort,
-		InputQueue:         inputQueue,
-		InputExchangeName:  inputExchangeName,
-		InputTopic:         inputTopic,
-		OutputExchangeName: outputExchangeName,
-		OutputTopic:        outputTopic,
+		MomHost:             momHost,
+		MomPort:             momPort,
+		InputQueue:          inputQueue,
+		InputExchangeName:   inputExchangeName,
+		InputTopic:          inputTopic,
+		OutputExchangeName:  outputExchangeName,
+		OutputTopic:         outputTopic,
+		ControlExchangeName: controlExchangeName,
+		ControlTopic:        controlTopic,
 	}, nil
 }
 

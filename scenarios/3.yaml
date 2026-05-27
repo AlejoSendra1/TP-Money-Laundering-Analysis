@@ -51,6 +51,9 @@ services:
     - OUTPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
     - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+    - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
+    - CONTROL_TOPIC=date_filter_control_topic
+    - USD_FILTER_AMOUNT=2
   date_filter_1:
     build:
       context: ./src/
@@ -67,6 +70,9 @@ services:
     - OUTPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
     - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+    - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
+    - CONTROL_TOPIC=date_filter_control_topic
+    - USD_FILTER_AMOUNT=2
   gateway:
     build:
       context: ./src/
@@ -152,6 +158,8 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic
   usd_filter_1:
     build:
       context: ./src/
@@ -168,6 +176,8 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic
   promediator_0:
     build:
       context: ./src/

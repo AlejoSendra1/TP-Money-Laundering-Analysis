@@ -2,6 +2,8 @@ package usd_filter
 
 import (
 	"log/slog"
+	"sync"
+	"tp_distribuidos/common/messageprotocol/inner/control"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -11,19 +13,23 @@ import (
 const USDCurrencyName = "US Dollar"
 
 type USDFilterConfig struct {
-	MomHost            string
-	MomPort            int
-	InputQueue         string // Con 1 replica no es necesario
-	InputTopic         string
-	InputExchangeName  string
-	OutputExchangeName string
-	OutputTopic        string
+	MomHost             string
+	MomPort             int
+	InputQueue          string
+	InputTopic          string
+	InputExchangeName   string
+	OutputExchangeName  string
+	OutputTopic         string
+	ControlExchangeName string
+	ControlTopic        string
 }
 
 type USDFilter struct {
-	inputQueue     middleware.Middleware
-	outputExchange middleware.Middleware
-	config         USDFilterConfig
+	inputQueue      middleware.Middleware
+	outputExchange  middleware.Middleware
+	controlExchange middleware.Middleware
+	config          USDFilterConfig
+	mu              sync.Mutex // mutex para sincronizar la llegada de EOF
 }
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
@@ -42,21 +48,33 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputQueue.Close()
 		return nil, err
 	}
-
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchange.Close()
+		return nil, err
+	}
 	return &USDFilter{
-		inputQueue:     inputQueue,
-		outputExchange: outputExchange,
-		config:         config,
+		inputQueue:      inputQueue,
+		outputExchange:  outputExchange,
+		controlExchange: controlExchange,
+		config:          config,
 	}, nil
 }
 
 func (usdFilter *USDFilter) Run() {
+	go usdFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		usdFilter.handleControlMessage(&msg, ack, nack)
+	})
+
 	usdFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		usdFilter.handleMessage(&msg, ack, nack)
 	})
 }
 
 func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+	usdFilter.mu.Lock()
+	defer usdFilter.mu.Unlock()
 	// TODO: Una vez que pase el filtro, el campo Currency ya no es necesario
 	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
 	if err != nil {
@@ -64,7 +82,6 @@ func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), n
 		nack()
 		return
 	}
-
 	if isEof {
 		if err := usdFilter.handleEndOfRecordMessage(clientID); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", clientID)
@@ -83,8 +100,17 @@ func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), n
 }
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Sent EOF record message", "clientID", clientID)
-	return usdFilter.sendOutput([]transaction.Transaction{}, clientID)
+	slog.Info("Arrived EOF record message", "clientID", clientID)
+	ctrlMsg, err := control.SerializeControlMessage(control.ControlMessage{Type: control.TypeEOF, ClientID: clientID})
+	if err != nil {
+		slog.Error("While serializing control message", "err", err)
+		return err
+	}
+	if err = usdFilter.controlExchange.Send(*ctrlMsg); err != nil {
+		slog.Error("While sending control message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
 }
 
 func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
@@ -101,6 +127,25 @@ func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.T
 		}
 	}
 	return nil
+}
+
+func (usdFilter *USDFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	usdFilter.mu.Lock()
+	defer usdFilter.mu.Unlock()
+	slog.Info("Arrived control message", "msg", msg)
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err)
+		nack()
+		return
+	}
+	if err = usdFilter.sendOutput([]transaction.Transaction{}, controlMessage.ClientID); err != nil {
+		slog.Error("While sending EOF message", "err", err, "clientID", controlMessage.ClientID)
+		nack()
+		return
+	}
+	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	ack()
 }
 
 func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
