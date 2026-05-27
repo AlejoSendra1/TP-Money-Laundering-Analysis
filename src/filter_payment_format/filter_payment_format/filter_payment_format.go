@@ -32,6 +32,7 @@ type FilterPaymentFormatConfig struct {
 	FilterAmount         int
 	FilterPaymentControl string
 	BatchSize            int
+	Q5DateFilterAmount   int
 }
 
 // FilterPaymentFormat filters transactions by payment format (Wire, ACH) and
@@ -42,9 +43,9 @@ type FilterPaymentFormat struct {
 	outputExchanges []middleware.Middleware // one per downstream pod instance
 	controlOutputs  []middleware.Middleware // one per peer pod
 	controlInput    middleware.Middleware   // own control inbox
-
-	mutex          sync.Mutex
-	bufferByClient map[int64]map[string][]transaction.PaymentRecord // client_id -> paymentFormat -> pending records
+	eofCounter      map[int64]int           // tracks how many EOFs have been received per client_id
+	mutex           sync.Mutex
+	bufferByClient  map[int64]map[string][]transaction.PaymentRecord // client_id -> paymentFormat -> pending records
 }
 
 // getOutputIndex replicates the Python MD5-based routing:
@@ -125,6 +126,7 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 		controlOutputs:  controlOutputs,
 		controlInput:    controlInput,
 		bufferByClient:  make(map[int64]map[string][]transaction.PaymentRecord),
+		eofCounter:      make(map[int64]int),
 	}, nil
 }
 
@@ -195,7 +197,9 @@ func (filter *FilterPaymentFormat) processData(clientID int64, transactions []tr
 	defer filter.mutex.Unlock()
 
 	if filter.bufferByClient[clientID] == nil {
+		slog.Info("New client arrived", "client_id", clientID)
 		filter.bufferByClient[clientID] = make(map[string][]transaction.PaymentRecord)
+		filter.eofCounter[clientID] = 0
 	}
 
 	for _, tx := range transactions {
@@ -251,8 +255,15 @@ func (filter *FilterPaymentFormat) sendBatch(clientID int64, paymentFormat strin
 // flushClient sends any remaining buffered records for clientID and then sends the EOF marker.
 func (filter *FilterPaymentFormat) flushClient(clientID int64) error {
 	filter.mutex.Lock()
+	filter.eofCounter[clientID] += 1
+	if filter.eofCounter[clientID] != filter.config.Q5DateFilterAmount {
+		filter.mutex.Unlock()
+		slog.Info("Waiting for more EOFs...")
+		return nil
+	}
 	shards := filter.bufferByClient[clientID]
 	delete(filter.bufferByClient, clientID)
+	delete(filter.eofCounter, clientID)
 	filter.mutex.Unlock()
 
 	for paymentFormat, remaining := range shards {
