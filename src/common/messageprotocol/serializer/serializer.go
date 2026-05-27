@@ -113,7 +113,7 @@ func SerializeQuery4Response(response inner.MessageClient) ([]byte, error) {
 func DeserializeQuery4Response(bytes []byte) ([]interface{}, error) {
 	var data []interface{}
 
-	if err := json.Unmarshal(bytes, data); err != nil {
+	if err := json.Unmarshal(bytes, &data); err != nil {
 		return data, fmt.Errorf("Deserializing message body: %w", err)
 	}
 

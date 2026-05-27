@@ -24,8 +24,10 @@ type USDFilter struct {
 	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
 	config         USDFilterConfig
-	approved       int // para Info
-	batchesSent    int // para Info
+	// para debug
+	received    int
+	approved    int // para Info
+	batchesSent int // para Info
 }
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
@@ -49,6 +51,7 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputQueue:     inputQueue,
 		outputExchange: outputExchange,
 		config:         config,
+		received:       0,
 		approved:       0,
 		batchesSent:    0,
 	}, nil
@@ -98,6 +101,7 @@ func (usdFilter *USDFilter) handleMessage(middlewareMsg *middleware.Message, ack
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
 	slog.Info("Sent EOF record message, ", "clientID", clientID)
+	slog.Info("Transactions received", "Amount", usdFilter.received)
 	slog.Info("Transactions approved", "Amount", usdFilter.approved)
 	slog.Info("Batches sent", "Amount", usdFilter.batchesSent)
 
@@ -112,6 +116,7 @@ func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
 func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
 	toSend := make([]transaction.Transaction, 0, 10)
 	for _, transactionRecord := range transactionRecords {
+		usdFilter.received += 1
 		if transactionRecord.Currency == USDCurrencyName {
 			toSend = append(toSend, transactionRecord)
 		}

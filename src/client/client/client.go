@@ -100,7 +100,9 @@ func (client *Client) Run() error {
 	}
 
 	if err := client.recvQueriesResult(); err != nil {
+		slog.Error("While receiving responses", "err", err)
 		if client.running.Load() {
+			slog.Error("Running load", "err", err)
 			return err
 		}
 		return nil
@@ -270,6 +272,11 @@ func (client *Client) recvQueriesResult() error {
 		default:
 			return fmt.Errorf("unexpected message type while receiving queries result: %d", msgType)
 		}
+
+		if err := external.WriteAck(client.conn); err != nil {
+			slog.Info("While writing ACK after queries result", "err", err)
+			return err
+		}
 	}
 
 	slog.Info("End of records received, closing")
@@ -413,10 +420,13 @@ func (client *Client) readFloat64(fieldName string) (float64, error) {
 }
 
 func (Client *Client) handleQuery4Response() error {
+	slog.Info("Leyendo query 4")
+
 	toRead, err := Client.readUint32()
 	if err != nil {
 		return err
 	}
+	slog.Info("Bytes a leer", "value", toRead)
 
 	read, err := safeio.ReadAll(Client.conn, toRead)
 	if err != nil {
@@ -424,6 +434,7 @@ func (Client *Client) handleQuery4Response() error {
 	}
 
 	toWrite, err := serializer.DeserializeQuery4Response(read)
+	slog.Info("Data obtenida", "value", toWrite)
 	if err != nil {
 		return err
 	}

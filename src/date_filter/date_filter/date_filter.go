@@ -23,8 +23,10 @@ type DateFilter struct {
 	inputQueue      middleware.Middleware
 	outputExchanges map[string]middleware.Middleware
 	config          DateFilterConfig
-	approved        int
-	batchesSent     int
+	// para debug
+	received    int
+	approved    int
+	batchesSent int
 }
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
@@ -61,6 +63,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		inputQueue:      inputQueue,
 		outputExchanges: outputExchanges,
 		config:          config,
+		received:        0,
 		approved:        0,
 		batchesSent:     0,
 	}, nil
@@ -112,6 +115,7 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
 	slog.Info("Sent EOF record message, ", "clientID", clientID)
+	slog.Info("Transactions received", "Amount", dateFilter.received)
 	slog.Info("Transactions approved", "Amount", dateFilter.approved)
 	slog.Info("Batches sent", "Amount", dateFilter.batchesSent)
 
@@ -137,6 +141,7 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 		dateFilter.config.OutputTopic2: {},
 	}
 	for _, transactionRecord := range transactionRecords {
+		dateFilter.received += 1
 		topic := dateFilter.getOutputTopic(transactionRecord)
 		if topic == "" {
 			continue

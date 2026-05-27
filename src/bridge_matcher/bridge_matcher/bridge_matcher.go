@@ -178,6 +178,7 @@ func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64
 		}
 
 		// Agregar cuenta destino al set
+		slog.Info("transaccion a guardar", "origen", origin, "destiny", destiny)
 		bridgeMatcher.Registers[clientID][origin][destiny] = struct{}{}
 	}
 

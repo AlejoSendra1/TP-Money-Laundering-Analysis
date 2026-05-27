@@ -170,6 +170,12 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 					return
 				}
 				gateway.sendResponse(client.Conn, serialization)
+				slog.Info("Enviando resultados de Q4", "Content", msg.Data)
+				if err != nil {
+					slog.Error("While sending Q4 results to client", "err", err, "clientID", msg.ClientID, "content", msg.Data)
+					nack()
+					return
+				}
 
 			case inner.EndOfRecords:
 				// una vez que se reciben todos los results se notifica al cliente y se borra
@@ -317,7 +323,7 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
 
 	if err := safeio.WriteAll(socket, data); err != nil {
-		slog.Info("While writing queries result message", "err", err)
+		slog.Error("While writing queries result message", "err", err)
 		return fmt.Errorf("While writing queries result message: %w", err)
 	}
 	msgType, err := external.ReadMsgType(socket)

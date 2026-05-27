@@ -25,7 +25,6 @@ const (
 	Query5Response
 	SuspiciousAccount
 	PossibleFraudDestinations
-	FraudSource
 	ReadyForEOR
 )
 
@@ -473,7 +472,7 @@ func SerializeQ4SourceAccount(clientID int64, sourceAccount string) (*middleware
 		sourceAccountData[1],
 	}
 
-	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: FraudSource, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: Query4Response, Data: data})
 	if err != nil {
 		return nil, err
 	}

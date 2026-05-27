@@ -3,6 +3,7 @@ package csvwriter
 import (
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"tp_distribuidos/common/transaction"
@@ -87,17 +88,22 @@ func transactionToRow(tx transaction.Transaction) []string {
 // WriteQ4Result receives the []interface{} from SerializeQ4SourceAccount's data field,
 // which contains [part0, part1] from strings.Split(sourceAccount, "_")
 func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
+	slog.Info("Escribiendo la Q4")
+
 	if len(data) != 2 {
+		slog.Error("Error data len es distinta de 2", "data", data)
 		return fmt.Errorf("expected 2 elements in Q4 data, got %v", data...)
 	}
 
 	part0, ok := data[0].(string)
 	if !ok {
+		slog.Error("Error data 0 no se pudo parsear a string", "data", data)
 		return fmt.Errorf("expected string at index 0, got %T", data[0])
 	}
 
 	part1, ok := data[1].(string)
 	if !ok {
+		slog.Error("Error data 1 no se pudo parsear a string", "data", data)
 		return fmt.Errorf("expected string at index 1, got %T", data[1])
 	}
 

@@ -163,7 +163,7 @@ services:
     - MOM_PORT=5672
     - INPUT_EXCHANGE_NAME=q4_join_exchange
     - OUTPUT_QUEUE_NAME=results_queue
-    - PREV_FASE_WORKERS_AMOUNT=1
+    - PREV_FASE_WORKERS_AMOUNT=2
     - PYTHONUNBUFFERED=1
   rabbitmq:
     build:

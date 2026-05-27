@@ -91,14 +91,14 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 			return
 		}
 	case inner.SuspiciousAccount:
-		slog.Info("Sus account recibida", "client", msg.ClientID)
+		slog.Info("Sus account recibida", "client", msg.ClientID, "data", msg.Data)
 		if err := join.handleSuspiciousAccountMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
 	case inner.PossibleFraudDestinations:
-		slog.Info("Possible fraud recibido", "client", msg.ClientID)
+		slog.Info("Possible fraud recibido", "client", msg.ClientID, "data", msg.Data)
 		if err := join.handlePossibleFraudDestinationsMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
@@ -157,10 +157,6 @@ func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []
 		return err
 	}
 
-	if join.bridgeSourceRegisters[clientID] == nil {
-		return fmt.Errorf("error handling PossibleFraudDestinationsMessage from %d: %w", clientID, err)
-	}
-
 	if join.bridgeSinkRegisters[clientID] == nil {
 		join.bridgeSinkRegisters[clientID] = make(map[string]map[string]struct{})
 	}
@@ -193,7 +189,7 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 	// por cada destino actualizamos su listado de puentes con los sinks dados
 	for _, possibleSink := range possibleSinks {
 		if join.sourceSinkRegisters[clientID][source][possibleSink] == nil {
-			join.sourceSinkRegisters[clientID][source][possibleSink] = make([]string, 5, 10)
+			join.sourceSinkRegisters[clientID][source][possibleSink] = make([]string, 0, 10)
 		}
 		if !slices.Contains(join.sourceSinkRegisters[clientID][source][possibleSink], bridge) {
 			join.sourceSinkRegisters[clientID][source][possibleSink] = append(join.sourceSinkRegisters[clientID][source][possibleSink], bridge)
@@ -203,6 +199,7 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 			join.outputQueue.Send(*msg)
 		}
 	}
+
 }
 
 func (join *Join) updateClientEORCondition(clientID int64, worker string) {
