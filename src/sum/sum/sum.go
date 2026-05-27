@@ -113,11 +113,11 @@ func (sum *Sum) handleEndOfRecordMessage(clientID int64) error {
 	controlEOFMessage := control.ControlMessage{Type: control.TypeEOF, ClientID: clientID}
 	message, err := control.SerializeControlMessage(controlEOFMessage)
 	if err != nil {
-		slog.Debug("While serializing control message", "err", err, "clientID", clientID)
+		slog.Info("While serializing control message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := sum.controlExchange.Send(*message); err != nil {
-		slog.Debug("While sending control message", "err", err, "clientID", clientID)
+		slog.Info("While sending control message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -201,11 +201,11 @@ func (sum *Sum) addPaymentFormatAverage(paymentFormatAverage transaction.Payment
 func (sum *Sum) sendToOutputExchange(keys []string, paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) error {
 	message, err := inner.SerializePaymentFormatAverageMessage(clientID, paymentFormatAverageRecords)
 	if err != nil {
-		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := sum.outputExchange.SendWithKeys(keys, *message); err != nil {
-		slog.Debug("While sending EOF message", "err", err, "clientID", clientID)
+		slog.Info("While sending EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil

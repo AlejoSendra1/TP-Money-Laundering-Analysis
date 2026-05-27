@@ -43,7 +43,7 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	transactionsSentCounter int64 // for debug
+	transactionsSentCounter int64 // for Info
 	conn                    net.Conn
 	running                 atomic.Bool
 	config                  ClientConfig
@@ -56,7 +56,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	writer, err := csvwriter.NewCSVWriter("client_output.csv")
+	writer, err := csvwriter.NewCSVWriter("/output/client_output.csv")
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (client *Client) handleSignals() {
 func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
 	msgType, err := external.ReadMsgType(client.conn)
 	if err != nil {
-		slog.Debug("Error while reading message type", "err", err)
+		slog.Info("Error while reading message type", "err", err)
 		return err
 	}
 	if msgType != expectedMsgType {
@@ -183,7 +183,7 @@ func (client *Client) sendBatch(batch *[]transaction.Transaction) error {
 func (client *Client) sendTransactionRecords() error {
 	file, err := os.Open(client.config.InputFile)
 	if err != nil {
-		slog.Debug("Error while runninging input file", "err", err)
+		slog.Info("Error while runninging input file", "err", err)
 		return err
 	}
 	defer file.Close()
@@ -191,7 +191,7 @@ func (client *Client) sendTransactionRecords() error {
 	batchSizeAsString := os.Getenv("BATCH_SIZE")
 	batchSize, err := strconv.Atoi(batchSizeAsString)
 	if err != nil {
-		slog.Debug("Error reading batchSize from environment", "err", err)
+		slog.Info("Error reading batchSize from environment", "err", err)
 		return err
 	}
 
@@ -204,7 +204,7 @@ func (client *Client) sendTransactionRecords() error {
 
 		tx, err := parseTransaction(columns)
 		if err != nil {
-			slog.Debug("Error while parsing transaction record", "err", err)
+			slog.Info("Error while parsing transaction record", "err", err)
 			return err
 		}
 
@@ -212,7 +212,7 @@ func (client *Client) sendTransactionRecords() error {
 		if len(batch) == batchSize {
 			client.transactionsSentCounter += int64(len(batch))
 			if err := client.sendBatch(&batch); err != nil {
-				slog.Debug("Error while sending transaction batch", "err", err)
+				slog.Info("Error while sending transaction batch", "err", err)
 				return err
 			}
 		}
@@ -246,14 +246,14 @@ func (client *Client) sendTransactionRecords() error {
 // [EOF]
 func (client *Client) recvQueriesResult() error {
 	// MsgType
+	slog.Info("Waiting for answers")
 	msgType, err := external.ReadMsgType(client.conn)
 	if err != nil {
-		slog.Debug("While reading message type for queries result", "err", err)
+		slog.Info("While reading message type for queries result", "err", err)
 		return err
 	}
 	slog.Info("Read message type for queries result", "msgType", msgType)
-
-	for queriesRead := 0; queriesRead < 1; queriesRead++ { // En el futuro sera 5...
+	for msgType != external.EndOfRecords { // En el futuro sera 5...
 		switch msgType {
 		case external.Query1Response:
 			records, err := client.readQuery1Records()
@@ -264,28 +264,27 @@ func (client *Client) recvQueriesResult() error {
 				return err
 			}
 		case external.Query4Response:
-			if err := handleQuery4Response(); err != nil {
+			if err := client.handleQuery4Response(); err != nil {
 				return err
 			}
-
 		default:
 			return fmt.Errorf("unexpected message type while receiving queries result: %d", msgType)
 		}
 	}
-	if err := client.expectEndOfRecords(); err != nil {
-		return err
-	}
+
+	slog.Info("End of records received, closing")
 	if err := external.WriteAck(client.conn); err != nil {
-		slog.Debug("While writing ACK after queries result", "err", err)
+		slog.Info("While writing ACK after queries result", "err", err)
 		return err
 	}
+
 	return nil
 }
 
 func (client *Client) readQuery1Records() ([]transaction.LowAmountTransfer, error) {
 	count, err := client.readUint32()
 	if err != nil {
-		slog.Debug("While reading query1 records count", "err", err)
+		slog.Info("While reading query1 records count", "err", err)
 		return nil, err
 	}
 	slog.Info("Read query1 records count", "count", count)
@@ -334,11 +333,11 @@ func (client *Client) readLowAmountTransferRecord() (transaction.LowAmountTransf
 func (client *Client) expectEndOfRecords() error {
 	msgType, err := external.ReadMsgType(client.conn)
 	if err != nil {
-		slog.Debug("While reading message type for queries result EOF", "err", err)
+		slog.Info("While reading message type for queries result EOF", "err", err)
 		return err
 	}
 	if msgType != external.EndOfRecords {
-		slog.Debug("Expected EndOfRecords message type after reading queries result, got", "msgType", msgType)
+		slog.Info("Expected EndOfRecords message type after reading queries result, got", "msgType", msgType)
 		return fmt.Errorf("expected EndOfRecords message type after reading queries result, got %d", msgType)
 	}
 	return nil
@@ -347,7 +346,7 @@ func (client *Client) expectEndOfRecords() error {
 func (client *Client) writeQuery1CSV(records []transaction.LowAmountTransfer) error {
 	outputFile, err := os.Create(client.config.OutputFile)
 	if err != nil {
-		slog.Debug("Error while creating output file", "err", err)
+		slog.Info("Error while creating output file", "err", err)
 		return err
 	}
 	defer outputFile.Close()
@@ -356,14 +355,14 @@ func (client *Client) writeQuery1CSV(records []transaction.LowAmountTransfer) er
 	defer writer.Flush()
 
 	if err := writer.Write([]string{"From Bank", "Account", "To Bank", "Account.1", "Amount Paid"}); err != nil {
-		slog.Debug("Error while writing CSV header", "err", err)
+		slog.Info("Error while writing CSV header", "err", err)
 		return err
 	}
 
 	for _, r := range records {
 		line := []string{strconv.Itoa(r.FromBank), r.FromAccount, strconv.Itoa(r.ToBank), r.ToAccount, fmt.Sprintf("%.2f", r.Amount)}
 		if err := writer.Write(line); err != nil {
-			slog.Debug("Error while writing CSV line", "err", err)
+			slog.Info("Error while writing CSV line", "err", err)
 			return err
 		}
 	}
@@ -384,7 +383,7 @@ func (client *Client) readUint32() (uint32, error) {
 func (client *Client) readUint64AsInt(fieldName string) (int, error) {
 	bytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE)
 	if err != nil {
-		slog.Debug("While reading field", "field", fieldName, "err", err)
+		slog.Info("While reading field", "field", fieldName, "err", err)
 		return 0, err
 	}
 	return int(serializer.DeserializeUint64(bytes)), nil
@@ -393,12 +392,12 @@ func (client *Client) readUint64AsInt(fieldName string) (int, error) {
 func (client *Client) readLengthPrefixedString(fieldName string) (string, error) {
 	length, err := client.readUint32()
 	if err != nil {
-		slog.Debug("While reading string length", "field", fieldName, "err", err)
+		slog.Info("While reading string length", "field", fieldName, "err", err)
 		return "", err
 	}
 	bytes, err := safeio.ReadAll(client.conn, length)
 	if err != nil {
-		slog.Debug("While reading string bytes", "field", fieldName, "err", err)
+		slog.Info("While reading string bytes", "field", fieldName, "err", err)
 		return "", err
 	}
 	return serializer.DeserializeString(bytes), nil
@@ -407,7 +406,7 @@ func (client *Client) readLengthPrefixedString(fieldName string) (string, error)
 func (client *Client) readFloat64(fieldName string) (float64, error) {
 	bytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE)
 	if err != nil {
-		slog.Debug("While reading field", "field", fieldName, "err", err)
+		slog.Info("While reading field", "field", fieldName, "err", err)
 		return 0, err
 	}
 	return serializer.DeserializeFloat64(bytes), nil
@@ -429,7 +428,7 @@ func (Client *Client) handleQuery4Response() error {
 		return err
 	}
 
-	Client.writer.
+	Client.writer.WriteQ4Result(toWrite)
 
 	return nil
 }

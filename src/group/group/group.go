@@ -28,11 +28,12 @@ type GroupConfig struct {
 }
 
 type Group struct {
-	inputQueue      middleware.Middleware
-	controlExchange middleware.Middleware
-	outputExchange  middleware.ExchangeMiddleware
-	config          GroupConfig
-	controlMutex    sync.Mutex
+	inputQueue          middleware.Middleware
+	controlExchange     middleware.Middleware
+	outputExchange      middleware.ExchangeMiddleware
+	config              GroupConfig
+	controlMutex        sync.Mutex
+	precalculatedTopics []string
 }
 
 func NewGroupWorker(config GroupConfig) (*Group, error) {
@@ -43,9 +44,6 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT) // sacar esto !!!! TO DO
-	// TODO que un proceso solo maneje el EOF y otro el input queue
 
 	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
 
@@ -62,12 +60,19 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		return nil, err
 	}
 
+	// para optimizar un poco el tiempo
+	precalculatedTopics := make([]string, config.NextFaseWorkersAmount)
+	for i := 0; i < config.NextFaseWorkersAmount; i++ {
+		precalculatedTopics[i] = fmt.Sprintf("%s_%d", config.NextFaseWorkersPrefix, i)
+	}
+
 	return &Group{
-		inputQueue:      inputQueue,
-		outputExchange:  *outputExchange,
-		controlExchange: controlExchange,
-		config:          config,
-		controlMutex:    sync.Mutex{},
+		inputQueue:          inputQueue,
+		outputExchange:      *outputExchange,
+		controlExchange:     controlExchange,
+		config:              config,
+		controlMutex:        sync.Mutex{},
+		precalculatedTopics: precalculatedTopics,
 	}, nil
 }
 
@@ -101,23 +106,22 @@ func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack f
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		mustPropagate, _, err := inner.DeserializeEOR(msg.Data)
+		mustPropagate, sender, err := inner.DeserializeEOR(msg.Data)
 		if err != nil {
 			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
+		slog.Info("Received EOF record message from ", "clientID", msg.ClientID, "sender", sender)
 		if err := groupWorker.handleEndOfRecordMessage(msg.ClientID, mustPropagate); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
-		ack()
-		return
 
 	case inner.TransactionBatch:
 		//obtenemos las transacciones
-		slog.Info("Received msg", "type", "tranasction batch")
+		//slog.Info("Received msg", "type", "tranasction batch")
 		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
 		if err != nil {
 			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
@@ -138,12 +142,12 @@ func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack f
 }
 
 func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
-	slog.Info("Received EOF record message from ", "clientID", clientID)
+
 	// se debe propagar entre todos los group workers y estos a todos los bridges analizers
 
 	msg, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%s_%d", "group", groupWorker.config.ID))
 	if err != nil {
-		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 
@@ -165,9 +169,9 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 	//slog.Info("Received Tansaction batch from ", "clientID", clientID)
 	workerByBatches := make(map[int][]transaction.Transaction)
 
+	hash := fnv.New32a()
 	for _, transaction := range transactionRecords {
-		// hash determinístico en base a: cuenta de origen
-		hash := fnv.New32a()
+		hash.Reset()
 		hash.Write([]byte(transaction.FromAccount))
 		workerIndex := int(hash.Sum32()) % groupWorker.config.NextFaseWorkersAmount
 
@@ -177,8 +181,11 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 
 	// enviamos cada batch al bridge correspondiente
 	for workerIndex, batch := range workerByBatches {
-		topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, workerIndex)
-		if err := groupWorker.sendTransactions(clientID, batch, topic); err != nil {
+
+		if err := groupWorker.sendTransactions(
+			clientID,
+			batch,
+			groupWorker.precalculatedTopics[workerIndex]); err != nil {
 			return fmt.Errorf("error sending batch to worker %d: %w", workerIndex, err)
 		}
 	}
@@ -190,11 +197,11 @@ func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []
 	//slog.Info("Sending Tansactions from ", "clientID", clientID, " to topic: ", topic)
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := groupWorker.outputExchange.SendToTopic(*message, topic); err != nil {
-		slog.Debug("While sending data message", "err", err, "clientID", clientID)
+		slog.Info("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
 	//slog.Info("Batch enviado", "destinatario", topic)

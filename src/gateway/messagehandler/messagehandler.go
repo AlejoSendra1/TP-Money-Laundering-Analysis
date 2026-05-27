@@ -10,10 +10,10 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
-const QUERYS_AMOUNT
+const QUERYS_AMOUNT = 1
 
 type MessageHandler struct {
-	userId                int64
+	UserId                int64
 	results               map[transaction.QueryID]transaction.QueryResult // Resultados de las querys
 	completedQueryCounter int                                             // Contador de las cantidad de querys terminadas
 	endOfRecordsReceived  []inner.MsgType
@@ -32,8 +32,9 @@ var queryAccumulators = map[transaction.QueryID]accumulatorFunc{
 
 func NewMessageHandler() MessageHandler {
 	n := rand.Int64()
+	slog.Info("UserId created", "value", n)
 	return MessageHandler{
-		userId:                n,
+		UserId:                n,
 		results:               make(map[transaction.QueryID]transaction.QueryResult), // no deberia ser necesario
 		completedQueryCounter: 0,
 		endOfRecordsReceived:  make([]inner.MsgType, 0),
@@ -41,12 +42,11 @@ func NewMessageHandler() MessageHandler {
 }
 
 func (messageHandler *MessageHandler) SerializeDataMessage(transactionBatch []transaction.Transaction) (*middleware.Message, error) {
-	return inner.SerializeMessage(messageHandler.userId, transactionBatch)
+	return inner.SerializeMessage(messageHandler.UserId, transactionBatch)
 }
 
 func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message, error) {
-	slog.Info("serializando eof")
-	return inner.SerializeEOF(messageHandler.userId, true, "gateway")
+	return inner.SerializeEOF(messageHandler.UserId, true, "gateway")
 }
 
 func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) (*transaction.QueriesResult, bool, error) {
@@ -54,7 +54,7 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 	if err != nil {
 		return nil, false, err
 	}
-	if clientID != messageHandler.userId {
+	if clientID != messageHandler.UserId {
 		// ClientID dismatch, skipping...
 		return nil, false, nil
 	}
@@ -64,7 +64,7 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 		messageHandler.completedQueryCounter++
 		if messageHandler.completedQueryCounter == 1 { // Por ahora solo se resolvio la 1ra query (al final sera == 5)
 			queriesResult := &transaction.QueriesResult{
-				ClientID: messageHandler.userId,
+				ClientID: messageHandler.UserId,
 				Results:  make(map[transaction.QueryID]transaction.QueryResult),
 			}
 			for queryID, res := range messageHandler.results {
@@ -95,11 +95,12 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 	return nil, true, nil
 }
 
-func (messageHandler *MessageHandler) handleQueryResponse(message *inner.MessageClient) (bool, error) {
+func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClient) (bool, error) {
 	if slices.Contains(messageHandler.endOfRecordsReceived, message.MsgType) {
 		return false, nil
 	}
 	messageHandler.endOfRecordsReceived = append(messageHandler.endOfRecordsReceived, message.MsgType)
+
 	if len(messageHandler.endOfRecordsReceived) == QUERYS_AMOUNT {
 		return true, nil
 	}

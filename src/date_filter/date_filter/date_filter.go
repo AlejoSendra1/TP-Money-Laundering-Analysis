@@ -117,7 +117,7 @@ func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
 
 	msg, err := inner.SerializeEOF(clientID, true, "date_filter") // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
-		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 
@@ -179,13 +179,13 @@ func (dateFilter *DateFilter) getOutputTopic(transaction transaction.Transaction
 func (dateFilter *DateFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64, topic string) error {
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 	outputExchange, _ := dateFilter.outputExchanges[topic]
 
 	if err = outputExchange.Send(*message); err != nil {
-		slog.Debug("While sending data message", "err", err, "clientID", clientID)
+		slog.Info("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil

@@ -88,7 +88,7 @@ func transactionToRow(tx transaction.Transaction) []string {
 // which contains [part0, part1] from strings.Split(sourceAccount, "_")
 func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 	if len(data) != 2 {
-		return fmt.Errorf("expected 2 elements in Q4 data, got %d", len(data))
+		return fmt.Errorf("expected 2 elements in Q4 data, got %v", data...)
 	}
 
 	part0, ok := data[0].(string)

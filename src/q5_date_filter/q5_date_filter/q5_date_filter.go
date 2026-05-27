@@ -104,12 +104,12 @@ func (q5DateFilter *Q5DateFilter) handleDataMessage(transactionRecords []transac
 func (q5DateFilter *Q5DateFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 
 	if err = q5DateFilter.outputExchange.Send(*message); err != nil {
-		slog.Debug("While sending data message", "err", err, "clientID", clientID)
+		slog.Info("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil

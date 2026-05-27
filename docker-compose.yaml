@@ -14,7 +14,28 @@ services:
     - INPUT_EXCHANGE_NAME=bridge_matcher_exchange
     - CONTROL_EXCHANGE_NAME=bridge_matcher_control_exchange
     - OUTPUT_EXCHANGE_NAME=q4_join_exchange
-    - PREV_FASE_WORKERS_AMOUNT=2
+    - WORKERS_AMOUNT=2
+    - PREV_FASE_WORKERS_AMOUNT=3
+    - NEXT_FASE_WORKERS_AMOUNT=1
+    - NEXT_FASE_WORKERS_PREFIX=q4_join
+    - PYTHONUNBUFFERED=1
+  bridge_matcher_1:
+    build:
+      context: ./src/
+      dockerfile: bridge_matcher/Dockerfile
+    container_name: bridge_matcher_1
+    depends_on:
+    - q4_join_0
+    environment:
+    - ID=1
+    - WORKER_PREFIX=bridge_matcher
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_EXCHANGE_NAME=bridge_matcher_exchange
+    - CONTROL_EXCHANGE_NAME=bridge_matcher_control_exchange
+    - OUTPUT_EXCHANGE_NAME=q4_join_exchange
+    - WORKERS_AMOUNT=2
+    - PREV_FASE_WORKERS_AMOUNT=3
     - NEXT_FASE_WORKERS_AMOUNT=1
     - NEXT_FASE_WORKERS_PREFIX=q4_join
     - PYTHONUNBUFFERED=1
@@ -26,7 +47,7 @@ services:
     depends_on:
     - usd_filter_0
     environment:
-    - BATCH_SIZE=10
+    - BATCH_SIZE=40
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
@@ -85,7 +106,7 @@ services:
     - INPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_EXCHANGE_NAME=bridge_matcher_exchange
     - CONTROL_EXCHANGE_NAME=group_control_exchange_name
-    - NEXT_FASE_WORKERS_AMOUNT=1
+    - NEXT_FASE_WORKERS_AMOUNT=2
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
     - PYTHONUNBUFFERED=1
   group_1:
@@ -105,7 +126,27 @@ services:
     - INPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_EXCHANGE_NAME=bridge_matcher_exchange
     - CONTROL_EXCHANGE_NAME=group_control_exchange_name
-    - NEXT_FASE_WORKERS_AMOUNT=1
+    - NEXT_FASE_WORKERS_AMOUNT=2
+    - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
+    - PYTHONUNBUFFERED=1
+  group_2:
+    build:
+      context: ./src/
+      dockerfile: group/Dockerfile
+    container_name: group_2
+    depends_on:
+    - bridge_matcher_0
+    environment:
+    - ID=2
+    - WORKER_PREFIX=group
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=group_queue
+    - INPUT_TOPIC=usd_early_period_transactions_topic
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - OUTPUT_EXCHANGE_NAME=bridge_matcher_exchange
+    - CONTROL_EXCHANGE_NAME=group_control_exchange_name
+    - NEXT_FASE_WORKERS_AMOUNT=2
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
     - PYTHONUNBUFFERED=1
   q4_join_0:

@@ -17,7 +17,7 @@ const (
 	TransactionBatch MsgType = iota + 1
 	Ack
 	EndOfRecords
-	QueryResponse
+	QueryEOR
 	Query1Response
 	Query2Response
 	Query3Response
@@ -26,6 +26,7 @@ const (
 	SuspiciousAccount
 	PossibleFraudDestinations
 	FraudSource
+	ReadyForEOR
 )
 
 type MessageClient struct {
@@ -296,7 +297,41 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 	}, nil
 }
 
-// --- Serializer/Deserializer  ---
+// para hacer 2 fase commit
+func SerializeReadyForEOR(clientID int64, workerID int) (*middleware.Message, error) {
+	slog.Info("serializando ReadyForEOR")
+	data := []interface{}{}
+
+	data = append(data, []interface{}{
+		workerID,
+	})
+
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: ReadyForEOR, Data: data})
+	if err != nil {
+		return nil, err
+	}
+
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializeReadyForEOR(data []interface{}) (int, error) {
+	info, ok := (data[0]).([]interface{})
+	if !ok {
+		return 0, fmt.Errorf("Unexpected data in ReadyForEOR msg, received data %v", data)
+	}
+	// deserializacion de los datos
+	senderID, ok := (info[0]).(float64)
+	if !ok {
+		return 0, fmt.Errorf("Unexpected data in ReadyForEOR msg, expected sender int, received data %v", data)
+	}
+	return int(senderID), nil
+}
+
+// ---------------------------------------------------------
+// especifico de la Query 1 ------
+// ----------------------------------------------------------
 
 func serializeQuery1(qr transaction.QueryResult) ([]interface{}, error) {
 	serialized := []interface{}{}
@@ -333,6 +368,7 @@ func deserializeQuery1(records []interface{}) (interface{}, error) {
 // ---------------------------------------------------------
 // especifico de la Query 4 dsp ver como mover de aca ------
 // ----------------------------------------------------------
+
 func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]struct{}) (*middleware.Message, error) {
 	bridges := []interface{}{}
 	for key, _ := range possibleBridges {
@@ -458,15 +494,4 @@ func DeserializeQ4SourceAccount(data []interface{}) (string, string, error) {
 	}
 
 	return susAccount, susAccountBank, nil
-}
-
-/// resultados ---------------------- mover
-
-func DeserializeQueryResult(middlewareMsg *middleware.Message) (MessageClient, error) {
-	msg, err := DeserializeMessage(middlewareMsg)
-	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
-	}
 }

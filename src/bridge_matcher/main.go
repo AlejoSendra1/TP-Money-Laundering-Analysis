@@ -44,6 +44,11 @@ func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("OUTPUT_EXCHANGE_NAME environment variable is required")
 	}
 
+	workersAmount, err := strconv.Atoi(os.Getenv("WORKERS_AMOUNT"))
+	if err != nil {
+		return bridge_matcher.BridgeMatcherConfig{}, errors.New("WORKERS_AMOUNT environment variable is required")
+	}
+
 	nextFaseWorkersAmount, err := strconv.Atoi(os.Getenv("NEXT_FASE_WORKERS_AMOUNT"))
 	if err != nil {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("NEXT_FASE_WORKERS_AMOUNT environment variable is required")
@@ -67,6 +72,7 @@ func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
 		InputExchangeName:     inputExchangeName,
 		ControlExchangeName:   controlExchange,
 		OutputExchangeName:    outputExchangeName,
+		WorkersAmount:         workersAmount,
 		NextFaseWorkersAmount: nextFaseWorkersAmount,
 		NextFaseWorkersPrefix: nextFaseWorkersPrefix,
 		PrevFaseWorkersAmount: prevFaseWorkersAmount,

@@ -90,8 +90,6 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 			nack()
 			return
 		}
-		ack()
-		return
 	case inner.SuspiciousAccount:
 		slog.Info("Sus account recibida", "client", msg.ClientID)
 		if err := join.handleSuspiciousAccountMessage(msg.ClientID, msg.Data); err != nil {
@@ -113,7 +111,7 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 }
 
 func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error {
-	slog.Info("Received EOF record message from ", "clientID", clientID)
+	slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
 
 	join.updateClientEORCondition(clientID, sender)
 	if !join.assertClientEORCondition(clientID) {
@@ -122,7 +120,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 
 	msg, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%s_%d", "join", join.config.ID)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
-		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	return join.outputQueue.Send(*msg)
@@ -131,7 +129,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 func (join *Join) handleSuspiciousAccountMessage(clientID int64, data []interface{}) error {
 	source, possibleBridges, err := inner.DeserializeSuspiciousMsgData(data)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 
@@ -146,19 +144,16 @@ func (join *Join) handleSuspiciousAccountMessage(clientID int64, data []interfac
 
 		// Agregar para cada puente la relacion con el sus
 		join.bridgeSourceRegisters[clientID][possibleBridge][source] = struct{}{}
-		slog.Info("Vinculado bridge con source", "client", clientID, "source", source, "possible bridge", possibleBridge)
-
+		//slog.Info("Vinculado bridge con source", "client", clientID, "source", source, "possible bridge", possibleBridge)
 	}
-
 	// con prefetch uno este msg siempre llega primero
-	//verifyFraudCondition(clientID, source, possibleBridges)
 	return nil
 }
 
 func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []interface{}) error {
 	source, bridge, possibleSinks, err := inner.DeserializePossibleFraudDestinations(data)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 

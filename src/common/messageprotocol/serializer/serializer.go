@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"time"
-	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/transaction"
 )
@@ -89,9 +88,16 @@ func DeserializeFloat64(bytes []byte) float64 {
 	return math.Float64frombits(bits)
 }
 
+func SerializeEOR() []byte {
+	msgType := make([]byte, 4)
+	binary.BigEndian.PutUint32(msgType, uint32(3))
+	return msgType
+}
+
 func SerializeQuery4Response(response inner.MessageClient) ([]byte, error) {
 	msgType := make([]byte, 4)
-	binary.BigEndian.PutUint32(msgType, uint32(external.Query4Response))
+	//binary.BigEndian.PutUint32(msgType, uint32(external.Query4Response))
+	binary.BigEndian.PutUint32(msgType, uint32(7))
 
 	serialization, err := json.Marshal(response.Data)
 	if err != nil {

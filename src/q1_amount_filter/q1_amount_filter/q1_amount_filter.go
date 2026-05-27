@@ -119,11 +119,11 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 func (q1AmountFilter *Q1AmountFilter) sendOutput(queryResult transaction.QueryResult, clientID int64) error {
 	message, err := inner.SerializeQueryResultMessage(clientID, queryResult)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := q1AmountFilter.outputQueue.Send(*message); err != nil {
-		slog.Debug("While sending data message", "err", err, "clientID", clientID)
+		slog.Info("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
