@@ -6,6 +6,7 @@ services:
     container_name: client_0
     depends_on:
     - q5_date_filter_0
+    - q5_date_filter_1
     environment:
     - BATCH_SIZE=10
     - INPUT_FILE=/datasets/input_5_query.csv
@@ -103,7 +104,7 @@ services:
     - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - INPUT_QUEUE=filter_payment_format_queue_0
+    - INPUT_QUEUE=filter_payment_format_queue
     - INPUT_EXCHANGE_NAME=q5_date_exchange
     - INPUT_TOPIC=q5_date_topic
     - OUTPUT_PREFIX=counter_q5
@@ -111,6 +112,7 @@ services:
     - FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
     - BATCH_SIZE=100
+    - Q5_DATE_FILTER_AMOUNT=2
 
   filter_payment_format_1:
     build:
@@ -124,7 +126,7 @@ services:
     - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - INPUT_QUEUE=filter_payment_format_queue_1
+    - INPUT_QUEUE=filter_payment_format_queue
     - INPUT_EXCHANGE_NAME=q5_date_exchange
     - INPUT_TOPIC=q5_date_topic
     - OUTPUT_PREFIX=counter_q5
@@ -132,6 +134,7 @@ services:
     - FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
     - BATCH_SIZE=100
+    - Q5_DATE_FILTER_AMOUNT=2
 
   counter_q5_0:
     build:
