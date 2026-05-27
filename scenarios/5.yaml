@@ -70,6 +70,26 @@ services:
     - INPUT_TOPIC=transactions_topic
     - OUTPUT_EXCHANGE_NAME=q5_date_exchange
     - OUTPUT_TOPIC=q5_date_topic
+    - CONTROL_EXCHANGE_NAME=q5_date_filter_control
+    - CONTROL_TOPIC=q5_date_filter_control_topic
+  q5_date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: q5_date_filter/Dockerfile
+    container_name: q5_date_filter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - INPUT_QUEUE=q5_date_filter_queue
+      - INPUT_EXCHANGE_NAME=transactions_exchange
+      - INPUT_TOPIC=transactions_topic
+      - OUTPUT_EXCHANGE_NAME=q5_date_exchange
+      - OUTPUT_TOPIC=q5_date_topic
+      - CONTROL_EXCHANGE_NAME=q5_date_filter_control
+      - CONTROL_TOPIC=q5_date_filter_control_topic
 
   filter_payment_format_0:
     build:

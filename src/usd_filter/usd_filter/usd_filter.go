@@ -75,7 +75,6 @@ func (usdFilter *USDFilter) Run() {
 func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
 	usdFilter.mu.Lock()
 	defer usdFilter.mu.Unlock()
-	// TODO: Una vez que pase el filtro, el campo Currency ya no es necesario
 	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", clientID)
