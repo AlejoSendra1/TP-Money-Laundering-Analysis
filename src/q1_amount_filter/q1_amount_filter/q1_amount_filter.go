@@ -86,7 +86,7 @@ func (q1AmountFilter *Q1AmountFilter) handleMessage(middlewareMsg *middleware.Me
 }
 
 func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) error {
-	msg, err := inner.SerializeEOF(clientID, false, "q1_amount_filter") // TO DO agregar otra var de entorno y para group tmb
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query1) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
