@@ -7,8 +7,8 @@ services:
     depends_on:
     - q5_date_filter_0
     environment:
-    - BATCH_SIZE = 10
-    - INPUT_FILE=/datasets/input_0.csv
+    - BATCH_SIZE=10
+    - INPUT_FILE=/datasets/input_5_query.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -16,45 +16,7 @@ services:
     volumes:
     - ./datasets:/datasets
     - ./output:/output
-  q5_counter_0:
-    build:
-      context: ./src/
-      dockerfile: counter/Dockerfile
-    container_name: q5_counter_0
-    depends_on:
-    - currencies_cache_0
-    - gateway
-    environment:
-    - MOM_HOST=rabbitmq
-    - INPUT_QUEUE=q5_counter_queue
-    - INPUT_TOPIC=q5_period_and_paymentformat_filtered_transaction_topic
-    - OUTPUT_TOPIC=results_topic
-    - PYTHONUNBUFFERED=1
-  currencies_cache_0:
-    build:
-      context: ./src/
-      dockerfile: currencies_cache/Dockerfile
-    container_name: currencies_cache_0
-    depends_on:
-    - rabbitmq
-    environment:
-    - MOM_HOST=rabbitmq
-    - PYTHONUNBUFFERED=1
-  q5_date_filter_0:
-    build:
-      context: ./src/
-      dockerfile: date_filter/Dockerfile
-    container_name: q5_date_filter_0
-    depends_on:
-    - payment_format_filter_0
-    environment:
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - INPUT_QUEUE=q5_date_filter_queue
-    - INPUT_EXCHANGE_NAME=transactions_exchange
-    - INPUT_TOPIC=transactions_topic
-    - OUTPUT_EXCHANGE_NAME=q5_date_exchange
-    - OUTPUT_TOPIC=q5_period_transaction_topic
+
   gateway:
     build:
       context: ./src/
@@ -72,19 +34,7 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-  payment_format_filter_0:
-    build:
-      context: ./src/
-      dockerfile: payment_format_filter/Dockerfile
-    container_name: payment_format_filter_0
-    depends_on:
-    - q5_counter_0
-    environment:
-    - INPUT_QUEUE=payment_format_filter_queue
-    - INPUT_TOPIC=q5_period_transaction_topic
-    - MOM_HOST=rabbitmq
-    - OUTPUT_TOPIC=q5_period_and_paymentformat_filtered_transaction_topic
-    - PYTHONUNBUFFERED=1
+
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -101,3 +51,143 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
+    logging:
+      driver: none
+
+  q5_date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: q5_date_filter/Dockerfile
+    container_name: q5_date_filter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=q5_date_filter_queue
+    - INPUT_EXCHANGE_NAME=transactions_exchange
+    - INPUT_TOPIC=transactions_topic
+    - OUTPUT_EXCHANGE_NAME=q5_date_exchange
+    - OUTPUT_TOPIC=q5_date_topic
+
+  filter_payment_format_0:
+    build:
+      context: ./src/
+      dockerfile: filter_payment_format/Dockerfile
+    container_name: filter_payment_format_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=filter_payment_format_queue_0
+    - INPUT_EXCHANGE_NAME=q5_date_exchange
+    - INPUT_TOPIC=q5_date_topic
+    - OUTPUT_PREFIX=counter_q5
+    - OUTPUT_AMOUNT=2
+    - FILTER_AMOUNT=2
+    - FILTER_PAYMENT_CONTROL=filter_payment_control
+    - BATCH_SIZE=100
+
+  filter_payment_format_1:
+    build:
+      context: ./src/
+      dockerfile: filter_payment_format/Dockerfile
+    container_name: filter_payment_format_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=filter_payment_format_queue_1
+    - INPUT_EXCHANGE_NAME=q5_date_exchange
+    - INPUT_TOPIC=q5_date_topic
+    - OUTPUT_PREFIX=counter_q5
+    - OUTPUT_AMOUNT=2
+    - FILTER_AMOUNT=2
+    - FILTER_PAYMENT_CONTROL=filter_payment_control
+    - BATCH_SIZE=100
+
+  counter_q5_0:
+    build:
+      context: ./src/
+      dockerfile: counter_q5/Dockerfile
+    container_name: counter_q5_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=counter_q5
+    - FILTER_AMOUNT=2
+    - CONVERSION_QUEUE=currencies_cache_queue
+    - CONVERTED_PREFIX=converted_queue
+    - OUTPUT_QUEUE=results_queue
+
+  counter_q5_1:
+    build:
+      context: ./src/
+      dockerfile: counter_q5/Dockerfile
+    container_name: counter_q5_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=counter_q5
+    - FILTER_AMOUNT=2
+    - CONVERSION_QUEUE=currencies_cache_queue
+    - CONVERTED_PREFIX=converted_queue
+    - OUTPUT_QUEUE=results_queue
+
+  currencies_cache_0:
+    build:
+      context: ./src/
+      dockerfile: currencies_cache/Dockerfile
+    container_name: currencies_cache_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=currencies_cache_queue
+    - OUTPUT_PREFIX=converted_queue
+    - COUNTER_AMOUNT=2
+    - CURRENCY_CODES_FILE=/currency_codes.json
+    - FALLBACK_RATES_FILE=/bitcoin_usd_rates.json
+    - EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v2/rates
+    volumes:
+    - ./src/currencies_cache/currency_codes.json:/currency_codes.json
+    - ./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json
+
+  currencies_cache_1:
+    build:
+      context: ./src/
+      dockerfile: currencies_cache/Dockerfile
+    container_name: currencies_cache_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=currencies_cache_queue
+    - OUTPUT_PREFIX=converted_queue
+    - COUNTER_AMOUNT=2
+    - CURRENCY_CODES_FILE=/currency_codes.json
+    - FALLBACK_RATES_FILE=/bitcoin_usd_rates.json
+    - EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v2/rates
+    volumes:
+    - ./src/currencies_cache/currency_codes.json:/currency_codes.json
+    - ./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json
+

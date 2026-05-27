@@ -39,11 +39,15 @@ type queryDeserializer func([]interface{}) (interface{}, error)
 
 var querySerializers = map[transaction.QueryID]querySerializer{
 	transaction.Query1: serializeQuery1,
-	// transaction.Query2: serializeQuery2,
+	transaction.Query3: serializeQuery3,
+	transaction.Query2: serializeQuery2,
+	transaction.Query5: serializeQuery5,
 }
 var queryDeserializers = map[transaction.QueryID]queryDeserializer{
 	transaction.Query1: deserializeQuery1,
-	// transaction.Query2: deserializeQuery2,
+	transaction.Query3: deserializeQuery3,
+	transaction.Query2: deserializeQuery2,
+	transaction.Query5: deserializeQuery5,
 }
 
 func SerializeJson(messageClient MessageClient) ([]byte, error) {
@@ -249,6 +253,52 @@ func DeserializePaymentFormatAverageMessage(message *middleware.Message) (int64,
 			PaymentFormat: fields[0].(string),
 			Average:       fields[1].(float64),
 			Count:         int(fields[2].(float64)),
+		}
+		records = append(records, rec)
+	}
+
+	return messageClient.ClientID, records, len(records) == 0, nil
+}
+
+func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers []transaction.ThresholdFilteredTransfer) (*middleware.Message, error) {
+	serializedRecords := []interface{}{}
+
+	for _, rec := range bankPeakTransfers {
+		datum := []interface{}{
+			rec.FromBank,
+			rec.FromAccount,
+			rec.PaymentFormat,
+			rec.Amount,
+		}
+		serializedRecords = append(serializedRecords, datum)
+	}
+
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	if err != nil {
+		return nil, fmt.Errorf("serializing bank peak transfer: %w", err)
+	}
+
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+func DeserializeThresholdFilteredTransferMessage(message *middleware.Message) (int64, []transaction.ThresholdFilteredTransfer, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing threshold filtered transfer body: %w", err)
+	}
+
+	records := make([]transaction.ThresholdFilteredTransfer, 0, len(messageClient.Data))
+	for _, datum := range messageClient.Data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 4 {
+			return 0, nil, false, fmt.Errorf("invalid structure inside payment format average record")
+		}
+
+		rec := transaction.ThresholdFilteredTransfer{
+			FromBank:      int(fields[0].(float64)),
+			FromAccount:   fields[1].(string),
+			PaymentFormat: fields[2].(string),
+			Amount:        fields[3].(float64),
 		}
 		records = append(records, rec)
 	}
@@ -493,4 +543,222 @@ func DeserializeQ4SourceAccount(data []interface{}) (string, string, error) {
 	}
 
 	return susAccount, susAccountBank, nil
+func serializeQuery3(qr transaction.QueryResult) ([]interface{}, error) {
+	serialized := []interface{}{}
+	records, ok := qr.Transactions.([]transaction.ThresholdFilteredTransfer)
+	if !ok {
+		return nil, fmt.Errorf("serializeQuery3: unexpected transactions type: %T", qr.Transactions)
+	}
+	for _, r := range records {
+		datum := []interface{}{r.FromBank, r.FromAccount, r.PaymentFormat, r.Amount}
+		serialized = append(serialized, datum)
+	}
+	return serialized, nil
+}
+
+func deserializeQuery3(records []interface{}) (interface{}, error) {
+	transactions := make([]transaction.ThresholdFilteredTransfer, 0, len(records))
+	for _, datum := range records {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 4 {
+			return nil, fmt.Errorf("deserializing invalid structure for results query 3")
+		}
+		tx := transaction.ThresholdFilteredTransfer{
+			FromBank:      int(fields[0].(float64)),
+			FromAccount:   fields[1].(string),
+			PaymentFormat: fields[2].(string),
+			Amount:        fields[3].(float64),
+		}
+		transactions = append(transactions, tx)
+	}
+	return transactions, nil
+}
+
+func serializeQuery2(qr transaction.QueryResult) ([]interface{}, error) {
+	serialized := []interface{}{}
+	records, ok := qr.Transactions.([]transaction.MaxBankTransaction)
+	if !ok {
+		return nil, fmt.Errorf("serializeQuery2: unexpected transactions type: %T", qr.Transactions)
+	}
+	for _, r := range records {
+		serialized = append(serialized, []interface{}{r.BankCode, r.Account, r.Amount})
+	}
+	return serialized, nil
+}
+
+func deserializeQuery2(records []interface{}) (interface{}, error) {
+	transactions := make([]transaction.MaxBankTransaction, 0, len(records))
+	for _, datum := range records {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 3 {
+			return nil, fmt.Errorf("deserializing invalid structure for results query 2")
+		}
+		transactions = append(transactions, transaction.MaxBankTransaction{
+			BankCode: int(fields[0].(float64)),
+			Account:  fields[1].(string),
+			Amount:   fields[2].(float64),
+		})
+	}
+	return transactions, nil
+}
+
+// SerializePaymentRecordMessage serializes a batch of PaymentRecord.
+// Row format: [timestamp, amount, currency, payment_format]
+func SerializePaymentRecordMessage(clientId int64, records []transaction.PaymentRecord) (*middleware.Message, error) {
+	data := make([]interface{}, 0, len(records))
+	for _, r := range records {
+		data = append(data, []interface{}{
+			r.Timestamp.Format("2006/01/02 15:04"),
+			r.Amount,
+			r.Currency,
+			r.PaymentFormat,
+		})
+	}
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	if err != nil {
+		return nil, fmt.Errorf("serializing payment records: %w", err)
+	}
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+// DeserializePaymentRecordMessage deserializes a batch of PaymentRecord records.
+// Row format: [timestamp(0), amount(1), currency(2), payment_format(3)]
+func DeserializePaymentRecordMessage(message *middleware.Message) (int64, []transaction.PaymentRecord, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing payment record body: %w", err)
+	}
+
+	records := make([]transaction.PaymentRecord, 0, len(messageClient.Data))
+	for _, datum := range messageClient.Data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 4 {
+			return 0, nil, false, fmt.Errorf("invalid structure inside payment record (expected 4 fields, got %d)", len(fields))
+		}
+		timestamp, ok1 := fields[0].(string)
+		amount, ok2 := fields[1].(float64)
+		currency, ok3 := fields[2].(string)
+		paymentFormat, ok4 := fields[3].(string)
+		if !ok1 || !ok2 || !ok3 || !ok4 {
+			return 0, nil, false, fmt.Errorf("type mismatch in payment record fields")
+		}
+		parsedTime, err := time.Parse("2006/01/02 15:04", timestamp)
+		if err != nil {
+			return 0, nil, false, fmt.Errorf("invalid timestamp %q in payment record: %w", timestamp, err)
+		}
+		records = append(records, transaction.PaymentRecord{
+			Timestamp:     parsedTime,
+			Amount:        amount,
+			Currency:      currency,
+			PaymentFormat: paymentFormat,
+		})
+	}
+
+	return messageClient.ClientID, records, len(records) == 0, nil
+}
+
+// SerializePaymentFormatCountMessage serializes a batch of PaymentFormatCount records.
+// Row format: [payment_format, count]
+func SerializePaymentFormatCountMessage(clientId int64, records []transaction.PaymentFormatCount) (*middleware.Message, error) {
+	data := make([]interface{}, 0, len(records))
+	for _, r := range records {
+		data = append(data, []interface{}{r.PaymentFormat, r.Count})
+	}
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	if err != nil {
+		return nil, fmt.Errorf("serializing payment format counts: %w", err)
+	}
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+// DeserializePaymentFormatCountMessage deserializes a batch of PaymentFormatCount records.
+// Row format: [payment_format(0), count(1)]
+func DeserializePaymentFormatCountMessage(message *middleware.Message) (int64, []transaction.PaymentFormatCount, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing payment format count body: %w", err)
+	}
+
+	records := make([]transaction.PaymentFormatCount, 0, len(messageClient.Data))
+	for _, datum := range messageClient.Data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 2 {
+			return 0, nil, false, fmt.Errorf("invalid structure inside payment format count record")
+		}
+		paymentFormat, ok1 := fields[0].(string)
+		count, ok2 := fields[1].(float64)
+		if !ok1 || !ok2 {
+			return 0, nil, false, fmt.Errorf("type mismatch in payment format count fields")
+		}
+		records = append(records, transaction.PaymentFormatCount{
+			PaymentFormat: paymentFormat,
+			Count:         int(count),
+		})
+	}
+	return messageClient.ClientID, records, len(records) == 0, nil
+}
+
+// SerializeMaxBankTransactionMessage serializes a batch of MaxBankTransaction records.
+// Row format: [bankCode, account, amount]
+func SerializeMaxBankTransactionMessage(clientId int64, records []transaction.MaxBankTransaction) (*middleware.Message, error) {
+	data := make([]interface{}, 0, len(records))
+	for _, r := range records {
+		data = append(data, []interface{}{r.BankCode, r.Account, r.Amount})
+	}
+	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	if err != nil {
+		return nil, fmt.Errorf("serializing max bank transactions: %w", err)
+	}
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+// DeserializeMaxBankTransactionMessage deserializes a batch of MaxBankTransaction records.
+// Row format: [bankCode(0), account(1), amount(2)]
+func DeserializeMaxBankTransactionMessage(message *middleware.Message) (int64, []transaction.MaxBankTransaction, bool, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return 0, nil, false, fmt.Errorf("deserializing max bank transaction body: %w", err)
+	}
+
+	records := make([]transaction.MaxBankTransaction, 0, len(messageClient.Data))
+	for _, datum := range messageClient.Data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 3 {
+			return 0, nil, false, fmt.Errorf("invalid structure inside max bank transaction record")
+		}
+		records = append(records, transaction.MaxBankTransaction{
+			BankCode: int(fields[0].(float64)),
+			Account:  fields[1].(string),
+			Amount:   fields[2].(float64),
+		})
+	}
+
+	return messageClient.ClientID, records, len(records) == 0, nil
+}
+
+func serializeQuery5(qr transaction.QueryResult) ([]interface{}, error) {
+	serialized := []interface{}{}
+	records, ok := qr.Transactions.([]transaction.PaymentFormatCount)
+	if !ok {
+		return nil, fmt.Errorf("serializeQuery5: unexpected transactions type: %T", qr.Transactions)
+	}
+	for _, r := range records {
+		serialized = append(serialized, []interface{}{r.PaymentFormat, r.Count})
+	}
+	return serialized, nil
+}
+
+func deserializeQuery5(records []interface{}) (interface{}, error) {
+	transactions := make([]transaction.PaymentFormatCount, 0, len(records))
+	for _, datum := range records {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 2 {
+			return nil, fmt.Errorf("deserializing invalid structure for results query 5")
+		}
+		transactions = append(transactions, transaction.PaymentFormatCount{
+			PaymentFormat: fields[0].(string),
+			Count:         int(fields[1].(float64)),
+		})
+	}
+	return transactions, nil
 }
