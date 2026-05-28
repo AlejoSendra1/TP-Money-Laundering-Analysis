@@ -13,6 +13,9 @@ services:
     - INPUT_EXCHANGE_NAME=usd_exchange
     - INPUT_TOPIC=usd_transactions_topic
     - OUTPUT_QUEUE=results_queue
+    - CONTROL_EXCHANGE_NAME=q1_amount_filter_control_exchange
+    - CONTROL_TOPIC=q1_amount_filter_control_topic
+    - USD_FILTER_AMOUNT=2
   q1_amount_filter_1:
     build:
       context: ./src/
@@ -27,6 +30,9 @@ services:
       - INPUT_EXCHANGE_NAME=usd_exchange
       - INPUT_TOPIC=usd_transactions_topic
       - OUTPUT_QUEUE=results_queue
+      - CONTROL_EXCHANGE_NAME=q1_amount_filter_control_exchange
+      - CONTROL_TOPIC=q1_amount_filter_control_topic
+      - USD_FILTER_AMOUNT=2
   client_0:
     build:
       context: ./src/
@@ -34,16 +40,35 @@ services:
     container_name: client_0
     depends_on:
     - usd_filter_0
+    - usd_filter_1
     environment:
     - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input.csv
-    - OUTPUT_FILE=/output/output.csv
+    - INPUT_FILE=/datasets/input_0.csv
+    - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
     - ./output:/output
+  client_1:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_1
+    depends_on:
+      - usd_filter_0
+      - usd_filter_1
+    environment:
+      - BATCH_SIZE=10
+      - INPUT_FILE=/datasets/input_1.csv
+      - OUTPUT_FILE=/output/output_1.csv
+      - PYTHONUNBUFFERED=1
+      - SERVER_HOST=gateway
+      - SERVER_PORT=5678
+    volumes:
+      - ./datasets:/datasets
+      - ./output:/output
   gateway:
     build:
       context: ./src/
