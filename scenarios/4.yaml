@@ -48,8 +48,8 @@ services:
     - usd_filter_0
     environment:
     - BATCH_SIZE=40
-    - INPUT_FILE=/datasets/input_0.csv
-    - OUTPUT_FILE=/output/output_0.csv
+    - INPUT_FILE=/datasets/input_ale.csv
+    - OUTPUT_FILE=/output/output_ale_4.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
@@ -71,9 +71,29 @@ services:
     - INPUT_TOPIC=usd_transactions_topic
     - OUTPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
+    - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
     - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
     - CONTROL_TOPIC=date_filter_control_topic
-    - USD_FILTER_AMOUNT=1
+    - USD_FILTER_AMOUNT=2
+  date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: date_filter/Dockerfile
+    container_name: date_filter_1
+    depends_on:
+      - group_0
+    environment:
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - INPUT_QUEUE=date_filter_queue
+      - INPUT_EXCHANGE_NAME=usd_exchange
+      - INPUT_TOPIC=usd_transactions_topic
+      - OUTPUT_EXCHANGE_NAME=date_exchange
+      - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
+      - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+      - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
+      - CONTROL_TOPIC=date_filter_control_topic
+      - USD_FILTER_AMOUNT=2
   gateway:
     build:
       context: ./src/
@@ -110,6 +130,7 @@ services:
     - CONTROL_EXCHANGE_NAME=group_control_exchange_name
     - NEXT_FASE_WORKERS_AMOUNT=2
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
+    - DATE_FILTER_AMOUNT=2
     - PYTHONUNBUFFERED=1
   group_1:
     build:
@@ -130,6 +151,7 @@ services:
     - CONTROL_EXCHANGE_NAME=group_control_exchange_name
     - NEXT_FASE_WORKERS_AMOUNT=2
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
+    - DATE_FILTER_AMOUNT=2
     - PYTHONUNBUFFERED=1
   group_2:
     build:
@@ -150,6 +172,7 @@ services:
     - CONTROL_EXCHANGE_NAME=group_control_exchange_name
     - NEXT_FASE_WORKERS_AMOUNT=2
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
+    - DATE_FILTER_AMOUNT=2
     - PYTHONUNBUFFERED=1
   q4_join_0:
     build:
@@ -190,6 +213,7 @@ services:
     container_name: usd_filter_0
     depends_on:
     - date_filter_0
+    - date_filter_1
     environment:
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
@@ -200,3 +224,21 @@ services:
     - OUTPUT_TOPIC=usd_transactions_topic
     - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
     - CONTROL_TOPIC=usd_filter_control_topic
+  usd_filter_1:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_1
+    depends_on:
+      - date_filter_1
+      - date_filter_0
+    environment:
+      - INPUT_QUEUE=usd_filter_queue
+      - INPUT_EXCHANGE_NAME=transactions_exchange
+      - INPUT_TOPIC=transactions_topic
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - OUTPUT_EXCHANGE_NAME=usd_exchange
+      - OUTPUT_TOPIC=usd_transactions_topic
+      - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+      - CONTROL_TOPIC=usd_filter_control_topic

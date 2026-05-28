@@ -117,7 +117,7 @@ func (joinQ2 *JoinQ2) processBatch(clientID int64, records []transaction.MaxBank
 		prev, exists := banks[record.BankCode]
 		if !exists || record.Amount > prev.amount {
 			banks[record.BankCode] = bankEntry{amount: record.Amount, account: record.Account}
-			slog.Info("New top", "client_id", clientID, "bank", record.BankCode, "amount", record.Amount, "account", record.Account)
+			//slog.Info("New top", "client_id", clientID, "bank", record.BankCode, "amount", record.Amount, "account", record.Account)
 		}
 	}
 }
@@ -142,6 +142,7 @@ func (joinQ2 *JoinQ2) handleEOF(clientID int64) error {
 func (joinQ2 *JoinQ2) flushClient(clientID int64) error {
 	joinQ2.mutex.Lock()
 	banks := joinQ2.topByClient[clientID]
+	slog.Info("Flushing client", "client_id", clientID, "banks", len(banks))
 	delete(joinQ2.topByClient, clientID)
 	delete(joinQ2.eofCountByClient, clientID)
 	joinQ2.mutex.Unlock()
@@ -180,7 +181,7 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 		if err := joinQ2.outputQueue.Send(*msg); err != nil {
 			return fmt.Errorf("sending data chunk: %w", err)
 		}
-		slog.Info("Sent batch to output queue", "client_id", clientID, "count", len(chunk))
+		//slog.Info("Sent batch to output queue", "client_id", clientID, "count", len(chunk))
 	}
 	return nil
 }
