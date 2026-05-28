@@ -129,12 +129,7 @@ func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()
 	}
 
 	if isEof {
-		slog.Info("Direct EOF received from cache, notifying peers", "client_id", clientID)
-		if err := counter.sendControlEOF(clientID); err != nil {
-			slog.Error("Sending control EOF to peers", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
+		slog.Info("Direct EOF received from cache", "client_id", clientID)
 
 		counter.mu.Lock()
 		counter.eofCountByClient[clientID]++
@@ -175,30 +170,8 @@ func (counter *CounterQ5) sendControlEOF(clientID int64) error {
 	return nil
 }
 
-// handleControlMessage procesa notificaciones EOF de peers.
-// Acumula y hace flush cuando se alcanzan todos los EOFs esperados.
+// handleControlMessage: no-op — counter_q5 usa queues dedicadas, no necesita coordinación entre peers.
 func (counter *CounterQ5) handleControlMessage(msg middleware.Message, ack, nack func()) {
-	clientID, _, _, err := inner.DeserializePaymentRecordMessage(&msg)
-	if err != nil {
-		slog.Error("Deserializing control message", "err", err)
-		nack()
-		return
-	}
-	slog.Info("Control EOF received from peer", "client_id", clientID)
-
-	counter.mu.Lock()
-	counter.eofCountByClient[clientID]++
-	count := counter.eofCountByClient[clientID]
-	counter.mu.Unlock()
-
-	slog.Info("Control EOF accumulated", "client_id", clientID, "count", count, "expected", counter.config.CacheAmount)
-	if count >= counter.config.CacheAmount {
-		if err := counter.flushClient(clientID); err != nil {
-			slog.Error("Flushing client from control", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
-	}
 	ack()
 }
 
@@ -250,23 +223,19 @@ func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error 
 	if err := counter.outputQueue.Send(*msg); err != nil {
 		return fmt.Errorf("sending count results: %w", err)
 	}
-	slog.Info("Sent count results", "client_id", clientID, "payment_formats", len(records))
+	slog.Info("Sent count results", "client_id", clientID, "payment_formats", len(records), "data", records)
 	return nil
 }
 
 func (counter *CounterQ5) sendEOF(clientID int64) error {
-	queryResult := transaction.QueryResult{
-		QueryID:      transaction.Query5,
-		Transactions: []transaction.PaymentFormatCount{},
-	}
-	msg, err := inner.SerializeQueryResultMessage(clientID, queryResult)
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query5)
 	if err != nil {
-		return fmt.Errorf("serializing EOF: %w", err)
+		return fmt.Errorf("serializing EOR: %w", err)
 	}
 	if err := counter.outputQueue.Send(*msg); err != nil {
-		return fmt.Errorf("sending EOF: %w", err)
+		return fmt.Errorf("sending EOR: %w", err)
 	}
-	slog.Info("EOF sent", "client_id", clientID)
+	slog.Info("EOR sent", "client_id", clientID)
 	return nil
 }
 

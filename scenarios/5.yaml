@@ -63,13 +63,15 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
+    - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=q5_date_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
-    - OUTPUT_EXCHANGE_NAME=q5_date_exchange
-    - OUTPUT_TOPIC=q5_date_topic
+    - OUTPUT_QUEUE=filter_payment_format_queue
+    - INSTANCE_AMOUNT=2
+    - CONTROL_EXCHANGE_NAME=q5_date_filter_control
 
   q5_date_filter_1:
     build:
@@ -80,13 +82,15 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
+    - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=q5_date_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
-    - OUTPUT_EXCHANGE_NAME=q5_date_exchange
-    - OUTPUT_TOPIC=q5_date_topic
+    - OUTPUT_QUEUE=filter_payment_format_queue
+    - INSTANCE_AMOUNT=2
+    - CONTROL_EXCHANGE_NAME=q5_date_filter_control
 
   filter_payment_format_0:
     build:
@@ -100,11 +104,10 @@ services:
     - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - INPUT_QUEUE=filter_payment_format_queue_0
-    - INPUT_EXCHANGE_NAME=q5_date_exchange
-    - INPUT_TOPIC=q5_date_topic
+    - INPUT_QUEUE=filter_payment_format_queue
     - OUTPUT_QUEUE=currencies_cache
     - FILTER_AMOUNT=2
+    - DATE_FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
     - BATCH_SIZE=100
 
@@ -120,11 +123,10 @@ services:
     - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - INPUT_QUEUE=filter_payment_format_queue_1
-    - INPUT_EXCHANGE_NAME=q5_date_exchange
-    - INPUT_TOPIC=q5_date_topic
+    - INPUT_QUEUE=filter_payment_format_queue
     - OUTPUT_QUEUE=currencies_cache
     - FILTER_AMOUNT=2
+    - DATE_FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
     - BATCH_SIZE=100
 

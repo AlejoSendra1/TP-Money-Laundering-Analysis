@@ -23,9 +23,7 @@ type FilterPaymentFormatConfig struct {
 	MomHost              string
 	MomPort              int
 	InputQueue           string
-	InputExchangeName    string
-	InputTopic           string
-	OutputQueue          string // cola compartida hacia currencies_cache (competing consumers)
+	OutputQueue          string
 	FilterAmount         int
 	USDFilterAmount      int
 	FilterPaymentControl string
@@ -52,10 +50,6 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueue, connSettings)
 	if err != nil {
 		return nil, fmt.Errorf("creating input queue: %w", err)
-	}
-	if err = inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic); err != nil {
-		inputQueue.Close()
-		return nil, fmt.Errorf("binding input queue: %w", err)
 	}
 
 	// Cola compartida de salida hacia currencies_cache (competing consumers)
