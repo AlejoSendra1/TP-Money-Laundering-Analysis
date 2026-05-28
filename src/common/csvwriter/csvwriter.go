@@ -33,24 +33,19 @@ func (c *CSVWriter) getCount() int64 {
 }
 
 func NewCSVWriter(filepath string) (*CSVWriter, error) {
-	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// Use O_TRUNC to truncate the file if it exists, ensuring a fresh start
+	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("opening csv file: %w", err)
 	}
 
 	w := csv.NewWriter(file)
 
-	// Only write headers if the file is empty
-	info, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("checking file size: %w", err)
+	// Always write headers for a fresh file
+	if err := w.Write(csvHeaders); err != nil {
+		return nil, fmt.Errorf("writing csv headers: %w", err)
 	}
-	if info.Size() == 0 {
-		if err := w.Write(csvHeaders); err != nil {
-			return nil, fmt.Errorf("writing csv headers: %w", err)
-		}
-		w.Flush()
-	}
+	w.Flush()
 
 	return &CSVWriter{counter: 0, writer: w, file: file}, nil
 }
