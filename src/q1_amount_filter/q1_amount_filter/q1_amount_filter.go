@@ -2,7 +2,9 @@ package q1_amount_filter
 
 import (
 	"log/slog"
+	"sync"
 	"tp_distribuidos/common/messageprotocol/inner"
+	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -14,12 +16,19 @@ type Q1AmountFilterConfig struct {
 	InputTopic        string
 	InputExchangeName string
 	OutputQueue       string
+	ControlExchange   string
+	ControlTopic      string
+	USDFilterAmount   int
 }
 
 type Q1AmountFilter struct {
-	inputQueue  middleware.Middleware
-	outputQueue middleware.Middleware
-	config      Q1AmountFilterConfig
+	inputQueue      middleware.Middleware
+	outputQueue     middleware.Middleware
+	controlExchange middleware.Middleware
+	eofCounter      map[int64]int
+	qtyTx           map[int64]int
+	config          Q1AmountFilterConfig
+	mu              sync.Mutex
 }
 
 func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
@@ -39,20 +48,36 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		return nil, err
 	}
 
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{config.ControlTopic}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		return nil, err
+	}
+
 	return &Q1AmountFilter{
-		inputQueue:  inputQueue,
-		outputQueue: outputQueue,
-		config:      config,
+		inputQueue:      inputQueue,
+		outputQueue:     outputQueue,
+		controlExchange: controlExchange,
+		config:          config,
+		eofCounter:      make(map[int64]int),
+		qtyTx:           make(map[int64]int),
 	}, nil
 }
 
 func (q1AmountFilter *Q1AmountFilter) Run() {
+	go q1AmountFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		q1AmountFilter.handleControlMessage(&msg, ack, nack)
+	})
+
 	q1AmountFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		q1AmountFilter.handleMessage(&msg, ack, nack)
 	})
 }
 
 func (q1AmountFilter *Q1AmountFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+	q1AmountFilter.mu.Lock()
+	defer q1AmountFilter.mu.Unlock()
 	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", clientID)
@@ -79,18 +104,24 @@ func (q1AmountFilter *Q1AmountFilter) handleMessage(msg *middleware.Message, ack
 }
 
 func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) error {
-	queryResult := transaction.QueryResult{
-		QueryID:      transaction.Query1,
-		Transactions: []transaction.LowAmountTransfer{},
-	}
-	if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
+	slog.Info("Arrived EOF record message", "clientID", clientID)
+	ctrlMsg, err := control.SerializeControlMessage(control.ControlMessage{Type: control.TypeEOF, ClientID: clientID})
+	if err != nil {
+		slog.Error("While serializing control message", "err", err)
 		return err
 	}
-	slog.Info("Sent EOF record message", "clientID", clientID)
+	if err = q1AmountFilter.controlExchange.Send(*ctrlMsg); err != nil {
+		slog.Error("While sending control message", "err", err, "clientID", clientID)
+		return err
+	}
 	return nil
 }
 
 func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
+	if _, ok := q1AmountFilter.eofCounter[clientID]; !ok {
+		q1AmountFilter.eofCounter[clientID] = 0
+		q1AmountFilter.qtyTx[clientID] = 0
+	}
 	transactions := []transaction.LowAmountTransfer{}
 	for _, transactionRecord := range transactionRecords {
 		if transactionRecord.Amount < 50.0 {
@@ -109,11 +140,48 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 			QueryID:      transaction.Query1,
 			Transactions: transactions,
 		}
+		q1AmountFilter.qtyTx[clientID] += len(transactions)
 		if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	q1AmountFilter.mu.Lock()
+	defer q1AmountFilter.mu.Unlock()
+
+	slog.Info("Arrived control message", "msg", msg)
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err)
+		nack()
+		return
+	}
+
+	clientID := controlMessage.ClientID
+	q1AmountFilter.eofCounter[clientID] += 1
+	if q1AmountFilter.eofCounter[clientID] != q1AmountFilter.config.USDFilterAmount {
+		slog.Info("Received EOF from other instance, waiting for more...")
+		ack()
+		return
+	}
+
+	queryResult := transaction.QueryResult{
+		QueryID:      transaction.Query1,
+		Transactions: []transaction.LowAmountTransfer{},
+	}
+	if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
+		slog.Error("While sending EOF data message", "err", err, "clientID", clientID)
+		nack()
+		return
+	}
+	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	slog.Info("size transactions", "qtyTx", q1AmountFilter.qtyTx[clientID])
+	delete(q1AmountFilter.eofCounter, clientID)
+	delete(q1AmountFilter.qtyTx, clientID)
+	ack()
 }
 
 func (q1AmountFilter *Q1AmountFilter) sendOutput(queryResult transaction.QueryResult, clientID int64) error {
