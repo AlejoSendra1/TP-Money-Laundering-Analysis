@@ -28,6 +28,7 @@ type TransactionsSaverConfig struct {
 	ControlExchangeName      string
 	ControlTopic             string
 	Q3AmountFilterAmount     int
+	DateFilterAmount         int
 }
 
 type TransactionsSaver struct {
@@ -37,6 +38,7 @@ type TransactionsSaver struct {
 	controlExchange      middleware.Middleware
 	config               TransactionsSaverConfig
 	clientStates         map[int64]*ClientState
+	eofCounter           map[int64]int
 	mu                   sync.Mutex // protege clientStates
 }
 
@@ -96,6 +98,7 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		controlExchange:      controlExchange,
 		config:               config,
 		clientStates:         make(map[int64]*ClientState),
+		eofCounter:           make(map[int64]int),
 	}, nil
 }
 
@@ -236,8 +239,15 @@ func (transactionsSaver *TransactionsSaver) handleControlMessage(msg *middleware
 		nack()
 		return
 	}
+	slog.Info("Arrived EOF from control message", "clientID", controlMessage.ClientID)
 	transactionsSaver.mu.Lock()
-
+	transactionsSaver.eofCounter[controlMessage.ClientID] += 1
+	if transactionsSaver.eofCounter[controlMessage.ClientID] != transactionsSaver.config.DateFilterAmount {
+		slog.Info("Received EOF from other instance, waiting for more...", "clientID", controlMessage.ClientID)
+		transactionsSaver.mu.Unlock()
+		ack()
+		return
+	}
 	state := transactionsSaver.getOrCreateClientState(controlMessage.ClientID)
 	state.mu.Lock()
 	state.receivedFlowEOF = true
@@ -369,6 +379,7 @@ func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int6
 	if state, exists := transactionsSaver.clientStates[clientID]; exists {
 		return state
 	}
+	transactionsSaver.eofCounter[clientID] = 0
 	filePath := filepath.Join(transactionsSaver.config.StorageDir,
 		fmt.Sprintf("client_%d_instance_%d.jsonl", clientID, transactionsSaver.config.Id))
 	state := &ClientState{
@@ -403,5 +414,6 @@ func (transactionsSaver *TransactionsSaver) cleanupClientState(clientID int64) {
 		}
 	}
 	delete(transactionsSaver.clientStates, clientID)
+	delete(transactionsSaver.eofCounter, clientID)
 	slog.Info("Cleanup client", "clientID", clientID)
 }

@@ -31,7 +31,6 @@ type Sum struct {
 	controlExchange    middleware.Middleware
 	clientTransactions map[int64]map[string]transaction.PaymentFormatAverage
 	eofCounter         map[int64]int
-	qtyTx              map[int64]int
 	config             SumConfig
 	mu                 sync.Mutex
 }
@@ -74,7 +73,6 @@ func NewSum(config SumConfig) (*Sum, error) {
 		clientTransactions: make(map[int64]map[string]transaction.PaymentFormatAverage),
 		config:             config,
 		eofCounter:         make(map[int64]int),
-		qtyTx:              make(map[int64]int),
 	}, nil
 }
 
@@ -142,12 +140,10 @@ func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, 
 	if _, exist := sum.clientTransactions[clientID]; !exist {
 		slog.Info("Client new arrived", "clientID", clientID)
 		sum.eofCounter[clientID] = 0
-		sum.qtyTx[clientID] = 0
 		sum.clientTransactions[clientID] = make(map[string]transaction.PaymentFormatAverage)
 	}
 	// Acumulo amount y count para cada formato de pago del cliente
 	for paymentFormat, transactions := range transactionsByPaymentFormat {
-		sum.qtyTx[clientID] += len(transactions)
 		if paymentFormatAverage, exist := sum.clientTransactions[clientID][paymentFormat]; !exist {
 			aux := transaction.PaymentFormatAverage{PaymentFormat: paymentFormat, Average: 0, Count: 0}
 			sum.clientTransactions[clientID][paymentFormat] = sum.addPaymentFormatAverage(aux, transactions)
