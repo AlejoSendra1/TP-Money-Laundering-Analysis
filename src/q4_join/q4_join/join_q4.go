@@ -7,6 +7,7 @@ import (
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
+	"tp_distribuidos/common/transaction"
 )
 
 const FANOUT = ""
@@ -118,7 +119,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 		return nil
 	}
 
-	msg, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%s_%d", "join", join.config.ID)) // TO DO agregar otra var de entorno y para group tmb
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query4) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
@@ -195,11 +196,10 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 			join.sourceSinkRegisters[clientID][source][possibleSink] = append(join.sourceSinkRegisters[clientID][source][possibleSink], bridge)
 		}
 		if len(join.sourceSinkRegisters[clientID][source][possibleSink]) == DestinationThreshold {
-			msg, _ := inner.SerializeQ4SourceAccount(clientID, source)
+			msg, _ := inner.SerializeQ4SinkAndSource(clientID, source, possibleSink)
 			join.outputQueue.Send(*msg)
 		}
 	}
-
 }
 
 func (join *Join) updateClientEORCondition(clientID int64, worker string) {

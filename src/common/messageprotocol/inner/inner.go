@@ -484,12 +484,15 @@ func DeserializePossibleFraudDestinations(data []interface{}) (string, string, [
 	return susAccount, bridge, possibleFraudDestinations, nil
 }
 
-func SerializeQ4SourceAccount(clientID int64, sourceAccount string) (*middleware.Message, error) {
+func SerializeQ4SinkAndSource(clientID int64, sourceAccount string, sinkAccount string) (*middleware.Message, error) {
 	sourceAccountData := strings.Split(sourceAccount, "_")
+	sinkAccountData := strings.Split(sinkAccount, "_")
 
 	data := []interface{}{
 		sourceAccountData[0],
 		sourceAccountData[1],
+		sinkAccountData[0],
+		sinkAccountData[1],
 	}
 
 	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: Query4Response, Data: data})
@@ -501,7 +504,7 @@ func SerializeQ4SourceAccount(clientID int64, sourceAccount string) (*middleware
 	return &message, nil
 }
 
-func DeserializeQ4SourceAccount(data []interface{}) (string, string, error) {
+func DeSerializeQ4SinkAndSource(data []interface{}) (string, string, error) {
 	susAccount, ok := data[0].(string)
 	if !ok {
 		return "", "", fmt.Errorf("type mismatch on sus account origin")

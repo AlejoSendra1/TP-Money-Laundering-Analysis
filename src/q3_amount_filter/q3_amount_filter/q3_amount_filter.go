@@ -330,5 +330,16 @@ func (q3AmountFilter *Q3AmountFilter) sendOutput(queryResult transaction.QueryRe
 		slog.Debug("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
+
+	// para avisar q no hay mas nada
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query3)
+	if err != nil {
+		return fmt.Errorf("serializing EOF: %w", err)
+	}
+	if err := q3AmountFilter.outputQueue.Send(*msg); err != nil {
+		return fmt.Errorf("sending EOF: %w", err)
+	}
+	slog.Info("EOF sent to output queue", "client_id", clientID)
+
 	return nil
 }

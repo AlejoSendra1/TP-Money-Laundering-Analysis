@@ -87,7 +87,7 @@ func transactionToRow(tx transaction.Transaction) []string {
 	}
 }
 
-// WriteQ4Result receives the []interface{} from SerializeQ4SourceAccount's data field,
+// WriteQ4Result receives the []interface{} from SerializeQ4SinkAndSource's data field,
 // which contains [part0, part1] from strings.Split(sourceAccount, "_")
 func (c *CSVWriter) WriteResult(queryCode uint32, data []interface{}) error {
 	slog.Info("Escribiendo")
@@ -227,8 +227,20 @@ func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 		return fmt.Errorf("expected string at index 1, got %T", data[1])
 	}
 
+	part2, ok := data[2].(string)
+	if !ok {
+		slog.Error("Error data 0 no se pudo parsear a string", "data", data)
+		return fmt.Errorf("expected string at index 0, got %T", data[0])
+	}
+
+	part3, ok := data[3].(string)
+	if !ok {
+		slog.Error("Error data 1 no se pudo parsear a string", "data", data)
+		return fmt.Errorf("expected string at index 1, got %T", data[1])
+	}
+
 	// quitar string
-	if err := c.writer.Write([]string{"Q4", part0, part1}); err != nil {
+	if err := c.writer.Write([]string{"Q4", part0, part1, part2, part3}); err != nil {
 		return fmt.Errorf("writing q4 result: %w", err)
 	}
 	c.writer.Flush()
