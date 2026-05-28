@@ -242,6 +242,7 @@ services:
     - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
     - CONTROL_TOPIC_NAME=transactions_saver_control_topic
     - Q3_AMOUNT_FILTER_AMOUNT=2
+    - DATE_FILTER_AMOUNT=2
   transactions_saver_1:
     build:
       context: ./src/
@@ -266,6 +267,7 @@ services:
       - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
       - CONTROL_TOPIC_NAME=transactions_saver_control_topic
       - Q3_AMOUNT_FILTER_AMOUNT=2
+      - DATE_FILTER_AMOUNT=2
   q3_amount_filter_0:
     build:
       context: ./src/
