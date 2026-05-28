@@ -217,8 +217,7 @@ func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int6
 		}
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
 	}
-	// cleanup after all EOFs are sent
-	bridgeMatcher.cleanupClient(clientID)
+
 	return nil
 }
 
@@ -245,6 +244,8 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
 	}
 
+	// cleanup after all EOFs are sent
+	bridgeMatcher.cleanupClient(clientID)
 	return nil
 }
 
