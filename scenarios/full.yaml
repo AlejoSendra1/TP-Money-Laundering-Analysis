@@ -1,0 +1,222 @@
+services:
+  q1_amount_filter_0:
+    build:
+      context: ./src/
+      dockerfile: q1_amount_filter/Dockerfile
+    container_name: q1_amount_filter_0
+    depends_on:
+    - gateway
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=amount_filter_q1_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_QUEUE=results_queue
+  q2_counter_0:
+    build:
+      context: ./src/
+      dockerfile: counter_q2/Dockerfile
+    container_name: q2_counter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
+  q2_counter_1:
+    build:
+      context: ./src/
+      dockerfile: counter_q2/Dockerfile
+    container_name: q2_counter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
+  q2_join_0:
+    build:
+      context: ./src/
+      dockerfile: join_q2/Dockerfile
+    container_name: q2_join_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
+    - BATCH_SIZE=100
+  q2_join_1:
+    build:
+      context: ./src/
+      dockerfile: join_q2/Dockerfile
+    container_name: q2_join_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
+    - BATCH_SIZE=100
+  client_0:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_0
+    depends_on:
+    - usd_filter_0
+    environment:
+    - BATCH_SIZE=10
+    - INPUT_FILE=/datasets/input_0.csv
+    - OUTPUT_FILE=/output/output.csv
+    - PYTHONUNBUFFERED=1
+    - SERVER_HOST=gateway
+    - SERVER_PORT=5678
+    volumes:
+    - ./datasets:/datasets
+    - ./output:/output
+  date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: date_filter/Dockerfile
+    container_name: date_filter_0
+    depends_on:
+    - sum_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=date_filter_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_EXCHANGE_NAME=date_exchange
+    - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
+    - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+  date_filter_1:
+    build:
+      context: ./src/
+      dockerfile: date_filter/Dockerfile
+    container_name: date_filter_1
+    depends_on:
+    - sum_0
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=date_filter_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_EXCHANGE_NAME=date_exchange
+    - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
+    - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+  gateway:
+    build:
+      context: ./src/
+      dockerfile: gateway/Dockerfile
+    container_name: gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - INPUT_QUEUE=results_queue
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=transactions_exchange
+    - OUTPUT_TOPIC=transactions_topic
+    - PYTHONUNBUFFERED=1
+    - SERVER_HOST=gateway
+    - SERVER_PORT=5678
+  rabbitmq:
+    build:
+      context: ./src/rabbitmq
+      dockerfile: Dockerfile
+    container_name: rabbitmq
+    environment:
+    - RABBITMQ_LOG_LEVELS=error
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 50s
+      test: rabbitmq-diagnostics check_port_connectivity
+      timeout: 3s
+    ports:
+    - 5672:5672
+    - 15672:15672
+  sum_0:
+    build:
+      context: ./src/
+      dockerfile: sum/Dockerfile
+    container_name: sum_0
+    depends_on:
+    - promediator_0
+    environment:
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=sum_queue
+    - INPUT_TOPIC=usd_early_period_transactions_topic
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - CONTROL_EXCHANGE_NAME=sum_control_exchange
+    - CONTROL_EXCHANGE_TOPIC=sum_control_topic
+    - OUTPUT_EXCHANGE_NAME=sum_results_exchange
+    - PROMEDIATOR_AMOUNT=2
+    - PROMEDIATOR_PREFIX=promediator
+  sum_1:
+    build:
+      context: ./src/
+      dockerfile: sum/Dockerfile
+    container_name: sum_1
+    depends_on:
+    - promediator_0
+    environment:
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - INPUT_QUEUE=sum_queue
+    - INPUT_TOPIC=usd_early_period_transactions_topic
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - CONTROL_EXCHANGE_NAME=sum_control_exchange
+    - CONTROL_EXCHANGE_TOPIC=sum_control_topic
+    - OUTPUT_EXCHANGE_NAME=sum_results_exchange
+    - PROMEDIATOR_AMOUNT=2
+    - PROMEDIATOR_PREFIX=promediator
+  usd_filter_0:
+    build:
+      context: ./src/
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_0
+    depends_on:
+    - q1_amount_filter_0
+    environment:
+    - INPUT_QUEUE=usd_filter_queue
+    - INPUT_EXCHANGE_NAME=transactions_exchange
+    - INPUT_TOPIC=transactions_topic
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=usd_exchange
+    - OUTPUT_TOPIC=usd_transactions_topic

@@ -216,8 +216,9 @@ func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int6
 			return err
 		}
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
-
 	}
+	// cleanup after all EOFs are sent
+	bridgeMatcher.cleanupClient(clientID)
 	return nil
 }
 
@@ -243,6 +244,7 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 		topic := fmt.Sprintf("%s_%d", bridgeMatcher.config.NextFaseWorkersPrefix, i)
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
 	}
+
 	return nil
 }
 
@@ -316,4 +318,11 @@ func (bridgeMatcher *BridgeMatcher) assertAllBridgesReady(clientID int64) bool {
 	// WorkersAmount here is the number of bridge_matcher copies
 	slog.Info("bridges q notificaron", "lista", bridgeMatcher.bridgesReadyForEOR[clientID])
 	return len(bridgeMatcher.bridgesReadyForEOR[clientID]) == bridgeMatcher.config.WorkersAmount
+}
+
+func (bridgeMatcher *BridgeMatcher) cleanupClient(clientID int64) {
+	delete(bridgeMatcher.Registers, clientID)
+	delete(bridgeMatcher.groupWorkersNotified, clientID)
+	delete(bridgeMatcher.bridgesReadyForEOR, clientID)
+	slog.Info("Cleaned up client state", "clientID", clientID)
 }
