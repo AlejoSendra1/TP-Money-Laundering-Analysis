@@ -107,13 +107,14 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 	if !join.assertClientEORCondition(clientID) {
 		return nil
 	}
-
+	slog.Info("Sending EOR", "clientID", clientID, "sender", sender)
 	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query4) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 
+	slog.Info("Sending EOR message to output queue", "clientID", clientID, "messageSizeBytes", len(msg.Body))
 	if err := join.outputQueue.Send(*msg); err != nil {
 		return err
 	}
@@ -153,6 +154,7 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 		}
 		if len(join.sourceSinkRegisters[clientID][source][possibleSink]) == DestinationThreshold {
 			msg, _ := inner.SerializeQ4SinkAndSource(clientID, source, possibleSink)
+			slog.Info("Sending Q4 result to output queue", "clientID", clientID, "source", source, "sink", possibleSink, "body", msg.Body)
 			join.outputQueue.Send(*msg)
 		}
 	}

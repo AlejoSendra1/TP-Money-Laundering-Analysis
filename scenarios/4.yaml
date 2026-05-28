@@ -46,6 +46,7 @@ services:
     container_name: client_0
     depends_on:
     - usd_filter_0
+    - usd_filter_1
     environment:
     - BATCH_SIZE=40
     - INPUT_FILE=/datasets/input_ale.csv
@@ -63,6 +64,8 @@ services:
     container_name: date_filter_0
     depends_on:
     - group_0
+    - group_1
+    - group_2
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -82,6 +85,8 @@ services:
     container_name: date_filter_1
     depends_on:
       - group_0
+      - group_1
+      - group_2
     environment:
       - MOM_HOST=rabbitmq
       - MOM_PORT=5672
@@ -118,6 +123,7 @@ services:
     container_name: group_0
     depends_on:
     - bridge_matcher_0
+    - bridge_matcher_1
     environment:
     - ID=0
     - WORKER_PREFIX=group
@@ -139,6 +145,7 @@ services:
     container_name: group_1
     depends_on:
     - bridge_matcher_0
+    - bridge_matcher_1
     environment:
     - ID=1
     - WORKER_PREFIX=group
@@ -160,6 +167,7 @@ services:
     container_name: group_2
     depends_on:
     - bridge_matcher_0
+    - bridge_matcher_1
     environment:
     - ID=2
     - WORKER_PREFIX=group

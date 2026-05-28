@@ -9,8 +9,8 @@ services:
     - q5_date_filter_1
     environment:
     - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input_5_query.csv
-    - OUTPUT_FILE=/output/output_0.csv
+    - INPUT_FILE=/datasets/input_ale.csv
+    - OUTPUT_FILE=/output/output_ale_5.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678

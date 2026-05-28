@@ -204,6 +204,9 @@ func (client *Client) sendTransactionRecords() error {
 	}
 
 	scanner := bufio.NewScanner(file)
+	if scanner.Scan() {
+
+	}
 	batch := []transaction.Transaction{}
 
 	slog.Info("procesando transacciones")

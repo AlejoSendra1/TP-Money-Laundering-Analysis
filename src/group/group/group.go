@@ -25,6 +25,7 @@ type GroupConfig struct {
 	OutputExchangeName    string
 	NextFaseWorkersAmount int
 	NextFaseWorkersPrefix string
+	DateFilterAmount      int
 }
 
 type Group struct {
@@ -32,6 +33,7 @@ type Group struct {
 	controlExchange     middleware.Middleware
 	outputExchange      middleware.ExchangeMiddleware
 	config              GroupConfig
+	eofCounter          map[int64]int
 	controlMutex        sync.Mutex
 	precalculatedTopics []string
 }
@@ -71,6 +73,7 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		outputExchange:      *outputExchange,
 		controlExchange:     controlExchange,
 		config:              config,
+		eofCounter:          make(map[int64]int),
 		controlMutex:        sync.Mutex{},
 		precalculatedTopics: precalculatedTopics,
 	}, nil
@@ -144,25 +147,66 @@ func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack f
 func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
 
 	// se debe propagar entre todos los group workers y estos a todos los bridges analizers
+	slog.Info("Received EOF from input or control", "clientID", clientID, "mustPropagate", mustPropagate)
 
-	msg, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%s_%d", "group", groupWorker.config.ID))
+	senderName := fmt.Sprintf("%s_%d", "group", groupWorker.config.ID)
+
+	if mustPropagate {
+		// EOF viene del date_filter, reenviar por controlExchange sin propagación
+		msg, err := inner.SerializeEOF(clientID, false, senderName)
+		if err != nil {
+			slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+			return err
+		}
+
+		slog.Info("Propagating EOF to other groups", "clientID", clientID, "messageSizeBytes", len(msg.Body))
+		groupWorker.controlMutex.Lock()
+		if err := groupWorker.controlExchange.Send(*msg); err != nil {
+			groupWorker.controlMutex.Unlock()
+			return err
+		}
+		groupWorker.controlMutex.Unlock()
+		slog.Info("EOF propagated successfully", "clientID", clientID)
+		return nil
+	}
+
+	// mustPropagate == false: EOF viene del controlExchange de otro grupo, contar.
+	//No necesito tomar el lock, ya esta tomado
+	slog.Info("Received EOF from another group", "clientID", clientID)
+	groupWorker.eofCounter[clientID] += 1
+	currentEOFCount := groupWorker.eofCounter[clientID]
+
+	slog.Info("EOF counter incremented", "clientID", clientID, "current", currentEOFCount, "expected", groupWorker.config.DateFilterAmount)
+
+	if currentEOFCount < groupWorker.config.DateFilterAmount {
+		slog.Info("Waiting for more EOFs", "clientID", clientID, "received", currentEOFCount, "expected", groupWorker.config.DateFilterAmount)
+		return nil
+	}
+
+	slog.Info("EOF threshold reached, sending to output", "clientID", clientID)
+	msg, err := inner.SerializeEOF(clientID, false, senderName)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 
-	if mustPropagate {
-		groupWorker.controlExchange.Send(*msg)
-	} else {
-		for i := range groupWorker.config.NextFaseWorkersAmount {
-			topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, i)
-			groupWorker.outputExchange.SendToTopic(*msg, topic) // Error sin handlear
+	for i := range groupWorker.config.NextFaseWorkersAmount {
+		topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, i)
+		slog.Info("Sending EOF to next fase", "topic", topic, "messageSizeBytes", len(msg.Body))
+		if err := groupWorker.outputExchange.SendToTopic(*msg, topic); err != nil {
+			return err
 		}
 	}
+
 	return nil
 }
 
 func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
+	groupWorker.controlMutex.Lock()
+	if _, ok := groupWorker.eofCounter[clientID]; !ok {
+		groupWorker.eofCounter[clientID] = 0
+	}
+	groupWorker.controlMutex.Unlock()
 	// transacciones para cada worker de la proxima fase
 	//slog.Info("Received Tansaction batch from ", "clientID", clientID)
 	workerByBatches := make(map[int][]transaction.Transaction)
