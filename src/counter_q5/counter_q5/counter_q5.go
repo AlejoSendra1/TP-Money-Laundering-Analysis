@@ -14,179 +14,167 @@ import (
 )
 
 type CounterQ5Config struct {
-	ID              int
-	MomHost         string
-	MomPort         int
-	InputPrefix     string // exchange prefix from filter_payment_format — binds to InputPrefix_{ID}
-	FilterAmount    int    // number of filter_payment_format instances (EOFs to collect before forwarding)
-	ConversionQueue string // queue to currencies_cache input (send raw records)
-	ConvertedPrefix string // prefix of queues from currencies_cache — reads from {ConvertedPrefix}_{ID}
-	OutputQueue     string // final results queue
+	ID                  int
+	MomHost             string
+	MomPort             int
+	InputPrefix         string // queue prefix from currencies_cache — reads from {InputPrefix}_{ID}
+	OutputQueue         string // final results queue
+	CacheAmount         int    // total de EOFs esperados (uno por instancia de currencies_cache)
+	InstanceAmount      int    // número de instancias de counter_q5 (para control entre peers)
+	ControlExchangeName string // exchange para mensajes de control entre peers
 }
 
-// CounterQ5 runs two goroutines:
-//  1. Forwarder: reads raw PaymentRecords from filter_payment_format and sends them to currencies_cache.
-//  2. Counter:   reads USD-converted PaymentRecords from currencies_cache, counts amount < 1 per
-//     payment format, flushes results on EOF.
+// CounterQ5 reads USD-converted PaymentRecords from currencies_cache,
+// counts records with amount < 1 per payment format, and flushes results on EOF.
 type CounterQ5 struct {
-	config          CounterQ5Config
-	inputExch       middleware.Middleware // from filter_payment_format (sharded exchange)
-	conversionQueue middleware.Middleware // to currencies_cache
-	convertedQueue  middleware.Middleware // from currencies_cache
-	outputQueue     middleware.Middleware // final output
+	config      CounterQ5Config
+	inputQueue  middleware.Middleware
+	outputQueue middleware.Middleware
+	controlOutputs []middleware.Middleware
+	controlInput   middleware.Middleware
 
+	mu               sync.Mutex // protege eofCountByClient y countByClient
 	countByClient    map[int64]map[string]int
-	eofCountByClient map[int64]int // tracks EOFs received from filter_payment_format
+	eofCountByClient map[int64]int
 }
 
 func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 
-	// Input exchange — sharded to this instance
-	inputKey := fmt.Sprintf("%s_%d", config.InputPrefix, config.ID)
-	inputExch, err := middleware.CreateExchangeMiddleware(config.InputPrefix, []string{inputKey}, connSettings)
+	qName := fmt.Sprintf("%s_%d", config.InputPrefix, config.ID)
+	inputQueue, err := middleware.CreateQueueMiddleware(qName, connSettings)
 	if err != nil {
-		return nil, fmt.Errorf("creating input exchange: %w", err)
+		return nil, fmt.Errorf("creating input queue (%s): %w", qName, err)
 	}
 
-	// Queue to currencies_cache (produce only — queue is also declared by currencies_cache)
-	conversionQueue, err := middleware.CreateQueueMiddleware(config.ConversionQueue, connSettings)
-	if err != nil {
-		inputExch.Close()
-		return nil, fmt.Errorf("creating conversion queue: %w", err)
-	}
-
-	// Queue from currencies_cache — dedicated to this instance: {ConvertedPrefix}_{ID}
-	convertedQName := fmt.Sprintf("%s_%d", config.ConvertedPrefix, config.ID)
-	convertedQueue, err := middleware.CreateQueueMiddleware(convertedQName, connSettings)
-	if err != nil {
-		inputExch.Close()
-		conversionQueue.Close()
-		return nil, fmt.Errorf("creating converted queue (%s): %w", convertedQName, err)
-	}
-
-	// Final output queue
 	outputQueue, err := middleware.CreateQueueMiddleware(config.OutputQueue, connSettings)
 	if err != nil {
-		inputExch.Close()
-		conversionQueue.Close()
-		convertedQueue.Close()
+		inputQueue.Close()
 		return nil, fmt.Errorf("creating output queue: %w", err)
+	}
+
+	// Control output exchanges — uno por peer (todas las instancias excepto self)
+	var controlOutputs []middleware.Middleware
+	for i := 0; i < config.InstanceAmount; i++ {
+		if i == config.ID {
+			continue
+		}
+		key := fmt.Sprintf("%s_%d", config.ControlExchangeName, i)
+		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings)
+		if err != nil {
+			inputQueue.Close()
+			outputQueue.Close()
+			for _, c := range controlOutputs {
+				c.Close()
+			}
+			return nil, fmt.Errorf("creating control output exchange for peer %d: %w", i, err)
+		}
+		controlOutputs = append(controlOutputs, exchange)
+	}
+
+	// Control input exchange — recibe notificaciones EOF de los peers
+	myControlKey := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		return nil, fmt.Errorf("creating control input exchange: %w", err)
 	}
 
 	return &CounterQ5{
 		config:           config,
-		inputExch:        inputExch,
-		conversionQueue:  conversionQueue,
-		convertedQueue:   convertedQueue,
+		inputQueue:       inputQueue,
 		outputQueue:      outputQueue,
+		controlOutputs:   controlOutputs,
+		controlInput:     controlInput,
 		countByClient:    make(map[int64]map[string]int),
 		eofCountByClient: make(map[int64]int),
 	}, nil
 }
 
-// Run starts both goroutines and waits for all work to finish.
+// Run starts consuming. Returns once processing is done or SIGTERM is received.
 func (counter *CounterQ5) Run() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		slog.Info("SIGTERM received, stopping consumers")
-		counter.inputExch.StopConsuming()
-		counter.convertedQueue.StopConsuming()
+		slog.Info("SIGTERM received, stopping consumer")
+		counter.inputQueue.StopConsuming()
+		counter.controlInput.StopConsuming()
 	}()
 
 	var wg sync.WaitGroup
-
-	// Goroutine 1 — forward raw records from filter_payment_format to currencies_cache
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		counter.inputExch.StartConsuming(counter.handleForward)
+		counter.controlInput.StartConsuming(counter.handleControlMessage)
 	}()
 
-	// Goroutine 2 — count USD-converted records received from currencies_cache
-	counter.convertedQueue.StartConsuming(counter.handleConverted)
+	counter.inputQueue.StartConsuming(counter.handleMessage)
 
-	// Once the counter goroutine finishes, also stop the forwarder
-	counter.inputExch.StopConsuming()
+	counter.controlInput.StopConsuming()
 	wg.Wait()
 	counter.close()
 }
 
-// handleForward relays data messages to the currencies_cache input queue.
-// EOFs are counted; only when all FilterAmount EOFs have been received
-// a single consolidated EOF is forwarded to currencies_cache.
-func (counter *CounterQ5) handleForward(msg middleware.Message, ack, nack func()) {
-	clientID, _, isEof, err := inner.DeserializePaymentRecordMessage(&msg)
-	if err != nil {
-		slog.Error("Deserializing message in forwarder", "err", err)
-		nack()
-		return
-	}
-
-	if isEof {
-		counter.eofCountByClient[clientID]++
-		count := counter.eofCountByClient[clientID]
-		slog.Info("EOF received from filter", "client_id", clientID, "count", count, "total", counter.config.FilterAmount)
-
-		if count < counter.config.FilterAmount {
-			ack()
-			return
-		}
-
-		// All filters done: forward one consolidated EOF to currencies_cache.
-		delete(counter.eofCountByClient, clientID)
-		eofMsg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
-		if err != nil {
-			slog.Error("Serializing consolidated EOF", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
-		if err := counter.conversionQueue.Send(*eofMsg); err != nil {
-			slog.Error("Forwarding consolidated EOF to currencies_cache", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
-		slog.Info("Consolidated EOF forwarded to currencies_cache", "client_id", clientID)
-		ack()
-		return
-	}
-
-	if err := counter.conversionQueue.Send(msg); err != nil {
-		slog.Error("Forwarding record to conversion queue", "err", err, "client_id", clientID)
-		nack()
-		return
-	}
-	ack()
-}
-
-// handleConverted processes USD-converted PaymentRecords from currencies_cache.
-// Amounts are already in USD so only a simple < 1 check is needed.
-func (counter *CounterQ5) handleConverted(msg middleware.Message, ack, nack func()) {
+func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()) {
 	clientID, records, isEof, err := inner.DeserializePaymentRecordMessage(&msg)
 	if err != nil {
-		slog.Error("Deserializing converted message", "err", err)
+		slog.Error("Deserializing message", "err", err)
 		nack()
 		return
 	}
 
 	if isEof {
-		slog.Info("EOF received from currencies_cache, flushing", "client_id", clientID)
-		if err := counter.flushClient(clientID); err != nil {
-			slog.Error("Flushing client", "err", err, "client_id", clientID)
-			nack()
-			return
+		slog.Info("Direct EOF received from cache", "client_id", clientID)
+
+		counter.mu.Lock()
+		counter.eofCountByClient[clientID]++
+		count := counter.eofCountByClient[clientID]
+		counter.mu.Unlock()
+
+		slog.Info("EOF accumulated", "client_id", clientID, "count", count, "expected", counter.config.CacheAmount)
+		if count >= counter.config.CacheAmount {
+			if err := counter.flushClient(clientID); err != nil {
+				slog.Error("Flushing client", "err", err, "client_id", clientID)
+				nack()
+				return
+			}
 		}
 		ack()
 		return
 	}
 
+	// Proteger el conteo de records con mutex para evitar RC con EOFs de control
+	counter.mu.Lock()
 	counter.countRecords(clientID, records)
+	counter.mu.Unlock()
 	ack()
 }
 
-// countRecords increments pre-format counters for records with amount_usd < 1.
+// sendControlEOF notifica a todos los peers que esta instancia recibió un EOF para clientID.
+func (counter *CounterQ5) sendControlEOF(clientID int64) error {
+	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
+	if err != nil {
+		return fmt.Errorf("serializing control EOF: %w", err)
+	}
+	for i, controlOutput := range counter.controlOutputs {
+		if err := controlOutput.Send(*msg); err != nil {
+			return fmt.Errorf("sending control EOF to peer %d: %w", i, err)
+		}
+	}
+	slog.Info("Control EOF sent to all peers", "client_id", clientID)
+	return nil
+}
+
+// handleControlMessage: no-op — counter_q5 usa queues dedicadas, no necesita coordinación entre peers.
+func (counter *CounterQ5) handleControlMessage(msg middleware.Message, ack, nack func()) {
+	ack()
+}
+
 func (counter *CounterQ5) countRecords(clientID int64, records []transaction.PaymentRecord) {
 	counts, ok := counter.countByClient[clientID]
 	if !ok {
@@ -204,8 +192,11 @@ func (counter *CounterQ5) countRecords(clientID int64, records []transaction.Pay
 }
 
 func (counter *CounterQ5) flushClient(clientID int64) error {
+	counter.mu.Lock()
 	counts := counter.countByClient[clientID]
 	delete(counter.countByClient, clientID)
+	delete(counter.eofCountByClient, clientID)
+	counter.mu.Unlock()
 
 	if err := counter.sendData(clientID, counts); err != nil {
 		return err
@@ -232,26 +223,27 @@ func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error 
 	if err := counter.outputQueue.Send(*msg); err != nil {
 		return fmt.Errorf("sending count results: %w", err)
 	}
-	slog.Info("Sent count results", "client_id", clientID, "payment_formats", len(records))
+	slog.Info("Sent count results", "client_id", clientID, "payment_formats", len(records), "data", records)
 	return nil
 }
 
 func (counter *CounterQ5) sendEOF(clientID int64) error {
-	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query5) // TO DO agregar otra var de entorno y para group tmb
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query5)
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
-		return err
+		return fmt.Errorf("serializing EOR: %w", err)
 	}
 	if err := counter.outputQueue.Send(*msg); err != nil {
-		return fmt.Errorf("sending EOF: %w", err)
+		return fmt.Errorf("sending EOR: %w", err)
 	}
-	slog.Info("EOF sent", "client_id", clientID)
+	slog.Info("EOR sent", "client_id", clientID)
 	return nil
 }
 
 func (counter *CounterQ5) close() {
-	counter.inputExch.Close()
-	counter.conversionQueue.Close()
-	counter.convertedQueue.Close()
+	counter.inputQueue.Close()
 	counter.outputQueue.Close()
+	counter.controlInput.Close()
+	for _, c := range counter.controlOutputs {
+		c.Close()
+	}
 }
