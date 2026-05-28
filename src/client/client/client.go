@@ -58,7 +58,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	writer, err := csvwriter.NewCSVWriter("/output/client_output.csv")
+	writer, err := csvwriter.NewCSVWriter(config.OutputFile)
 	if err != nil {
 		return nil, err
 	}
