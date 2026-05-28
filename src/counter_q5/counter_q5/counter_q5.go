@@ -237,13 +237,10 @@ func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error 
 }
 
 func (counter *CounterQ5) sendEOF(clientID int64) error {
-	queryResult := transaction.QueryResult{
-		QueryID:      transaction.Query5,
-		Transactions: []transaction.PaymentFormatCount{},
-	}
-	msg, err := inner.SerializeQueryResultMessage(clientID, queryResult)
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query5) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
-		return fmt.Errorf("serializing EOF: %w", err)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		return err
 	}
 	if err := counter.outputQueue.Send(*msg); err != nil {
 		return fmt.Errorf("sending EOF: %w", err)

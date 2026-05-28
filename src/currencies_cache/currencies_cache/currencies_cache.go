@@ -287,7 +287,7 @@ func (currencyCache *CurrenciesCache) toUSD(currencyName string, amount float64,
 	if currencyName == "US Dollar" {
 		return amount, nil
 	}
-	
+
 	code, ok := currencyCache.currencyNameToCode[currencyName]
 	if !ok {
 		return 0, fmt.Errorf("unknown currency name %q", currencyName)
