@@ -30,16 +30,6 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("INPUT_QUEUE environment variable is required")
 	}
 
-	inputExchangeName := os.Getenv("INPUT_EXCHANGE_NAME")
-	if inputExchangeName == "" {
-		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("INPUT_EXCHANGE_NAME environment variable is required")
-	}
-
-	inputTopic := os.Getenv("INPUT_TOPIC")
-	if inputTopic == "" {
-		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("INPUT_TOPIC environment variable is required")
-	}
-
 	outputQueue := os.Getenv("OUTPUT_QUEUE")
 	if outputQueue == "" {
 		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
@@ -48,6 +38,11 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 	filterAmount, err := strconv.Atoi(os.Getenv("FILTER_AMOUNT"))
 	if err != nil {
 		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("FILTER_AMOUNT environment variable is required and must be a number")
+	}
+
+	dateFilterAmount, err := strconv.Atoi(os.Getenv("DATE_FILTER_AMOUNT"))
+	if err != nil {
+		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("DATE_FILTER_AMOUNT environment variable is required and must be a number")
 	}
 
 	filterPaymentControl := os.Getenv("FILTER_PAYMENT_CONTROL")
@@ -67,10 +62,9 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		MomHost:              momHost,
 		MomPort:              momPort,
 		InputQueue:           inputQueue,
-		InputExchangeName:    inputExchangeName,
-		InputTopic:           inputTopic,
 		OutputQueue:          outputQueue,
 		FilterAmount:         filterAmount,
+		USDFilterAmount:      dateFilterAmount,
 		FilterPaymentControl: filterPaymentControl,
 		BatchSize:            batchSize,
 	}, nil
