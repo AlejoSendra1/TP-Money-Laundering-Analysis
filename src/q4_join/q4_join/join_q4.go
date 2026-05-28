@@ -124,7 +124,13 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	return join.outputQueue.Send(*msg)
+
+	if err := join.outputQueue.Send(*msg); err != nil {
+		return err
+	}
+
+	join.cleanupClient(clientID)
+	return nil
 }
 
 func (join *Join) handleSuspiciousAccountMessage(clientID int64, data []interface{}) error {
@@ -215,4 +221,12 @@ func (join *Join) updateClientEORCondition(clientID int64, worker string) {
 
 func (join *Join) assertClientEORCondition(clientID int64) bool {
 	return len(join.bridgeWorkersNotified[clientID]) == join.config.PrevFaseWorkersAmount
+}
+
+func (join *Join) cleanupClient(clientID int64) {
+	delete(join.bridgeSourceRegisters, clientID)
+	delete(join.bridgeSinkRegisters, clientID)
+	delete(join.sourceSinkRegisters, clientID)
+	delete(join.bridgeWorkersNotified, clientID)
+	slog.Info("Cleaned up client state", "clientID", clientID)
 }
