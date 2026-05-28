@@ -192,11 +192,22 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(msg *middleware.Messa
 	q3AmountFilter.mu.Unlock()
 
 	if shouldSendEOF {
-		eofResult := transaction.QueryResult{
-			QueryID:      transaction.Query3,
-			Transactions: []transaction.ThresholdFilteredTransfer{},
+		// para avisar q no hay mas nada
+		msg, err := inner.SerializeQueryEOR(clientID, transaction.Query3)
+		if err != nil {
+			slog.Error("serializing EOF", "error", err)
+			nack()
+			return
 		}
-		if err := q3AmountFilter.sendOutput(eofResult, clientID); err != nil {
+		if err := q3AmountFilter.outputQueue.Send(*msg); err != nil {
+			slog.Error("sending EOF", "error", err)
+			nack()
+			return
+		}
+		slog.Info("EOF sent to output queue", "client_id", clientID)
+
+		if err := q3AmountFilter.outputQueue.Send(*msg); err != nil {
+			slog.Debug("While sending data message", "err", err, "clientID", clientID)
 			return
 		}
 		slog.Info("Sent EOF to gateway", "clientID", clientID)
@@ -330,16 +341,5 @@ func (q3AmountFilter *Q3AmountFilter) sendOutput(queryResult transaction.QueryRe
 		slog.Debug("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
-
-	// para avisar q no hay mas nada
-	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query3)
-	if err != nil {
-		return fmt.Errorf("serializing EOF: %w", err)
-	}
-	if err := q3AmountFilter.outputQueue.Send(*msg); err != nil {
-		return fmt.Errorf("sending EOF: %w", err)
-	}
-	slog.Info("EOF sent to output queue", "client_id", clientID)
-
 	return nil
 }

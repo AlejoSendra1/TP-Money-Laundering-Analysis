@@ -185,7 +185,9 @@ func (c *CSVWriter) writeQ2Result(data []interface{}) error {
 }
 
 // Q3: [fromBank float64, fromAccount string, paymentFormat string, amount float64]
-func (c *CSVWriter) writeQ3Result(records []interface{}) error {
+func (c *CSVWriter) writeQ3Result(data []interface{}) error {
+	records := data[0].([]interface{})
+
 	for _, rec := range records {
 		fields, ok := rec.([]interface{})
 		if !ok || len(fields) != 4 {

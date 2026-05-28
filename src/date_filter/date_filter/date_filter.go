@@ -47,7 +47,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		return nil, err
 	}
 
-	outputExchangeTopic2, err := middleware.CreateExchangeMiddleware("config.OutputExchangeName", []string{config.OutputTopic2}, connSettings) // solo para probar
+	outputExchangeTopic2, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic2}, connSettings) // solo para probar
 	if err != nil {
 		inputQueue.Close()
 		outputExchangeTopic1.Close()
