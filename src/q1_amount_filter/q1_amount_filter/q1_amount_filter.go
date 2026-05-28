@@ -26,7 +26,6 @@ type Q1AmountFilter struct {
 	outputQueue     middleware.Middleware
 	controlExchange middleware.Middleware
 	eofCounter      map[int64]int
-	qtyTx           map[int64]int
 	config          Q1AmountFilterConfig
 	mu              sync.Mutex
 }
@@ -61,7 +60,6 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		controlExchange: controlExchange,
 		config:          config,
 		eofCounter:      make(map[int64]int),
-		qtyTx:           make(map[int64]int),
 	}, nil
 }
 
@@ -120,7 +118,6 @@ func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) e
 func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
 	if _, ok := q1AmountFilter.eofCounter[clientID]; !ok {
 		q1AmountFilter.eofCounter[clientID] = 0
-		q1AmountFilter.qtyTx[clientID] = 0
 	}
 	transactions := []transaction.LowAmountTransfer{}
 	for _, transactionRecord := range transactionRecords {
@@ -140,7 +137,6 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 			QueryID:      transaction.Query1,
 			Transactions: transactions,
 		}
-		q1AmountFilter.qtyTx[clientID] += len(transactions)
 		if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
 			return err
 		}
@@ -178,9 +174,7 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 		return
 	}
 	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
-	slog.Info("size transactions", "qtyTx", q1AmountFilter.qtyTx[clientID])
 	delete(q1AmountFilter.eofCounter, clientID)
-	delete(q1AmountFilter.qtyTx, clientID)
 	ack()
 }
 
