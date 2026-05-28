@@ -152,9 +152,7 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 	}
 
 	if mustPropagate {
-		groupWorker.controlMutex.Lock()
 		groupWorker.controlExchange.Send(*msg)
-		groupWorker.controlMutex.Unlock()
 	} else {
 		for i := range groupWorker.config.NextFaseWorkersAmount {
 			topic := fmt.Sprintf("%s_%d", groupWorker.config.NextFaseWorkersPrefix, i)

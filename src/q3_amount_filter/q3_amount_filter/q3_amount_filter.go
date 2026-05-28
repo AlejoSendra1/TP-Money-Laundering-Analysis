@@ -204,12 +204,6 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(msg *middleware.Messa
 			nack()
 			return
 		}
-		slog.Info("EOF sent to output queue", "client_id", clientID)
-
-		if err := q3AmountFilter.outputQueue.Send(*msg); err != nil {
-			slog.Debug("While sending data message", "err", err, "clientID", clientID)
-			return
-		}
 		slog.Info("Sent EOF to gateway", "clientID", clientID)
 		slog.Info("Size transactions sent", "clientID", clientID, "qtyTx", qty)
 		q3AmountFilter.cleanupClient(clientID)
