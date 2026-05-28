@@ -73,32 +73,39 @@ func (q1AmountFilter *Q1AmountFilter) Run() {
 	})
 }
 
-func (q1AmountFilter *Q1AmountFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+func (q1AmountFilter *Q1AmountFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	q1AmountFilter.mu.Lock()
 	defer q1AmountFilter.mu.Unlock()
-	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
 
-	if isEof {
-		if err := q1AmountFilter.handleEndOfRecordMessage(clientID); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", clientID)
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		if err := q1AmountFilter.handleEndOfRecordMessage(msg.ClientID); err != nil {
+			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
 		ack()
 		return
+	case inner.TransactionBatch:
+		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		if err := q1AmountFilter.handleDataMessage(transactions, msg.ClientID); err != nil {
+			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		ack()
 	}
-
-	if err := q1AmountFilter.handleDataMessage(transactionRecords, clientID); err != nil {
-		slog.Error("While handling data message", "err", err, "clientID", clientID)
-		nack()
-		return
-	}
-	ack()
 }
 
 func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) error {
@@ -133,11 +140,7 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 	}
 
 	if len(transactions) != 0 {
-		queryResult := transaction.QueryResult{
-			QueryID:      transaction.Query1,
-			Transactions: transactions,
-		}
-		if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
+		if err := q1AmountFilter.sendOutput(clientID, transactions); err != nil {
 			return err
 		}
 	}
@@ -163,13 +166,15 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 		ack()
 		return
 	}
-
-	queryResult := transaction.QueryResult{
-		QueryID:      transaction.Query1,
-		Transactions: []transaction.LowAmountTransfer{},
+	msgEof, err := inner.SerializeQueryEOR(clientID, transaction.Query1) // TO DO agregar otra var de entorno y para group tmb
+	if err != nil {
+		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
+		nack()
+		return
 	}
-	if err := q1AmountFilter.sendOutput(queryResult, clientID); err != nil {
-		slog.Error("While sending EOF data message", "err", err, "clientID", clientID)
+
+	if err := q1AmountFilter.outputQueue.Send(*msgEof); err != nil {
+		slog.Debug("While sending EOF message", "err", err, "clientID", clientID)
 		nack()
 		return
 	}
@@ -178,8 +183,8 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 	ack()
 }
 
-func (q1AmountFilter *Q1AmountFilter) sendOutput(queryResult transaction.QueryResult, clientID int64) error {
-	message, err := inner.SerializeQueryResultMessage(clientID, queryResult)
+func (q1AmountFilter *Q1AmountFilter) sendOutput(clientID int64, queryResult []transaction.LowAmountTransfer) error {
+	message, err := inner.SerializeQuery1ResultMessage(clientID, queryResult)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
 		return err

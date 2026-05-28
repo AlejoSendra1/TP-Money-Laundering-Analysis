@@ -72,30 +72,41 @@ func (usdFilter *USDFilter) Run() {
 	})
 }
 
-func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+func (usdFilter *USDFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	usdFilter.mu.Lock()
 	defer usdFilter.mu.Unlock()
-	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
-	if isEof {
-		if err := usdFilter.handleEndOfRecordMessage(clientID); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", clientID)
+
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		if err := usdFilter.handleEndOfRecordMessage(msg.ClientID); err != nil {
+			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
 		ack()
 		return
+	case inner.TransactionBatch:
+		transactionRecords, err := inner.DeserializeTransactionBatch(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing transactions", "err", err, "clientID", msg.ClientID, "content", middlewareMsg.Body)
+			nack()
+			return
+		}
+		if err := usdFilter.handleDataMessage(transactionRecords, msg.ClientID); err != nil {
+			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		ack()
+	default:
+		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
 	}
-	if err := usdFilter.handleDataMessage(transactionRecords, clientID); err != nil {
-		slog.Error("While handling data message", "err", err, "clientID", clientID)
-		nack()
-		return
-	}
-	ack()
 }
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
@@ -138,13 +149,17 @@ func (usdFilter *USDFilter) handleControlMessage(msg *middleware.Message, ack fu
 		nack()
 		return
 	}
-	if err = usdFilter.sendOutput([]transaction.Transaction{}, controlMessage.ClientID); err != nil {
-		slog.Error("While sending EOF message", "err", err, "clientID", controlMessage.ClientID)
+	msgEof, err := inner.SerializeEOF(controlMessage.ClientID, true, "usd_filter") // TO DO agregar otra var de entorno y para group tmb
+	if err != nil {
+		slog.Info("While serializing EOF message", "err", err, "clientID", controlMessage.ClientID)
 		nack()
 		return
 	}
-	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	if err = usdFilter.outputExchange.Send(*msgEof); err != nil {
+		slog.Info("While sending EOF message", "err", err, "clientID")
+	}
 	ack()
+
 }
 
 func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {

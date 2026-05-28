@@ -9,7 +9,7 @@ services:
     - usd_filter_1
     environment:
     - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input_2_query.csv
+    - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output_0.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
@@ -90,8 +90,8 @@ services:
     - MOM_PORT=5672
     - INPUT_PREFIX=join_q2
     - COUNTER_AMOUNT=2
-    - OUTPUT_QUEUE=aggregation_q2_queue
-    - QUERY_ID=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
     - BATCH_SIZE=100
   q2_join_1:
     build:
@@ -107,8 +107,8 @@ services:
     - MOM_PORT=5672
     - INPUT_PREFIX=join_q2
     - COUNTER_AMOUNT=2
-    - OUTPUT_QUEUE=aggregation_q2_queue
-    - QUERY_ID=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
     - BATCH_SIZE=100
   rabbitmq:
     build:
@@ -126,8 +126,6 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
-    logging:
-      driver: none
   usd_filter_0:
     build:
       context: ./src/

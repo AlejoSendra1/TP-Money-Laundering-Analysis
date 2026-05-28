@@ -54,7 +54,6 @@ services:
     - 15672:15672
     logging:
       driver: none
-
   q5_date_filter_0:
     build:
       context: ./src/

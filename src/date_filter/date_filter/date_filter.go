@@ -89,31 +89,43 @@ func (dateFilter *DateFilter) Run() {
 	})
 }
 
-func (dateFilter *DateFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	dateFilter.mu.Lock()
 	defer dateFilter.mu.Unlock()
-	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err)
 		nack()
 		return
 	}
 
-	if isEof {
-		if err := dateFilter.handleEndOfRecordMessage(clientID); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", clientID)
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		if err := dateFilter.handleEndOfRecordMessage(msg.ClientID); err != nil {
+			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
 		ack()
 		return
+	case inner.TransactionBatch:
+		transactionRecords, err := inner.DeserializeTransactionBatch(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing transactions", "err", err, "clientID", msg.ClientID, "content", middlewareMsg.Body)
+			nack()
+			return
+		}
+		if err := dateFilter.handleDataMessage(transactionRecords, msg.ClientID); err != nil {
+			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		ack()
+	default:
+		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
+
 	}
-	if err := dateFilter.handleDataMessage(transactionRecords, clientID); err != nil {
-		slog.Error("While handling data message", "err", err, "clientID", clientID)
-		nack()
-		return
-	}
-	ack()
+
 }
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
@@ -180,9 +192,17 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 		return
 	}
 
+	msgEOF, err := inner.SerializeEOF(clientID, true, "date_filter") // TO DO agregar otra var de entorno y para group tmb
+	if err != nil {
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		nack()
+		return
+	}
+
 	for topic := range dateFilter.outputExchanges {
-		err := dateFilter.sendOutput([]transaction.Transaction{}, clientID, topic)
+		err := dateFilter.outputExchanges[topic].Send(*msgEOF)
 		if err != nil {
+			slog.Info("While sending to topics", "topic", topic)
 			return
 		}
 	}

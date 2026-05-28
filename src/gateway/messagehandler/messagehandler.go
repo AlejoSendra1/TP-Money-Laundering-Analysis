@@ -9,83 +9,78 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
+const QUERYS_AMOUNT = 1
+
 type MessageHandler struct {
-	userId                int64
-	results               map[transaction.QueryID]transaction.QueryResult // Resultados de las querys
-	completedQueryCounter int                                             // Contador de las cantidad de querys terminadas
+	UserId             int64
+	eorCountByQuery    map[transaction.QueryID]int // EOFs recibidos por query
+	eorExpectedByQuery map[transaction.QueryID]int // Cantidad de EOFs esperados por query
 }
 
 type accumulatorFunc func(current, incoming any) any
 
-func appendGeneric[T any](current, incoming any) any {
-	currentSlice := current.([]T)
-	incomingSlice := incoming.([]T)
-	return append(currentSlice, incomingSlice...)
-}
-
-var queryAccumulators = map[transaction.QueryID]accumulatorFunc{
-	transaction.Query1: appendGeneric[transaction.LowAmountTransfer]}
-
 func NewMessageHandler() MessageHandler {
 	n := rand.Int64()
+	slog.Info("UserId created", "value", n)
+
+	// A MODIFICAR CON VARIABLES DE ENTORNO - TO DO
+	eofExpectedByQuery := make(map[transaction.QueryID]int)
+	eofExpectedByQuery[transaction.Query1] = 0
+	eofExpectedByQuery[transaction.Query2] = 0
+	eofExpectedByQuery[transaction.Query3] = 0
+	eofExpectedByQuery[transaction.Query4] = 0
+	eofExpectedByQuery[transaction.Query5] = 2
+
 	return MessageHandler{
-		userId:                n,
-		results:               make(map[transaction.QueryID]transaction.QueryResult),
-		completedQueryCounter: 0,
+		UserId:             n,
+		eorCountByQuery:    make(map[transaction.QueryID]int),
+		eorExpectedByQuery: eofExpectedByQuery,
 	}
 }
 
 func (messageHandler *MessageHandler) SerializeDataMessage(transactionBatch []transaction.Transaction) (*middleware.Message, error) {
-	return inner.SerializeMessage(messageHandler.userId, transactionBatch)
+	return inner.SerializeMessage(messageHandler.UserId, transactionBatch)
 }
 
 func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message, error) {
-	data := []transaction.Transaction{}
-	return inner.SerializeMessage(messageHandler.userId, data)
+	return inner.SerializeEOF(messageHandler.UserId, true, "gateway")
 }
 
-func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) (*transaction.QueriesResult, bool, error) {
-	clientID, queryResult, isEOF, err := inner.DeserializeQueryResultMessage(message)
+func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClient) (bool, error) {
+	queryID, err := getQueryID(message.Data)
 	if err != nil {
-		return nil, false, err
-	}
-	if clientID != messageHandler.userId {
-		// ClientID dismatch, skipping...
-		return nil, false, nil
+		return false, err
 	}
 
-	if isEOF {
-		slog.Info("Receive EOF from query", "queryID", queryResult.QueryID, "clientID", clientID)
-		messageHandler.completedQueryCounter++
-		if messageHandler.completedQueryCounter == 1 { // Por ahora solo se resolvio la 1ra query (al final sera == 5)
-			queriesResult := &transaction.QueriesResult{
-				ClientID: messageHandler.userId,
-				Results:  make(map[transaction.QueryID]transaction.QueryResult),
-			}
-			for queryID, res := range messageHandler.results {
-				queriesResult.Results[queryID] = res
-			}
-			messageHandler.results = make(map[transaction.QueryID]transaction.QueryResult)
-			messageHandler.completedQueryCounter = 0
-			slog.Info("All result queries received, returning...", "clientID", clientID)
-			return queriesResult, true, nil
+	if messageHandler.eorCountByQuery[queryID] == messageHandler.eorExpectedByQuery[queryID] {
+		slog.Info("esta situacion no deberia darse, hay alguna entidad de mas no declarada")
+		return false, nil
+	}
+	messageHandler.eorCountByQuery[queryID] += 1
+
+	if messageHandler.assertClientEnd() {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (messageHandler *MessageHandler) assertClientEnd() bool {
+	for key, val := range messageHandler.eorCountByQuery {
+		if messageHandler.eorExpectedByQuery[key] != val {
+			return false
 		}
-		slog.Info("Receive EOF from query, waiting for more...", "queryID", queryResult.QueryID, "clientID", clientID)
-		return nil, true, nil
 	}
-	currentResult, exists := messageHandler.results[queryResult.QueryID]
-	if !exists {
-		slog.Info("First result query received, waiting for more...", "queryID", queryResult.QueryID, "clientID", clientID)
-		messageHandler.results[queryResult.QueryID] = *queryResult // Es la primera vez que se guarda
-		return nil, true, nil
+	return true
+}
+
+func getQueryID(data []interface{}) (transaction.QueryID, error) {
+	queryIDFloat, ok := data[0].(float64)
+	if !ok {
+		return 0, fmt.Errorf("expected float64 for queryID, got %T", data)
 	}
 
-	accumulator, exists := queryAccumulators[queryResult.QueryID]
-	if !exists {
-		return nil, false, fmt.Errorf("unknown query id during accumulation: %d", queryResult.QueryID)
-	}
+	queryID := transaction.QueryID(int(queryIDFloat))
 
-	currentResult.Transactions = accumulator(currentResult.Transactions, queryResult.Transactions)
-	messageHandler.results[queryResult.QueryID] = currentResult
-	return nil, true, nil
+	return queryID, nil
 }
