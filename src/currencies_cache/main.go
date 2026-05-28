@@ -35,6 +35,11 @@ func loadFallbackRates(filePath string) (map[string]map[string]float64, error) {
 }
 
 func loadConfig() (currencies_cache.CurrenciesCacheConfig, error) {
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return currencies_cache.CurrenciesCacheConfig{}, errors.New("ID is required and must be a number")
+	}
+
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
 		return currencies_cache.CurrenciesCacheConfig{}, errors.New("MOM_HOST is required")
@@ -58,6 +63,21 @@ func loadConfig() (currencies_cache.CurrenciesCacheConfig, error) {
 	counterAmount, err := strconv.Atoi(os.Getenv("COUNTER_AMOUNT"))
 	if err != nil {
 		return currencies_cache.CurrenciesCacheConfig{}, errors.New("COUNTER_AMOUNT is required and must be a number")
+	}
+
+	filterAmount, err := strconv.Atoi(os.Getenv("FILTER_AMOUNT"))
+	if err != nil {
+		return currencies_cache.CurrenciesCacheConfig{}, errors.New("FILTER_AMOUNT is required and must be a number")
+	}
+
+	instanceAmount, err := strconv.Atoi(os.Getenv("INSTANCE_AMOUNT"))
+	if err != nil {
+		return currencies_cache.CurrenciesCacheConfig{}, errors.New("INSTANCE_AMOUNT is required and must be a number")
+	}
+
+	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
+	if controlExchangeName == "" {
+		return currencies_cache.CurrenciesCacheConfig{}, errors.New("CONTROL_EXCHANGE_NAME is required")
 	}
 
 	apiURL := os.Getenv("EXCHANGE_RATE_API_URL")
@@ -91,16 +111,20 @@ func loadConfig() (currencies_cache.CurrenciesCacheConfig, error) {
 	inputTopic := os.Getenv("INPUT_TOPIC")
 
 	return currencies_cache.CurrenciesCacheConfig{
-		MomHost:            momHost,
-		MomPort:            momPort,
-		InputQueue:         inputQueue,
-		InputExchangeName:  inputExchange,
-		InputTopic:         inputTopic,
-		OutputPrefix:       outputPrefix,
-		CounterAmount:      counterAmount,
-		ExchangeRateAPIURL: apiURL,
-		CurrencyNameToCode: currencyNameToCode,
-		FallbackRates:      fallbackRates,
+		ID:                  id,
+		MomHost:             momHost,
+		MomPort:             momPort,
+		InputQueue:          inputQueue,
+		InputExchangeName:   inputExchange,
+		InputTopic:          inputTopic,
+		OutputPrefix:        outputPrefix,
+		CounterAmount:       counterAmount,
+		FilterAmount:        filterAmount,
+		InstanceAmount:      instanceAmount,
+		ControlExchangeName: controlExchangeName,
+		ExchangeRateAPIURL:  apiURL,
+		CurrencyNameToCode:  currencyNameToCode,
+		FallbackRates:       fallbackRates,
 	}, nil
 }
 

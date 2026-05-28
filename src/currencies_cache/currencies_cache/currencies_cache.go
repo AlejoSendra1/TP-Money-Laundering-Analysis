@@ -35,16 +35,20 @@ type frankfurterAPIRate struct {
 }
 
 type CurrenciesCacheConfig struct {
-	MomHost            string
-	MomPort            int
-	InputQueue         string
-	InputExchangeName  string
-	InputTopic         string
-	OutputPrefix       string // queue name prefix; actual queues: {OutputPrefix}_0, _1, ...
-	CounterAmount      int    // number of counter_q5 instances (= number of output queues)
-	ExchangeRateAPIURL string
-	CurrencyNameToCode map[string]string             // maps full currency names to ISO 4217 codes
-	FallbackRates      map[string]map[string]float64 // date -> ISO code -> rate (hardcoded Bitcoin rates)
+	ID                  int
+	MomHost             string
+	MomPort             int
+	InputQueue          string
+	InputExchangeName   string
+	InputTopic          string
+	OutputPrefix        string
+	CounterAmount       int
+	FilterAmount        int    // total de EOFs esperados (uno por instancia de filter_payment_format)
+	InstanceAmount      int    // número de instancias de currencies_cache (para control entre peers)
+	ControlExchangeName string // exchange para mensajes de control entre peers
+	ExchangeRateAPIURL  string
+	CurrencyNameToCode  map[string]string
+	FallbackRates       map[string]map[string]float64
 }
 
 // CurrenciesCache converts PaymentRecord amounts to USD using live exchange rates,
@@ -52,15 +56,15 @@ type CurrenciesCacheConfig struct {
 type CurrenciesCache struct {
 	config             CurrenciesCacheConfig
 	inputQueue         middleware.Middleware
-	outputQueues       []middleware.Middleware // one per counter_q5 instance
-	currencyNameToCode map[string]string       // full currency name -> ISO code
-	// Hardcoded Bitcoin rates: date (YYYY-MM-DD) -> rate (BTC per 1 USD)
-	// Read-only after initialization, no mutex needed
-	bitcoinRates map[string]float64
-	// API rates cache: date (YYYY-MM-DD) -> ISO code -> rate (units of that currency per 1 USD)
-	// Modified concurrently, requires mutex protection
-	apiRatesByDate map[string]map[string]float64
-	apiMutex       sync.RWMutex
+	outputQueues       []middleware.Middleware
+	controlOutputs     []middleware.Middleware
+	controlInput       middleware.Middleware
+	currencyNameToCode map[string]string
+	bitcoinRates       map[string]float64
+	apiRatesByDate     map[string]map[string]float64
+	apiMutex           sync.RWMutex
+	mu                 sync.Mutex // protege eofCountByClient
+	eofCountByClient   map[int64]int
 }
 
 // fetchRatesForDate fetches exchange rates from Frankfurter API for a specific date.
@@ -96,7 +100,6 @@ func fetchRatesForDate(apiURLPrefix string, date string) (map[string]float64, er
 func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 
-	// Shared input queue — supports competing consumers
 	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueue, connSettings)
 	if err != nil {
 		return nil, fmt.Errorf("creating input queue: %w", err)
@@ -108,7 +111,6 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		}
 	}
 
-	// One output queue per counter_q5 instance: {OutputPrefix}_0, _1, ...
 	outputQueues := make([]middleware.Middleware, config.CounterAmount)
 	for i := 0; i < config.CounterAmount; i++ {
 		qName := fmt.Sprintf("%s_%d", config.OutputPrefix, i)
@@ -123,7 +125,41 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		outputQueues[i] = q
 	}
 
-	// Initialize Bitcoin rates from hardcoded data (bitcoin_usd_rates.json)
+	// Control output exchanges — uno por peer (todas las instancias excepto self)
+	var controlOutputs []middleware.Middleware
+	for i := 0; i < config.InstanceAmount; i++ {
+		if i == config.ID {
+			continue
+		}
+		key := fmt.Sprintf("%s_%d", config.ControlExchangeName, i)
+		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings)
+		if err != nil {
+			inputQueue.Close()
+			for _, q := range outputQueues {
+				q.Close()
+			}
+			for _, c := range controlOutputs {
+				c.Close()
+			}
+			return nil, fmt.Errorf("creating control output exchange for peer %d: %w", i, err)
+		}
+		controlOutputs = append(controlOutputs, exchange)
+	}
+
+	// Control input exchange — recibe notificaciones EOF de los peers
+	myControlKey := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		for _, q := range outputQueues {
+			q.Close()
+		}
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		return nil, fmt.Errorf("creating control input exchange: %w", err)
+	}
+
 	bitcoinRates := make(map[string]float64)
 	for date, rates := range config.FallbackRates {
 		bitcoinRates[date] = rates["BTC"]
@@ -133,9 +169,12 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		config:             config,
 		inputQueue:         inputQueue,
 		outputQueues:       outputQueues,
+		controlOutputs:     controlOutputs,
+		controlInput:       controlInput,
 		currencyNameToCode: config.CurrencyNameToCode,
 		bitcoinRates:       bitcoinRates,
 		apiRatesByDate:     make(map[string]map[string]float64),
+		eofCountByClient:   make(map[int64]int),
 	}, nil
 }
 
@@ -147,9 +186,20 @@ func (currencyCache *CurrenciesCache) Run() {
 		<-sigCh
 		slog.Info("SIGTERM received, stopping consumer")
 		currencyCache.inputQueue.StopConsuming()
+		currencyCache.controlInput.StopConsuming()
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		currencyCache.controlInput.StartConsuming(currencyCache.handleControlMessage)
 	}()
 
 	currencyCache.inputQueue.StartConsuming(currencyCache.handleMessage)
+
+	currencyCache.controlInput.StopConsuming()
+	wg.Wait()
 	currencyCache.close()
 }
 
@@ -162,21 +212,80 @@ func (currencyCache *CurrenciesCache) handleMessage(msg middleware.Message, ack,
 	}
 
 	if isEof {
-		slog.Info("EOF received, forwarding", "client_id", clientID)
-		if err := currencyCache.forwardEOF(clientID); err != nil {
-			slog.Error("Forwarding EOF", "err", err, "client_id", clientID)
+		slog.Info("Direct EOF received from filter, notifying peers", "client_id", clientID)
+		if err := currencyCache.sendControlEOF(clientID); err != nil {
+			slog.Error("Sending control EOF to peers", "err", err, "client_id", clientID)
 			nack()
 			return
+		}
+
+		currencyCache.mu.Lock()
+		currencyCache.eofCountByClient[clientID]++
+		count := currencyCache.eofCountByClient[clientID]
+		currencyCache.mu.Unlock()
+
+		slog.Info("EOF accumulated", "client_id", clientID, "count", count, "expected", currencyCache.config.FilterAmount)
+		if count >= currencyCache.config.FilterAmount {
+			if err := currencyCache.forwardEOF(clientID); err != nil {
+				slog.Error("Forwarding EOF to counters", "err", err, "client_id", clientID)
+				nack()
+				return
+			}
 		}
 		ack()
 		return
 	}
 
+	currencyCache.mu.Lock()
 	converted := currencyCache.convertBatch(clientID, records)
 	if err := currencyCache.sendConvertedRecords(clientID, converted); err != nil {
+		currencyCache.mu.Unlock()
 		slog.Error("Sending converted records", "err", err, "client_id", clientID)
 		nack()
 		return
+	}
+	currencyCache.mu.Unlock()
+	ack()
+}
+
+// sendControlEOF notifica a todos los peers que esta instancia recibió un EOF para clientID.
+func (currencyCache *CurrenciesCache) sendControlEOF(clientID int64) error {
+	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
+	if err != nil {
+		return fmt.Errorf("serializing control EOF: %w", err)
+	}
+	for i, controlOutput := range currencyCache.controlOutputs {
+		if err := controlOutput.Send(*msg); err != nil {
+			return fmt.Errorf("sending control EOF to peer %d: %w", i, err)
+		}
+	}
+	slog.Info("Control EOF sent to all peers", "client_id", clientID)
+	return nil
+}
+
+// handleControlMessage procesa notificaciones EOF de peers.
+// Acumula y hace forwardEOF cuando se alcanzan todos los EOFs esperados.
+func (currencyCache *CurrenciesCache) handleControlMessage(msg middleware.Message, ack, nack func()) {
+	clientID, _, _, err := inner.DeserializePaymentRecordMessage(&msg)
+	if err != nil {
+		slog.Error("Deserializing control message", "err", err)
+		nack()
+		return
+	}
+	slog.Info("Control EOF received from peer", "client_id", clientID)
+
+	currencyCache.mu.Lock()
+	currencyCache.eofCountByClient[clientID]++
+	count := currencyCache.eofCountByClient[clientID]
+	currencyCache.mu.Unlock()
+
+	slog.Info("Control EOF accumulated", "client_id", clientID, "count", count, "expected", currencyCache.config.FilterAmount)
+	if count >= currencyCache.config.FilterAmount {
+		if err := currencyCache.forwardEOF(clientID); err != nil {
+			slog.Error("Forwarding EOF to counters from control", "err", err, "client_id", clientID)
+			nack()
+			return
+		}
 	}
 	ack()
 }
@@ -311,7 +420,9 @@ func (currencyCache *CurrenciesCache) toUSD(currencyName string, amount float64,
 	return amount / rate, nil
 }
 
+// forwardEOF sends a generic EOF to all counter_q5 output queues once all formats are done.
 func (currencyCache *CurrenciesCache) forwardEOF(clientID int64) error {
+	delete(currencyCache.eofCountByClient, clientID)
 	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
 	if err != nil {
 		return err
@@ -321,12 +432,17 @@ func (currencyCache *CurrenciesCache) forwardEOF(clientID int64) error {
 			return fmt.Errorf("sending EOF to output queue %d: %w", i, err)
 		}
 	}
+	slog.Info("Generic EOF forwarded to all counters", "client_id", clientID)
 	return nil
 }
 
 func (currencyCache *CurrenciesCache) close() {
 	currencyCache.inputQueue.Close()
+	currencyCache.controlInput.Close()
 	for _, q := range currencyCache.outputQueues {
 		q.Close()
+	}
+	for _, c := range currencyCache.controlOutputs {
+		c.Close()
 	}
 }
