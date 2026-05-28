@@ -114,7 +114,6 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 }
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Sent EOF record message, ", "clientID", clientID)
 	slog.Info("Transactions received", "Amount", dateFilter.received)
 	slog.Info("Transactions approved", "Amount", dateFilter.approved)
 	slog.Info("Batches sent", "Amount", dateFilter.batchesSent)
@@ -131,7 +130,6 @@ func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
 			return err
 		}
 	}
-	slog.Info("Sent EOF record message", "clientID", clientID)
 	return nil
 }
 

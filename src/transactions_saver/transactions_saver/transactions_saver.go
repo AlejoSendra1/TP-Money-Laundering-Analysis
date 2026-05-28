@@ -121,6 +121,7 @@ func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middlew
 		return
 	}
 
+	slog.Info("Mensaje recibido", "data", msg.Data)
 	switch msg.MsgType {
 	case inner.EndOfRecords:
 		if err := transactionsSaver.handleEndOfRecordMessage(msg.ClientID); err != nil {
@@ -143,6 +144,8 @@ func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middlew
 			return
 		}
 		ack()
+	default:
+		slog.Warn("No function could handle this mesage", "err", err, "clientID", msg.ClientID)
 	}
 }
 func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID int64) error {

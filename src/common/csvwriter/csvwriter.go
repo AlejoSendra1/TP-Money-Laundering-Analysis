@@ -13,8 +13,8 @@ import (
 
 type CSVWriter struct {
 	counter int64
-	writer  *csv.Writer
 	file    *os.File
+	writer  *csv.Writer
 }
 
 var csvHeaders = []string{
