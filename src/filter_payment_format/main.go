@@ -57,11 +57,6 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		}
 	}
 
-	q5DateFilterAmount, err := strconv.Atoi(os.Getenv("Q5_DATE_FILTER_AMOUNT"))
-	if err != nil {
-		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("Q5_DATE_FILTER_AMOUNT environment variable is required and must be a number")
-	}
-
 	return filter_payment_format.FilterPaymentFormatConfig{
 		ID:                   id,
 		MomHost:              momHost,
@@ -72,7 +67,6 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		USDFilterAmount:      dateFilterAmount,
 		FilterPaymentControl: filterPaymentControl,
 		BatchSize:            batchSize,
-		Q5DateFilterAmount:   q5DateFilterAmount,
 	}, nil
 }
 
