@@ -89,7 +89,7 @@ func (bridgeMatcher *BridgeMatcher) Run() {
 }
 
 func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	slog.Info("Received msg", "body", middlewareMsg.Body)
+	//slog.Info("Received msg", "body", middlewareMsg.Body)
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)

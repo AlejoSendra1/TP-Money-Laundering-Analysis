@@ -124,7 +124,7 @@ func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middlew
 		return
 	}
 
-	slog.Info("Mensaje recibido", "data", msg.Data)
+	//slog.Info("Mensaje recibido", "data", msg.Data)
 	switch msg.MsgType {
 	case inner.EndOfRecords:
 		if err := transactionsSaver.handleEndOfRecordMessage(msg.ClientID); err != nil {

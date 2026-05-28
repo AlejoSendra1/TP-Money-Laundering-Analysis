@@ -209,7 +209,7 @@ func (client *Client) sendTransactionRecords() error {
 	}
 	batch := []transaction.Transaction{}
 
-	slog.Info("procesando transacciones")
+	//slog.Info("procesando transacciones")
 	for scanner.Scan() {
 		columns := strings.Split(scanner.Text(), ",")
 
@@ -423,13 +423,13 @@ func (client *Client) readFloat64(fieldName string) (float64, error) {
 }
 
 func (Client *Client) handleQueryResponse(queryCode uint32) error {
-	slog.Info("Leyendo query")
+	//slog.Info("Leyendo query")
 
 	toRead, err := Client.readUint32()
 	if err != nil {
 		return err
 	}
-	slog.Info("Bytes a leer", "value", toRead)
+	//slog.Info("Bytes a leer", "value", toRead)
 
 	read, err := safeio.ReadAll(Client.conn, toRead)
 	if err != nil {
@@ -437,7 +437,7 @@ func (Client *Client) handleQueryResponse(queryCode uint32) error {
 	}
 
 	toWrite, err := serializer.DeserializeQueryResponse(read)
-	slog.Info("Data obtenida", "value", toWrite)
+	//slog.Info("Data obtenida", "value", toWrite)
 	if err != nil {
 		return err
 	}
@@ -448,7 +448,7 @@ func (Client *Client) handleQueryResponse(queryCode uint32) error {
 
 // igual q arriba
 func (client *Client) handleQueryResponseWithQueryResult(queryCode uint32) error {
-	slog.Info("Leyendo query resultado", "queryCode", queryCode)
+	//slog.Info("Leyendo query resultado", "queryCode", queryCode)
 
 	// leer length prefix
 	toRead, err := client.readUint32()
@@ -495,26 +495,16 @@ func (client *Client) recvManager() error {
 			if err := client.handleQueryResponseWithQueryResult(uint32(msgType)); err != nil {
 				return err
 			}
-			// Respondemos ACK al gateway confirmando que guardamos la query
-			if err := external.WriteAck(client.conn); err != nil {
-				return err
-			}
 
 		// 3. Respuestas de Queries serializadas nativas
 		case inner.Query1Response, inner.Query4Response:
 			if err := client.handleQueryResponse(uint32(msgType)); err != nil {
 				return err
 			}
-			if err := external.WriteAck(client.conn); err != nil {
-				return err
-			}
 
 		// 4. Fin de todo el procesamiento (El Gateway nos avisa que no hay más respuestas)
 		case inner.EndOfRecords:
 			slog.Info("End of records total recibido del Gateway. Finalizando cliente.")
-			if err := external.WriteAck(client.conn); err != nil {
-				slog.Error("Al enviar ACK final de EOR", "err", err)
-			}
 			return nil
 
 		default:

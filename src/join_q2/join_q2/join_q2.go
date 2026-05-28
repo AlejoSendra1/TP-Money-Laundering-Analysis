@@ -142,7 +142,7 @@ func (joinQ2 *JoinQ2) handleEOF(clientID int64) error {
 func (joinQ2 *JoinQ2) flushClient(clientID int64) error {
 	joinQ2.mutex.Lock()
 	banks := joinQ2.topByClient[clientID]
-	slog.Info("Flushing client", "client_id", clientID, "banks", len(banks))
+	//slog.Info("Flushing client", "client_id", clientID, "banks", len(banks))
 	delete(joinQ2.topByClient, clientID)
 	delete(joinQ2.eofCountByClient, clientID)
 	joinQ2.mutex.Unlock()

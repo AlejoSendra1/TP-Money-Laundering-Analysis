@@ -112,7 +112,7 @@ func (c *CSVWriter) Close() error {
 }
 
 func (c *CSVWriter) WriteResult(queryCode uint32, data []interface{}) error {
-	slog.Info("Escribiendo resultado por query")
+	//slog.Info("Escribiendo resultado por query")
 
 	switch queryCode {
 	case uint32(external.Query1Response):
@@ -144,7 +144,7 @@ func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
 		return err
 	}
 
-	slog.Info("Writing q1 result", "data", data)
+	//slog.Info("Writing q1 result", "data", data)
 	for _, transaction := range data {
 		fields, ok := transaction.([]interface{})
 		if !ok {
@@ -272,7 +272,7 @@ func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 }
 
 func (c *CSVWriter) writeQ5Result(data []interface{}) error {
-	w, err := c.getQueryWriter("getQueryWriter")
+	w, err := c.getQueryWriter("q5")
 	if err != nil {
 		return err
 	}

@@ -174,7 +174,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	// Procesamos y enviamos AFUERA del lock del registro
 	switch msg.MsgType {
 	case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
-		slog.Info("Response received from MOM", "query", msg.MsgType, "clientID", msg.ClientID)
+		//slog.Info("Response received from MOM", "query", msg.MsgType, "clientID", msg.ClientID)
 
 		serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), *msg)
 		if err != nil {
