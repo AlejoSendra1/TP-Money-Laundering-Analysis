@@ -2,6 +2,9 @@
 *.csv
 */*.csv
 
+results.txt
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -182,8 +185,8 @@ dmypy.json
 # pytype static type analyzer
 .pytype/
 
-# Cython debug symbols
-cython_debug/
+# Cython Info symbols
+cython_Info/
 
 # PyCharm
 #   JetBrains specific template is maintained in a separate JetBrains.gitignore that can

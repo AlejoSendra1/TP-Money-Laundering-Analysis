@@ -154,32 +154,40 @@ func (counter *CounterQ2) Run() {
 }
 
 // handleMessage processes messages from the shared input queue.
-func (counter *CounterQ2) handleMessage(msg middleware.Message, ack, nack func()) {
-	clientID, transactions, isEof, err := inner.DeserializeRawTransactionsMessage(&msg)
+func (counter *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack, nack func()) {
+	msg, err := inner.DeserializeMessage(&middlewareMsg)
 	if err != nil {
-		slog.Error("Deserializing input message", "err", err)
+		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
 
-	if isEof {
-		slog.Info("EOF received, notifying peers and flushing", "client_id", clientID)
-		if err := counter.sendControlEOF(clientID); err != nil {
-			slog.Error("Sending control EOF", "err", err, "client_id", clientID)
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		slog.Info("EOF received, notifying peers and flushing", "client_id", msg.ClientID)
+		if err := counter.sendControlEOF(msg.ClientID); err != nil {
+			slog.Error("Sending control EOF", "err", err, "client_id", msg.ClientID)
 			nack()
 			return
 		}
-		if err := counter.flushClient(clientID); err != nil {
-			slog.Error("Flushing client", "err", err, "client_id", clientID)
+		if err := counter.flushClient(msg.ClientID); err != nil {
+			slog.Error("Flushing client", "err", err, "client_id", msg.ClientID)
 			nack()
 			return
 		}
 		ack()
 		return
-	}
+	case inner.TransactionBatch:
+		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		counter.processBatch(msg.ClientID, transactions)
+		ack()
 
-	counter.processBatch(clientID, transactions)
-	ack()
+	}
 }
 
 // processBatch updates in-memory state: keeps max-amount entry per bank.

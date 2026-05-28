@@ -3,14 +3,34 @@ package inner
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
 
+type MsgType uint32
+
+const (
+	TransactionBatch MsgType = iota + 1
+	Ack
+	EndOfRecords
+	Query1Response
+	Query2Response
+	Query3Response
+	Query4Response
+	Query5Response
+	QueryEOR
+	SuspiciousAccount
+	PossibleFraudDestinations
+	ReadyForEOR
+)
+
 type MessageClient struct {
 	ClientID int64         `json:"client_id"`
+	MsgType  MsgType       `json:"msg_type"`
 	Data     []interface{} `json:"data"`
 }
 
@@ -30,60 +50,74 @@ var queryDeserializers = map[transaction.QueryID]queryDeserializer{
 	transaction.Query5: deserializeQuery5,
 }
 
-func serializeJson(messageClient MessageClient) ([]byte, error) {
+func SerializeJson(messageClient MessageClient) ([]byte, error) {
 	return json.Marshal(messageClient)
 }
 
-func deserializeJson(message []byte) ([]interface{}, error) {
-	var data []interface{}
-	if err := json.Unmarshal(message, &data); err != nil {
-		return nil, err
+func DeserializeMessage(message *middleware.Message) (*MessageClient, error) {
+	var messageClient MessageClient
+	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
+		return nil, fmt.Errorf("deserializing message body: %w", err)
 	}
-	return data, nil
+	return &messageClient, nil
 }
 
-func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryResult) (*middleware.Message, error) {
-	serializer, ok := querySerializers[queryResult.QueryID]
-	if !ok {
-		return nil, fmt.Errorf("type of query not supported for serialize: %d", queryResult.QueryID)
-	}
+func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middleware.Message, error) {
+	slog.Info("serializando eof")
+	data := []interface{}{}
 
-	serializedTransactions, err := serializer(queryResult)
+	// agregamos el tipo de msg
+	data = append(data, []interface{}{
+		mustPropagate,
+		sender,
+	})
+
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: EndOfRecords, Data: data})
 	if err != nil {
 		return nil, err
 	}
 
-	data := []interface{}{
-		int(queryResult.QueryID),
-		serializedTransactions,
-	}
-
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
-	if err != nil {
-		return nil, err
-	}
 	message := middleware.Message{Body: string(body)}
+
 	return &message, nil
+}
+func DeserializeEOR(data []interface{}) (bool, string, error) {
+	info, ok := (data[0]).([]interface{})
+	if !ok {
+		return false, "", fmt.Errorf("Unexpected data in eor msg, received data %v", data)
+	}
+	// deserializacion de los datos
+	mustPropagate, ok := (info[0]).(bool)
+	if !ok {
+		return false, "", fmt.Errorf("Unexpected data in eor msg, expected bool, received data %v", data)
+	}
+
+	sender, ok := (info[1]).(string)
+	if !ok {
+		return false, "", fmt.Errorf("Unexpected data in eor msg, expected sender string, received data %v", data)
+	}
+	return mustPropagate, sender, nil
 }
 
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
 	data := []interface{}{}
-	for _, tx := range transactionBatch {
-		formattedTimestamp := tx.Timestamp.Format("2006/01/02 15:04")
+
+	for _, transaction := range transactionBatch {
+		formattedTimestamp := transaction.Timestamp.Format("2006/01/02 15:04")
 		datum := []interface{}{
 			formattedTimestamp,
-			tx.FromBank,
-			tx.ToBank,
-			tx.FromAccount,
-			tx.ToAccount,
-			tx.Amount,
-			tx.Currency,
-			tx.PaymentFormat,
+			transaction.FromBank,
+			transaction.ToBank,
+			transaction.FromAccount,
+			transaction.ToAccount,
+			transaction.Amount,
+			transaction.Currency,
+			transaction.PaymentFormat,
 		}
 		data = append(data, datum)
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: TransactionBatch, Data: data})
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +126,7 @@ func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction
 	return &message, nil
 }
 
+// ELIMINAR ESTA PORQUERIA
 func DeserializeRawTransactionsMessage(message *middleware.Message) (int64, []transaction.Transaction, bool, error) {
 	var messageClient MessageClient
 	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
@@ -111,36 +146,18 @@ func DeserializeRawTransactionsMessage(message *middleware.Message) (int64, []tr
 	return messageClient.ClientID, transactions, len(transactions) == 0, nil
 }
 
-func DeserializeQueryResultMessage(message *middleware.Message) (int64, *transaction.QueryResult, bool, error) {
-	var messageClient MessageClient
-	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
-		return 0, nil, false, fmt.Errorf("deserializing results query message body: %w", err)
+func DeserializeTransactionBatch(data []interface{}) ([]transaction.Transaction, error) {
+	transactions := make([]transaction.Transaction, 0, len(data))
+
+	for i, datum := range data {
+		transaction, err := sliceToTransaction(datum, i)
+		if err != nil {
+			return transactions, err
+		}
+		transactions = append(transactions, transaction)
 	}
 
-	queryIDFloat, ok := messageClient.Data[0].(float64)
-	if !ok {
-		return 0, nil, false, fmt.Errorf("deserializing invalid query id")
-	}
-	queryID := transaction.QueryID(queryIDFloat)
-
-	transactionRecords, ok := messageClient.Data[1].([]interface{})
-	if !ok {
-		return 0, nil, false, fmt.Errorf("deserializing invalid transactions payload")
-	}
-
-	deserializer, ok := queryDeserializers[queryID]
-	if !ok {
-		return 0, nil, false, fmt.Errorf("unsupported query id for deserialization: %d", queryID)
-	}
-
-	finalTransactions, err := deserializer(transactionRecords)
-	if err != nil {
-		return 0, nil, false, err
-	}
-	return messageClient.ClientID, &transaction.QueryResult{
-		QueryID:      queryID,
-		Transactions: finalTransactions,
-	}, len(transactionRecords) == 0, nil
+	return transactions, nil
 }
 
 func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages []transaction.PaymentFormatAverage) (*middleware.Message, error) {
@@ -155,7 +172,7 @@ func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages 
 		serializedRecords = append(serializedRecords, datum)
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment format averages: %w", err)
 	}
@@ -200,7 +217,7 @@ func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers
 		serializedRecords = append(serializedRecords, datum)
 	}
 
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
 	if err != nil {
 		return nil, fmt.Errorf("serializing bank peak transfer: %w", err)
 	}
@@ -240,7 +257,7 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 		return transaction.Transaction{}, fmt.Errorf("record %d: expected array, got %T", index, datum)
 	}
 	if len(fields) != 8 {
-		return transaction.Transaction{}, fmt.Errorf("record %d: expected 8 fields, got %d", index, len(fields))
+		return transaction.Transaction{}, fmt.Errorf("record %d: expected 8 fields, got %d — contents: %v", index, len(fields), fields)
 	}
 
 	timestamp, ok1 := fields[0].(string)
@@ -273,7 +290,41 @@ func sliceToTransaction(datum interface{}, index int) (transaction.Transaction, 
 	}, nil
 }
 
-// --- Serializer/Deserializer  ---
+// para hacer 2 fase commit
+func SerializeReadyForEOR(clientID int64, workerID int) (*middleware.Message, error) {
+	slog.Info("serializando ReadyForEOR")
+	data := []interface{}{}
+
+	data = append(data, []interface{}{
+		workerID,
+	})
+
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: ReadyForEOR, Data: data})
+	if err != nil {
+		return nil, err
+	}
+
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializeReadyForEOR(data []interface{}) (int, error) {
+	info, ok := (data[0]).([]interface{})
+	if !ok {
+		return 0, fmt.Errorf("Unexpected data in ReadyForEOR msg, received data %v", data)
+	}
+	// deserializacion de los datos
+	senderID, ok := (info[0]).(float64)
+	if !ok {
+		return 0, fmt.Errorf("Unexpected data in ReadyForEOR msg, expected sender int, received data %v", data)
+	}
+	return int(senderID), nil
+}
+
+// ---------------------------------------------------------
+// especifico de la Query 1 ------
+// ----------------------------------------------------------
 
 func serializeQuery1(qr transaction.QueryResult) ([]interface{}, error) {
 	serialized := []interface{}{}
@@ -305,6 +356,166 @@ func deserializeQuery1(records []interface{}) (interface{}, error) {
 		transactions = append(transactions, tx)
 	}
 	return transactions, nil
+}
+
+// ---------------------------------------------------------
+// especifico de la Query 1 ------
+// ----------------------------------------------------------
+func SerializeQuery1ResultMessage(clientId int64, queryResult []transaction.LowAmountTransfer) (*middleware.Message, error) {
+	data := []interface{}{}
+
+	for _, transaction := range queryResult {
+		datum := []interface{}{
+			transaction.FromBank,
+			transaction.FromAccount,
+			transaction.ToBank,
+			transaction.ToAccount,
+			transaction.Amount,
+		}
+		data = append(data, datum)
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: Query1Response, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+// ---------------------------------------------------------
+// especifico de la Query 4 dsp ver como mover de aca ------
+// ----------------------------------------------------------
+
+func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]struct{}) (*middleware.Message, error) {
+	bridges := []interface{}{}
+	for key, _ := range possibleBridges {
+		bridges = append(bridges, key)
+	}
+	data := []interface{}{
+		susAccount, // plain string at data[0]
+		bridges,    // slice of bridges at data[1]
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: SuspiciousAccount, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializeSuspiciousMsgData(data []interface{}) (string, []string, error) { // fiaca implementar un type solo para la q4
+	// la data deberia llegar como { fromAccount_Frombank , [ toAccount_toBank , toAccount_toBank , .... ] }
+	transactions := []string{}
+
+	susAccount, ok := data[0].(string)
+	if !ok {
+		return "", transactions, fmt.Errorf("type mismatch on sus account origin")
+	}
+
+	// Type-assert data[1] to []interface{} before ranging
+	bridges, ok := data[1].([]interface{})
+	if !ok {
+		return "", transactions, fmt.Errorf("type mismatch on possible bridges list")
+	}
+
+	for _, possibleBridge := range bridges {
+		possibleBridgeInfo, ok := possibleBridge.(string)
+		if !ok {
+			return "", transactions, fmt.Errorf("type mismatch on sus account possible bridge")
+		}
+		transactions = append(transactions, possibleBridgeInfo)
+	}
+
+	return susAccount, transactions, nil
+}
+
+func SerializesPossibleFraudDestinations(clientID int64, origin string, possibleBridge string, possibleFraudDestinations map[string]struct{}) (*middleware.Message, error) {
+	dest := []interface{}{}
+	for key, _ := range possibleFraudDestinations {
+		dest = append(dest, key)
+	}
+	data := []interface{}{
+		origin,         // plain string at data[0]
+		possibleBridge, // plain string at data[1]
+		dest,           // slice of bridges at data[2]
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: PossibleFraudDestinations, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializePossibleFraudDestinations(data []interface{}) (string, string, []string, error) { // fiaca implementar un type solo para la q4
+	// la data deberia llegar como { fromAccount_Frombank , toAccount_toBank , [ toAccount_toBank2 , .... ] }
+	possibleFraudDestinations := []string{}
+
+	susAccount, ok := data[0].(string)
+	if !ok {
+		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on sus account origin")
+	}
+
+	bridge, ok := data[1].(string)
+	if !ok {
+		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on bridge")
+	}
+
+	// Type-assert data[2] to []interface{} before ranging
+	destinations, ok := data[2].([]interface{})
+	if !ok {
+		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on possible fraud destinations list")
+	}
+
+	for _, possibleFraudDestination := range destinations {
+		possibleFraudDestinationInfo, ok := possibleFraudDestination.(string)
+		if !ok {
+			return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on sus account possible bridge")
+		}
+		possibleFraudDestinations = append(possibleFraudDestinations, possibleFraudDestinationInfo)
+	}
+
+	return susAccount, bridge, possibleFraudDestinations, nil
+}
+
+func SerializeQ4SinkAndSource(clientID int64, sourceAccount string, sinkAccount string) (*middleware.Message, error) {
+	sourceAccountData := strings.Split(sourceAccount, "_")
+	sinkAccountData := strings.Split(sinkAccount, "_")
+
+	data := []interface{}{
+		sourceAccountData[0],
+		sourceAccountData[1],
+		sinkAccountData[0],
+		sinkAccountData[1],
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: Query4Response, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeSerializeQ4SinkAndSource(data []interface{}) (string, string, error) {
+	susAccount, ok := data[0].(string)
+	if !ok {
+		return "", "", fmt.Errorf("type mismatch on sus account origin")
+	}
+
+	susAccountBank, ok := data[1].(string)
+	if !ok {
+		return "", "", fmt.Errorf("type mismatch on bridge")
+	}
+
+	return susAccount, susAccountBank, nil
 }
 
 func serializeQuery3(qr transaction.QueryResult) ([]interface{}, error) {
@@ -378,7 +589,7 @@ func SerializePaymentRecordMessage(clientId int64, records []transaction.Payment
 			r.PaymentFormat,
 		})
 	}
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment records: %w", err)
 	}
@@ -428,7 +639,7 @@ func SerializePaymentFormatCountMessage(clientId int64, records []transaction.Pa
 	for _, r := range records {
 		data = append(data, []interface{}{r.PaymentFormat, r.Count})
 	}
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment format counts: %w", err)
 	}
@@ -469,7 +680,7 @@ func SerializeMaxBankTransactionMessage(clientId int64, records []transaction.Ma
 	for _, r := range records {
 		data = append(data, []interface{}{r.BankCode, r.Account, r.Amount})
 	}
-	body, err := serializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("serializing max bank transactions: %w", err)
 	}
@@ -525,4 +736,41 @@ func deserializeQuery5(records []interface{}) (interface{}, error) {
 		})
 	}
 	return transactions, nil
+}
+
+// para todas las queris
+func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryResult) (*middleware.Message, error) {
+	serializer, ok := querySerializers[queryResult.QueryID]
+	if !ok {
+		return nil, fmt.Errorf("type of query not supported for serialize: %d", queryResult.QueryID)
+	}
+
+	serializedTransactions, err := serializer(queryResult)
+	if err != nil {
+		return nil, err
+	}
+
+	data := []interface{}{
+		serializedTransactions,
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: MsgType(int(queryResult.QueryID)), Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+	return &message, nil
+}
+
+func SerializeQueryEOR(clientID int64, queryID transaction.QueryID) (*middleware.Message, error) {
+	data := []interface{}{
+		int(queryID),
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: EndOfRecords, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+	return &message, nil
 }

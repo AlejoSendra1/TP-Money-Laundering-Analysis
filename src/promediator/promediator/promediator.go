@@ -159,11 +159,11 @@ func (promediator *Promediator) addPaymentFormatAverage(paymentFormatAverage tra
 func (promediator *Promediator) sendToOutputExchange(keys []string, paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) error {
 	message, err := inner.SerializePaymentFormatAverageMessage(clientID, paymentFormatAverageRecords)
 	if err != nil {
-		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := promediator.outputExchange.SendWithKeys(keys, *message); err != nil {
-		slog.Debug("While sending EOF message", "err", err, "clientID", clientID)
+		slog.Info("While sending EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil

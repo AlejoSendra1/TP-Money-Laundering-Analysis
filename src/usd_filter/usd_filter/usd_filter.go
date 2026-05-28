@@ -24,6 +24,10 @@ type USDFilter struct {
 	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
 	config         USDFilterConfig
+	// para debug
+	received    int
+	approved    int // para Info
+	batchesSent int // para Info
 }
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
@@ -47,6 +51,9 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputQueue:     inputQueue,
 		outputExchange: outputExchange,
 		config:         config,
+		received:       0,
+		approved:       0,
+		batchesSent:    0,
 	}, nil
 }
 
@@ -56,62 +63,90 @@ func (usdFilter *USDFilter) Run() {
 	})
 }
 
-func (usdFilter *USDFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+func (usdFilter *USDFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	// TODO: Una vez que pase el filtro, el campo Currency ya no es necesario
-	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
 
-	if isEof {
-		if err := usdFilter.handleEndOfRecordMessage(clientID); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", clientID)
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		if err := usdFilter.handleEndOfRecordMessage(msg.ClientID); err != nil {
+			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
 		ack()
 		return
+	case inner.TransactionBatch:
+		transactionRecords, err := inner.DeserializeTransactionBatch(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing transactions", "err", err, "clientID", msg.ClientID, "content", middlewareMsg.Body)
+			nack()
+			return
+		}
+		if err := usdFilter.handleDataMessage(transactionRecords, msg.ClientID); err != nil {
+			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		ack()
+	default:
+		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
 	}
-	if err := usdFilter.handleDataMessage(transactionRecords, clientID); err != nil {
-		slog.Error("While handling data message", "err", err, "clientID", clientID)
-		nack()
-		return
-	}
-	ack()
 }
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Sent EOF record message", "clientID", clientID)
-	return usdFilter.sendOutput([]transaction.Transaction{}, clientID)
+	slog.Info("Sent EOF record message, ", "clientID", clientID)
+	slog.Info("Transactions received", "Amount", usdFilter.received)
+	slog.Info("Transactions approved", "Amount", usdFilter.approved)
+	slog.Info("Batches sent", "Amount", usdFilter.batchesSent)
+
+	msg, err := inner.SerializeEOF(clientID, true, "usd_filter") // TO DO agregar otra var de entorno y para group tmb
+	if err != nil {
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		return err
+	}
+	return usdFilter.outputExchange.Send(*msg)
 }
 
 func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
-	transactions := make([]transaction.Transaction, 0, len(transactionRecords))
-	for _, tr := range transactionRecords {
-		if tr.Currency == USDCurrencyName {
-			transactions = append(transactions, tr)
+	toSend := make([]transaction.Transaction, 0, 10)
+	for _, transactionRecord := range transactionRecords {
+		usdFilter.received += 1
+		if transactionRecord.Currency == USDCurrencyName {
+			toSend = append(toSend, transactionRecord)
 		}
 	}
 
-	if len(transactions) != 0 {
-		if err := usdFilter.sendOutput(transactions, clientID); err != nil {
-			return err
-		}
+	if len(toSend) == 0 {
+		return nil
 	}
+
+	if err := usdFilter.sendOutput(toSend, clientID); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := usdFilter.outputExchange.Send(*message); err != nil {
-		slog.Debug("While sending data message", "err", err, "clientID", clientID)
+		slog.Info("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
+	usdFilter.approved += len(transactionRecords)
+	usdFilter.batchesSent += 1
 	return nil
 }
+
+// TO DO
+//2026/05/23 22:14:26 ERROR While deserializing message err="record 0: expected 8 fields, got 2 — contents: [true gateway]" clientID=0

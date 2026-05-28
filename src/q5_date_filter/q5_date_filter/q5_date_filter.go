@@ -50,30 +50,38 @@ func (q5DateFilter *Q5DateFilter) Run() {
 	})
 }
 
-func (q5DateFilter *Q5DateFilter) handleMessage(msg *middleware.Message, ack func(), nack func()) {
+func (q5DateFilter *Q5DateFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	// TODO: Una vez que pase el filtro, el campo TimeStamp ya no es necesario
-	clientID, transactionRecords, isEof, err := inner.DeserializeRawTransactionsMessage(msg)
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
 
-	if isEof {
-		if err := q5DateFilter.handleEndOfRecordMessage(clientID); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", clientID)
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		if err := q5DateFilter.handleEndOfRecordMessage(msg.ClientID); err != nil {
+			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
 		ack()
 		return
+	case inner.TransactionBatch:
+		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		if err := q5DateFilter.handleDataMessage(transactions, msg.ClientID); err != nil {
+			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		ack()
 	}
-	if err := q5DateFilter.handleDataMessage(transactionRecords, clientID); err != nil {
-		slog.Error("While handling data message", "err", err, "clientID", clientID)
-		nack()
-		return
-	}
-	ack()
 }
 
 func (q5DateFilter *Q5DateFilter) handleEndOfRecordMessage(clientID int64) error {
@@ -104,12 +112,12 @@ func (q5DateFilter *Q5DateFilter) handleDataMessage(transactionRecords []transac
 func (q5DateFilter *Q5DateFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
-		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
+		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 
 	if err = q5DateFilter.outputExchange.Send(*message); err != nil {
-		slog.Debug("While sending data message", "err", err, "clientID", clientID)
+		slog.Info("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
