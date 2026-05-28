@@ -206,7 +206,7 @@ func (counter *CounterQ2) processBatch(clientID int64, transactions []transactio
 		prev, exists := banks[tx.FromBank]
 		if !exists || tx.Amount > prev.amount {
 			banks[tx.FromBank] = bankEntry{amount: tx.Amount, account: tx.FromAccount}
-			slog.Info("New top", "client_id", clientID, "bank", tx.FromBank, "amount", tx.Amount, "account", tx.FromAccount)
+			//slog.Info("New top", "client_id", clientID, "bank", tx.FromBank, "amount", tx.Amount, "account", tx.FromAccount)
 		}
 	}
 }
@@ -288,7 +288,7 @@ func (counter *CounterQ2) sendData(clientID int64, banks map[int]bankEntry) erro
 			if err := counter.outputExchanges[idx].Send(*msg); err != nil {
 				return fmt.Errorf("sending data chunk to joiner %d: %w", idx, err)
 			}
-			slog.Info("Sent batch to joiner", "client_id", clientID, "joiner", idx, "count", len(chunk))
+			//slog.Info("Sent batch to joiner", "client_id", clientID, "joiner", idx, "count", len(chunk))
 		}
 	}
 	return nil
