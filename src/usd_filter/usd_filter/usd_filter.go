@@ -2,6 +2,8 @@ package usd_filter
 
 import (
 	"log/slog"
+	"sync"
+	"tp_distribuidos/common/messageprotocol/inner/control"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -11,23 +13,23 @@ import (
 const USDCurrencyName = "US Dollar"
 
 type USDFilterConfig struct {
-	MomHost            string
-	MomPort            int
-	InputQueue         string // Con 1 replica no es necesario
-	InputTopic         string
-	InputExchangeName  string
-	OutputExchangeName string
-	OutputTopic        string
+	MomHost             string
+	MomPort             int
+	InputQueue          string
+	InputTopic          string
+	InputExchangeName   string
+	OutputExchangeName  string
+	OutputTopic         string
+	ControlExchangeName string
+	ControlTopic        string
 }
 
 type USDFilter struct {
-	inputQueue     middleware.Middleware
-	outputExchange middleware.Middleware
-	config         USDFilterConfig
-	// para debug
-	received    int
-	approved    int // para Info
-	batchesSent int // para Info
+	inputQueue      middleware.Middleware
+	outputExchange  middleware.Middleware
+	controlExchange middleware.Middleware
+	config          USDFilterConfig
+	mu              sync.Mutex // mutex para sincronizar la llegada de EOF
 }
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
@@ -46,25 +48,33 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputQueue.Close()
 		return nil, err
 	}
-
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchange.Close()
+		return nil, err
+	}
 	return &USDFilter{
-		inputQueue:     inputQueue,
-		outputExchange: outputExchange,
-		config:         config,
-		received:       0,
-		approved:       0,
-		batchesSent:    0,
+		inputQueue:      inputQueue,
+		outputExchange:  outputExchange,
+		controlExchange: controlExchange,
+		config:          config,
 	}, nil
 }
 
 func (usdFilter *USDFilter) Run() {
+	go usdFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		usdFilter.handleControlMessage(&msg, ack, nack)
+	})
+
 	usdFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		usdFilter.handleMessage(&msg, ack, nack)
 	})
 }
 
 func (usdFilter *USDFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	// TODO: Una vez que pase el filtro, el campo Currency ya no es necesario
+	usdFilter.mu.Lock()
+	defer usdFilter.mu.Unlock()
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
@@ -100,53 +110,67 @@ func (usdFilter *USDFilter) handleMessage(middlewareMsg *middleware.Message, ack
 }
 
 func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Sent EOF record message, ", "clientID", clientID)
-	slog.Info("Transactions received", "Amount", usdFilter.received)
-	slog.Info("Transactions approved", "Amount", usdFilter.approved)
-	slog.Info("Batches sent", "Amount", usdFilter.batchesSent)
-
-	msg, err := inner.SerializeEOF(clientID, true, "usd_filter") // TO DO agregar otra var de entorno y para group tmb
+	slog.Info("Arrived EOF record message", "clientID", clientID)
+	ctrlMsg, err := control.SerializeControlMessage(control.ControlMessage{Type: control.TypeEOF, ClientID: clientID})
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing control message", "err", err)
 		return err
 	}
-	return usdFilter.outputExchange.Send(*msg)
+	if err = usdFilter.controlExchange.Send(*ctrlMsg); err != nil {
+		slog.Error("While sending control message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
 }
 
 func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
-	toSend := make([]transaction.Transaction, 0, 10)
-	for _, transactionRecord := range transactionRecords {
-		usdFilter.received += 1
-		if transactionRecord.Currency == USDCurrencyName {
-			toSend = append(toSend, transactionRecord)
+	transactions := make([]transaction.Transaction, 0, len(transactionRecords))
+	for _, tr := range transactionRecords {
+		if tr.Currency == USDCurrencyName {
+			transactions = append(transactions, tr)
 		}
 	}
 
-	if len(toSend) == 0 {
-		return nil
+	if len(transactions) != 0 {
+		if err := usdFilter.sendOutput(transactions, clientID); err != nil {
+			return err
+		}
 	}
-
-	if err := usdFilter.sendOutput(toSend, clientID); err != nil {
-		return err
-	}
-
 	return nil
+}
+
+func (usdFilter *USDFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	usdFilter.mu.Lock()
+	defer usdFilter.mu.Unlock()
+	slog.Info("Arrived control message", "msg", msg)
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err)
+		nack()
+		return
+	}
+	msgEof, err := inner.SerializeEOF(controlMessage.ClientID, true, "usd_filter") // TO DO agregar otra var de entorno y para group tmb
+	if err != nil {
+		slog.Info("While serializing EOF message", "err", err, "clientID", controlMessage.ClientID)
+		nack()
+		return
+	}
+	if err = usdFilter.outputExchange.Send(*msgEof); err != nil {
+		slog.Info("While sending EOF message", "err", err, "clientID")
+	}
+	ack()
+
 }
 
 func (usdFilter *USDFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64) error {
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
-		slog.Info("While serializing data message", "err", err, "clientID", clientID)
+		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := usdFilter.outputExchange.Send(*message); err != nil {
-		slog.Info("While sending data message", "err", err, "clientID", clientID)
+		slog.Debug("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
-	usdFilter.approved += len(transactionRecords)
-	usdFilter.batchesSent += 1
 	return nil
 }
-
-// TO DO
-//2026/05/23 22:14:26 ERROR While deserializing message err="record 0: expected 8 fields, got 2 — contents: [true gateway]" clientID=0

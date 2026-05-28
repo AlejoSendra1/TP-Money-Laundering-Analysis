@@ -30,8 +30,8 @@ const (
 	FROM_ACCOUNT_COLUMN   = 2
 	TO_BANK_COLUMN        = 3
 	TO_ACCOUNT_COLUMN     = 4
-	AMOUNT_COLUMN         = 5
-	CURRENCY_COLUMN       = 6
+	AMOUNT_COLUMN         = 7
+	CURRENCY_COLUMN       = 8
 	PAYMENT_FORMAT_COLUMN = 9
 )
 const connectionAttempts = 3
@@ -92,22 +92,30 @@ func connectToServer(host, port string) (net.Conn, error) {
 
 func (client *Client) Run() error {
 	defer client.conn.Close()
+	defer client.writer.Close()
 	go client.handleSignals()
 
+	// Canal para avisar a la goroutine principal que la lectura terminó (con o sin error)
+	readDone := make(chan error, 1)
+
+	// Lanzamos la goroutine encargada de LEER todo lo que venga del Gateway
+	go func() {
+		readDone <- client.recvManager()
+	}()
+
+	// La goroutine principal se encarga de ENVIAR las transacciones
 	if err := client.sendTransactionRecords(); err != nil {
 		if client.running.Load() {
-			return err
+			return fmt.Errorf("error enviando registros: %w", err)
 		}
 		return nil
 	}
 
-	if err := client.recvQueriesResult(); err != nil {
-		slog.Error("While receiving responses", "err", err)
+	// Esperamos a que la goroutine de lectura finalice por completo
+	if err := <-readDone; err != nil {
 		if client.running.Load() {
-			slog.Error("Running load", "err", err)
-			return err
+			return fmt.Errorf("error en la rutina de lectura: %w", err)
 		}
-		return nil
 	}
 
 	return nil
@@ -176,10 +184,6 @@ func (client *Client) sendBatch(batch *[]transaction.Transaction) error {
 		return err
 	}
 
-	if err := client.expectMsgType(external.Ack); err != nil {
-		return err
-	}
-
 	*batch = (*batch)[:0]
 	return nil
 }
@@ -200,9 +204,12 @@ func (client *Client) sendTransactionRecords() error {
 	}
 
 	scanner := bufio.NewScanner(file)
+	if scanner.Scan() {
+
+	}
 	batch := []transaction.Transaction{}
 
-	slog.Info("procesando transacciones")
+	//slog.Info("procesando transacciones")
 	for scanner.Scan() {
 		columns := strings.Split(scanner.Text(), ",")
 
@@ -229,9 +236,6 @@ func (client *Client) sendTransactionRecords() error {
 	slog.Info(str)
 
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
-		return err
-	}
-	if err := client.expectMsgType(external.Ack); err != nil {
 		return err
 	}
 
@@ -419,13 +423,13 @@ func (client *Client) readFloat64(fieldName string) (float64, error) {
 }
 
 func (Client *Client) handleQueryResponse(queryCode uint32) error {
-	slog.Info("Leyendo query")
+	//slog.Info("Leyendo query")
 
 	toRead, err := Client.readUint32()
 	if err != nil {
 		return err
 	}
-	slog.Info("Bytes a leer", "value", toRead)
+	//slog.Info("Bytes a leer", "value", toRead)
 
 	read, err := safeio.ReadAll(Client.conn, toRead)
 	if err != nil {
@@ -433,7 +437,7 @@ func (Client *Client) handleQueryResponse(queryCode uint32) error {
 	}
 
 	toWrite, err := serializer.DeserializeQueryResponse(read)
-	slog.Info("Data obtenida", "value", toWrite)
+	//slog.Info("Data obtenida", "value", toWrite)
 	if err != nil {
 		return err
 	}
@@ -444,7 +448,7 @@ func (Client *Client) handleQueryResponse(queryCode uint32) error {
 
 // igual q arriba
 func (client *Client) handleQueryResponseWithQueryResult(queryCode uint32) error {
-	slog.Info("Leyendo query resultado", "queryCode", queryCode)
+	//slog.Info("Leyendo query resultado", "queryCode", queryCode)
 
 	// leer length prefix
 	toRead, err := client.readUint32()
@@ -464,4 +468,47 @@ func (client *Client) handleQueryResponseWithQueryResult(queryCode uint32) error
 	}
 
 	return client.writer.WriteResult(queryCode, records)
+}
+
+func (client *Client) recvManager() error {
+	slog.Info("Manager de lectura iniciado...")
+
+	for {
+		msgType, err := external.ReadMsgType(client.conn)
+		if err != nil {
+			// Si cerramos la conexión por diseño, salimos limpio
+			if !client.running.Load() {
+				return nil
+			}
+			return fmt.Errorf("leyendo tipo de mensaje: %w", err)
+		}
+
+		switch inner.MsgType(msgType) {
+
+		// 1. El Gateway nos devuelve el ACK de un batch que enviamos
+		case inner.MsgType(external.Ack): // Asegúrate de mapear bien tus constantes de protocolo
+			slog.Debug("ACK de batch recibido en el cliente")
+			// No hacemos nada, el Gateway procesó el lote exitosamente.
+
+		// 2. Respuestas de Queries con JSON estructurado
+		case inner.Query2Response, inner.Query3Response, inner.Query5Response:
+			if err := client.handleQueryResponseWithQueryResult(uint32(msgType)); err != nil {
+				return err
+			}
+
+		// 3. Respuestas de Queries serializadas nativas
+		case inner.Query1Response, inner.Query4Response:
+			if err := client.handleQueryResponse(uint32(msgType)); err != nil {
+				return err
+			}
+
+		// 4. Fin de todo el procesamiento (El Gateway nos avisa que no hay más respuestas)
+		case inner.EndOfRecords:
+			slog.Info("End of records total recibido del Gateway. Finalizando cliente.")
+			return nil
+
+		default:
+			return fmt.Errorf("tipo de mensaje inesperado recibido en el cliente: %d", msgType)
+		}
+	}
 }

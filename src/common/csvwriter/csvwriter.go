@@ -5,98 +5,120 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/inner"
-	"tp_distribuidos/common/transaction"
 )
 
-type CSVWriter struct {
-	counter int64
-	file    *os.File
-	writer  *csv.Writer
+var queryHeaders = map[string][]string{
+	"q1": {
+		"from_bank",
+		"from_account",
+		"to_bank",
+		"to_account",
+		"amount_paid",
+	},
+	"q2": {
+		"from_bank",
+		"account",
+		"bank_name",
+		"amount_paid",
+	},
+	"q3": {
+		"from_bank",
+		"account",
+		"payment_format",
+		"amount_paid",
+	},
+	"q4": {
+		"bank",
+		"account",
+	},
+	"q5": {
+		"type",
+		"count",
+	},
 }
 
-var csvHeaders = []string{
-	"timestamp",
-	"from_bank",
-	"to_bank",
-	"from_account",
-	"to_account",
-	"amount",
-	"currency",
-	"payment_format",
+type CSVWriter struct {
+	counter      int64
+	basePath     string
+	queryFiles   map[string]*os.File
+	queryWriters map[string]*csv.Writer
 }
 
 func (c *CSVWriter) getCount() int64 {
 	return c.counter
 }
 
-func NewCSVWriter(filepath string) (*CSVWriter, error) {
-	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("opening csv file: %w", err)
+// NewCSVWriter ahora recibe un basePath o archivo base para las transacciones comunes.
+// Los archivos de las queries se crearán en el mismo directorio con nombres específicos.
+func NewCSVWriter(baseFilepath string) (*CSVWriter, error) {
+	return &CSVWriter{
+		counter:      0,
+		basePath:     filepath.Dir(baseFilepath),
+		queryFiles:   make(map[string]*os.File),
+		queryWriters: make(map[string]*csv.Writer),
+	}, nil
+}
+
+// getQueryWriter obtiene o inicializa de forma diferida (lazy) el escritor para una query específica
+func (c *CSVWriter) getQueryWriter(queryName string) (*csv.Writer, error) {
+	if w, exists := c.queryWriters[queryName]; exists {
+		return w, nil
 	}
 
+	// Construye el path: ej. "resultado_q1.csv" en el mismo directorio
+	fileName := fmt.Sprintf("%s_results_%s.csv", c.basePath, queryName)
+	fullPath := filepath.Join(c.basePath, fileName)
+
+	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("opening file for %s: %w", queryName, err)
+	}
 	w := csv.NewWriter(file)
 
-	// Only write headers if the file is empty
-	info, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("checking file size: %w", err)
-	}
-	if info.Size() == 0 {
-		if err := w.Write(csvHeaders); err != nil {
-			return nil, fmt.Errorf("writing csv headers: %w", err)
+	if headers, exists := queryHeaders[queryName]; exists {
+		if err := w.Write(headers); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("writing headers for %s: %w", queryName, err)
 		}
 		w.Flush()
 	}
+	c.queryFiles[queryName] = file
+	c.queryWriters[queryName] = w
 
-	return &CSVWriter{counter: 0, writer: w, file: file}, nil
-}
-
-func (c *CSVWriter) WriteBatch(transactions []transaction.Transaction) error {
-	for i, tx := range transactions {
-		if err := c.writer.Write(transactionToRow(tx)); err != nil {
-			return fmt.Errorf("writing transaction %d: %w", i, err)
-		}
-		c.counter += 1
-	}
-	c.writer.Flush()
-	return c.writer.Error()
+	return w, nil
 }
 
 func (c *CSVWriter) Close() error {
-	c.writer.Flush()
-	if err := c.writer.Error(); err != nil {
-		return fmt.Errorf("flushing csv writer: %w", err)
+	var closeErr error
+
+	// Cerrar todos los archivos de queries abiertos
+	for name, w := range c.queryWriters {
+		w.Flush()
+		if err := w.Error(); err != nil && closeErr == nil {
+			closeErr = fmt.Errorf("flushing writer for %s: %w", name, err)
+		}
 	}
-	return c.file.Close()
+	for name, f := range c.queryFiles {
+		if err := f.Close(); err != nil && closeErr == nil {
+			closeErr = fmt.Errorf("closing file for %s: %w", name, err)
+		}
+	}
+
+	return closeErr
 }
 
-func transactionToRow(tx transaction.Transaction) []string {
-	return []string{
-		tx.Timestamp.Format("2006/01/02 15:04"),
-		fmt.Sprint(tx.FromBank),
-		fmt.Sprint(tx.ToBank),
-		tx.FromAccount,
-		tx.ToAccount,
-		strconv.FormatFloat(tx.Amount, 'f', 2, 64),
-		tx.Currency,
-		tx.PaymentFormat,
-	}
-}
-
-// WriteQ4Result receives the []interface{} from SerializeQ4SinkAndSource's data field,
-// which contains [part0, part1] from strings.Split(sourceAccount, "_")
 func (c *CSVWriter) WriteResult(queryCode uint32, data []interface{}) error {
-	slog.Info("Escribiendo")
+	//slog.Info("Escribiendo resultado por query")
 
 	switch queryCode {
 	case uint32(external.Query1Response):
 		if err := c.WriteQ1Result(data); err != nil {
-			slog.Error("writing transaction", "Error", err)
-			return fmt.Errorf("writing transaction %w", err)
+			slog.Error("writing transaction q1", "Error", err)
+			return fmt.Errorf("writing transaction q1: %w", err)
 		}
 	case uint32(inner.Query2Response):
 		return c.writeQ2Result(data)
@@ -104,23 +126,26 @@ func (c *CSVWriter) WriteResult(queryCode uint32, data []interface{}) error {
 		return c.writeQ3Result(data)
 	case uint32(external.Query4Response):
 		if err := c.WriteQ4Result(data); err != nil {
-			slog.Error("writing transaction", "Error", err)
-			return fmt.Errorf("writing transaction %w", err)
+			slog.Error("writing transaction q4", "Error", err)
+			return fmt.Errorf("writing transaction q4: %w", err)
 		}
 	case uint32(inner.Query5Response):
 		return c.writeQ5Result(data)
 	default:
 		return fmt.Errorf("unsupported query code: %d", queryCode)
-
 	}
 
-	return c.writer.Error()
+	return nil
 }
 
 func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
-	slog.Info("Writing q1 result", "data", data)
-	for _, transaction := range data {
+	w, err := c.getQueryWriter("q1")
+	if err != nil {
+		return err
+	}
 
+	//slog.Info("Writing q1 result", "data", data)
+	for _, transaction := range data {
 		fields, ok := transaction.([]interface{})
 		if !ok {
 			slog.Error("While writing q1 result", "data", data)
@@ -136,24 +161,26 @@ func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
 		if !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
 			return fmt.Errorf("record type mismatch in one or more fields")
 		}
-		myInt := int(fromBank)
-		fromBankS := strconv.Itoa(myInt)
-		myInt = int(toBank)
-		toBankS := strconv.Itoa(myInt)
+		fromBankS := strconv.Itoa(int(fromBank))
+		toBankS := strconv.Itoa(int(toBank))
 		amountS := strconv.FormatFloat(amount, 'f', 2, 64)
 
-		if err := c.writer.Write([]string{"Q1", fromBankS, fromAccount, toBankS, toAccount, amountS}); err != nil {
-			return fmt.Errorf("writing q4 result: %w", err)
+		// Quitamos el prefijo "Q1" si ya va a estar en su propio archivo exclusivo (opcional, lo dejé por compatibilidad)
+		if err := w.Write([]string{fromBankS, fromAccount, toBankS, toAccount, amountS}); err != nil {
+			return fmt.Errorf("writing q1 row: %w", err)
 		}
 	}
-	c.writer.Flush()
+	w.Flush()
 	c.counter++
-
-	return c.writer.Error()
+	return w.Error()
 }
 
-// Q2: [bankCode float64, account string, amount float64]
 func (c *CSVWriter) writeQ2Result(data []interface{}) error {
+	w, err := c.getQueryWriter("q2")
+	if err != nil {
+		return err
+	}
+
 	records, ok := data[0].([]interface{})
 	if !ok {
 		return fmt.Errorf("q2: expected nested []interface{}, got %T", data[0])
@@ -170,24 +197,26 @@ func (c *CSVWriter) writeQ2Result(data []interface{}) error {
 			return fmt.Errorf("q2: type mismatch in fields: %v", fields)
 		}
 		row := []string{
-			"Q2",
 			strconv.Itoa(int(bankCode)),
 			account,
 			strconv.FormatFloat(amount, 'f', 2, 64),
 		}
-		if err := c.writer.Write(row); err != nil {
+		if err := w.Write(row); err != nil {
 			return fmt.Errorf("q2: writing row: %w", err)
 		}
 	}
-	c.writer.Flush()
+	w.Flush()
 	c.counter++
-	return c.writer.Error()
+	return w.Error()
 }
 
-// Q3: [fromBank float64, fromAccount string, paymentFormat string, amount float64]
 func (c *CSVWriter) writeQ3Result(data []interface{}) error {
-	records := data[0].([]interface{})
+	w, err := c.getQueryWriter("q3")
+	if err != nil {
+		return err
+	}
 
+	records := data[0].([]interface{})
 	for _, rec := range records {
 		fields, ok := rec.([]interface{})
 		if !ok || len(fields) != 4 {
@@ -201,60 +230,54 @@ func (c *CSVWriter) writeQ3Result(data []interface{}) error {
 			return fmt.Errorf("q3: type mismatch in fields: %v", fields)
 		}
 		row := []string{
-			"Q3",
 			strconv.Itoa(int(fromBank)),
 			fromAccount,
 			paymentFormat,
 			strconv.FormatFloat(amount, 'f', 2, 64),
 		}
-		if err := c.writer.Write(row); err != nil {
+		if err := w.Write(row); err != nil {
 			return fmt.Errorf("q3: writing row: %w", err)
 		}
 	}
-	c.writer.Flush()
+	w.Flush()
 	c.counter++
-	return c.writer.Error()
+	return w.Error()
 }
 
 func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
+	w, err := c.getQueryWriter("q4")
+	if err != nil {
+		return err
+	}
+
 	part0, ok := data[0].(string)
-	if !ok {
-		slog.Error("Error data 0 no se pudo parsear a string", "data", data)
-		return fmt.Errorf("expected string at index 0, got %T", data[0])
+	part1, ok1 := data[1].(string)
+	part2, ok2 := data[2].(string)
+	part3, ok3 := data[3].(string)
+
+	if !ok || !ok1 || !ok2 || !ok3 {
+		slog.Error("Error data no se pudo parsear a string", "data", data)
+		return fmt.Errorf("expected strings in data fields for q4")
 	}
 
-	part1, ok := data[1].(string)
-	if !ok {
-		slog.Error("Error data 1 no se pudo parsear a string", "data", data)
-		return fmt.Errorf("expected string at index 1, got %T", data[1])
+	if err := w.Write([]string{part0, part1}); err != nil {
+		return fmt.Errorf("writing q4 row 1: %w", err)
 	}
-
-	part2, ok := data[2].(string)
-	if !ok {
-		slog.Error("Error data 0 no se pudo parsear a string", "data", data)
-		return fmt.Errorf("expected string at index 0, got %T", data[0])
+	if err := w.Write([]string{part2, part3}); err != nil {
+		return fmt.Errorf("writing q4 row 2: %w", err)
 	}
-
-	part3, ok := data[3].(string)
-	if !ok {
-		slog.Error("Error data 1 no se pudo parsear a string", "data", data)
-		return fmt.Errorf("expected string at index 1, got %T", data[1])
-	}
-
-	// quitar string
-	if err := c.writer.Write([]string{"Q4", part0, part1, part2, part3}); err != nil {
-		return fmt.Errorf("writing q4 result: %w", err)
-	}
-	c.writer.Flush()
+	w.Flush()
 	c.counter++
-
-	return c.writer.Error()
+	return w.Error()
 }
 
-// Q5: [paymentFormat string, count float64]
 func (c *CSVWriter) writeQ5Result(data []interface{}) error {
-	records := data[0].([]interface{})
+	w, err := c.getQueryWriter("q5")
+	if err != nil {
+		return err
+	}
 
+	records := data[0].([]interface{})
 	for _, rec := range records {
 		fields, ok := rec.([]interface{})
 		if !ok || len(fields) != 2 {
@@ -266,15 +289,14 @@ func (c *CSVWriter) writeQ5Result(data []interface{}) error {
 			return fmt.Errorf("q5: type mismatch in fields: %v", fields)
 		}
 		row := []string{
-			"Q5",
 			paymentFormat,
 			strconv.Itoa(int(count)),
 		}
-		if err := c.writer.Write(row); err != nil {
+		if err := w.Write(row); err != nil {
 			return fmt.Errorf("q5: writing row: %w", err)
 		}
 	}
-	c.writer.Flush()
+	w.Flush()
 	c.counter++
-	return c.writer.Error()
+	return w.Error()
 }

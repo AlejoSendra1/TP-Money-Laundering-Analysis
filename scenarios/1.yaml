@@ -13,6 +13,26 @@ services:
     - INPUT_EXCHANGE_NAME=usd_exchange
     - INPUT_TOPIC=usd_transactions_topic
     - OUTPUT_QUEUE=results_queue
+    - CONTROL_EXCHANGE_NAME=q1_amount_filter_control_exchange
+    - CONTROL_TOPIC=q1_amount_filter_control_topic
+    - USD_FILTER_AMOUNT=2
+  q1_amount_filter_1:
+    build:
+      context: ./src/
+      dockerfile: q1_amount_filter/Dockerfile
+    container_name: q1_amount_filter_1
+    depends_on:
+      - gateway
+    environment:
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - INPUT_QUEUE=amount_filter_q1_queue
+      - INPUT_EXCHANGE_NAME=usd_exchange
+      - INPUT_TOPIC=usd_transactions_topic
+      - OUTPUT_QUEUE=results_queue
+      - CONTROL_EXCHANGE_NAME=q1_amount_filter_control_exchange
+      - CONTROL_TOPIC=q1_amount_filter_control_topic
+      - USD_FILTER_AMOUNT=2
   client_0:
     build:
       context: ./src/
@@ -20,10 +40,11 @@ services:
     container_name: client_0
     depends_on:
     - usd_filter_0
+    - usd_filter_1
     environment:
     - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input_0.csv
-    - OUTPUT_FILE=/output/output.csv
+    - INPUT_FILE=/datasets/input_ale.csv
+    - OUTPUT_FILE=/output/output_ale.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
@@ -70,6 +91,7 @@ services:
     container_name: usd_filter_0
     depends_on:
     - q1_amount_filter_0
+    - q1_amount_filter_1
     environment:
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
@@ -78,6 +100,8 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic
   usd_filter_1:
     build:
       context: ./src/
@@ -85,6 +109,7 @@ services:
     container_name: usd_filter_1
     depends_on:
       - q1_amount_filter_0
+      - q1_amount_filter_1
     environment:
       - INPUT_QUEUE=usd_filter_queue
       - INPUT_EXCHANGE_NAME=transactions_exchange
@@ -93,18 +118,5 @@ services:
       - MOM_PORT=5672
       - OUTPUT_EXCHANGE_NAME=usd_exchange
       - OUTPUT_TOPIC=usd_transactions_topic
-  usd_filter_2:
-    build:
-      context: ./src/
-      dockerfile: usd_filter/Dockerfile
-    container_name: usd_filter_2
-    depends_on:
-      - q1_amount_filter_0
-    environment:
-      - INPUT_QUEUE=usd_filter_queue
-      - INPUT_EXCHANGE_NAME=transactions_exchange
-      - INPUT_TOPIC=transactions_topic
-      - MOM_HOST=rabbitmq
-      - MOM_PORT=5672
-      - OUTPUT_EXCHANGE_NAME=usd_exchange
-      - OUTPUT_TOPIC=usd_transactions_topic
+      - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+      - CONTROL_TOPIC=usd_filter_control_topic

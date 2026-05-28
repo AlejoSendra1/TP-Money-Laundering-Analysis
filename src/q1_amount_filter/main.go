@@ -39,6 +39,21 @@ func loadConfig() (q1_amount_filter.Q1AmountFilterConfig, error) {
 		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
 	}
 
+	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
+	if controlExchangeName == "" {
+		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("CONTROL_EXCHANGE_NAME environment variable is required")
+	}
+
+	controlTopic := os.Getenv("CONTROL_TOPIC")
+	if controlTopic == "" {
+		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("CONTROL_TOPIC environment variable is required")
+	}
+
+	usdFilterAmount, err := strconv.Atoi(os.Getenv("USD_FILTER_AMOUNT"))
+	if err != nil {
+		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("USD_FILTER_AMOUNT environment variable is required and must be a number")
+	}
+
 	return q1_amount_filter.Q1AmountFilterConfig{
 		MomHost:           momHost,
 		MomPort:           momPort,
@@ -46,6 +61,9 @@ func loadConfig() (q1_amount_filter.Q1AmountFilterConfig, error) {
 		InputExchangeName: inputExchangeName,
 		InputTopic:        inputTopic,
 		OutputQueue:       outputQueue,
+		ControlExchange:   controlExchangeName,
+		ControlTopic:      controlTopic,
+		USDFilterAmount:   usdFilterAmount,
 	}, nil
 }
 

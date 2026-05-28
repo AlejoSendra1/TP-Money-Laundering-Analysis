@@ -224,7 +224,7 @@ func (filter *FilterPaymentFormat) sendBatch(clientID int64, paymentFormat strin
 	if err := filter.outputQueue.Send(*msg); err != nil {
 		return fmt.Errorf("sending batch for payment format %s: %w", paymentFormat, err)
 	}
-	slog.Info("Sent batch", "client_id", clientID, "payment_format", paymentFormat, "count", len(records))
+	//slog.Info("Sent batch", "client_id", clientID, "payment_format", paymentFormat, "count", len(records))
 	return nil
 }
 

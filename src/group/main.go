@@ -64,6 +64,11 @@ func loadConfig() (group.GroupConfig, error) {
 		return group.GroupConfig{}, errors.New("NEXT_FASE_WORKERS_PREFIX environment variable is required")
 	}
 
+	dateAmountFilter, err := strconv.Atoi(os.Getenv("DATE_FILTER_AMOUNT"))
+	if err != nil {
+		return group.GroupConfig{}, errors.New("DATE_FILTER_AMOUNT environment variable is required")
+	}
+
 	return group.GroupConfig{
 		ID:                    id,
 		WorkerPrefix:          workerPrefix,
@@ -76,6 +81,7 @@ func loadConfig() (group.GroupConfig, error) {
 		OutputExchangeName:    outputExchangeName,
 		NextFaseWorkersAmount: nextFaseWorkersAmount,
 		NextFaseWorkersPrefix: nextFaseWorkersPrefix,
+		DateFilterAmount:      dateAmountFilter,
 	}, nil
 }
 

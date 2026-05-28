@@ -22,6 +22,7 @@ type SumConfig struct {
 	OutputExchangeName   string
 	PromediatorAmount    int
 	PromedietorPrefix    string
+	DateFilterAmount     int
 }
 
 type Sum struct {
@@ -29,6 +30,7 @@ type Sum struct {
 	outputExchange     middleware.Middleware
 	controlExchange    middleware.Middleware
 	clientTransactions map[int64]map[string]transaction.PaymentFormatAverage
+	eofCounter         map[int64]int
 	config             SumConfig
 	mu                 sync.Mutex
 }
@@ -70,6 +72,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 		controlExchange:    controlExchange,
 		clientTransactions: make(map[int64]map[string]transaction.PaymentFormatAverage),
 		config:             config,
+		eofCounter:         make(map[int64]int),
 	}, nil
 }
 
@@ -145,6 +148,7 @@ func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, 
 	defer sum.mu.Unlock()
 	if _, exist := sum.clientTransactions[clientID]; !exist {
 		slog.Info("Client new arrived", "clientID", clientID)
+		sum.eofCounter[clientID] = 0
 		sum.clientTransactions[clientID] = make(map[string]transaction.PaymentFormatAverage)
 	}
 	// Acumulo amount y count para cada formato de pago del cliente
@@ -168,6 +172,13 @@ func (sum *Sum) handleControlMessage(msg *middleware.Message, ack func(), nack f
 	}
 	// Send data
 	sum.mu.Lock()
+	sum.eofCounter[controlMessage.ClientID] += 1
+	if sum.eofCounter[controlMessage.ClientID] != sum.config.DateFilterAmount {
+		slog.Info("Received EOF from other instance, waiting for more...")
+		sum.mu.Unlock()
+		ack()
+		return
+	}
 	averages := sum.getPaymentFormats(controlMessage.ClientID)
 	sum.mu.Unlock()
 	if averages != nil {
@@ -182,6 +193,7 @@ func (sum *Sum) handleControlMessage(msg *middleware.Message, ack func(), nack f
 	}
 	sum.mu.Lock()
 	delete(sum.clientTransactions, controlMessage.ClientID)
+	delete(sum.eofCounter, controlMessage.ClientID)
 	sum.mu.Unlock()
 
 	// Send EOF
@@ -196,6 +208,8 @@ func (sum *Sum) handleControlMessage(msg *middleware.Message, ack func(), nack f
 		nack()
 		return
 	}
+	slog.Info("Sent EOF...", "clientID", controlMessage.ClientID)
+
 	ack()
 }
 

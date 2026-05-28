@@ -9,32 +9,14 @@ services:
     - usd_filter_1
     environment:
     - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input_0.csv
-    - OUTPUT_FILE=/output/output_0.csv
+    - INPUT_FILE=/datasets/input_ale.csv
+    - OUTPUT_FILE=/output/output_ale_3.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
     - ./output:/output
-  client_1:
-    build:
-      context: ./src/
-      dockerfile: client/Dockerfile
-    container_name: client_1
-    depends_on:
-      - usd_filter_0
-      - usd_filter_1
-    environment:
-      - BATCH_SIZE=10
-      - INPUT_FILE=/datasets/input_1.csv
-      - OUTPUT_FILE=/output/output_1.csv
-      - PYTHONUNBUFFERED=1
-      - SERVER_HOST=gateway
-      - SERVER_PORT=5678
-    volumes:
-      - ./datasets:/datasets
-      - ./output:/output
   date_filter_0:
     build:
       context: ./src/
@@ -42,6 +24,7 @@ services:
     container_name: date_filter_0
     depends_on:
     - sum_0
+    - sum_1
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -51,6 +34,9 @@ services:
     - OUTPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
     - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+    - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
+    - CONTROL_TOPIC=date_filter_control_topic
+    - USD_FILTER_AMOUNT=2
   date_filter_1:
     build:
       context: ./src/
@@ -58,6 +44,7 @@ services:
     container_name: date_filter_1
     depends_on:
     - sum_0
+    - sum_1
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -67,6 +54,9 @@ services:
     - OUTPUT_EXCHANGE_NAME=date_exchange
     - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
     - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+    - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
+    - CONTROL_TOPIC=date_filter_control_topic
+    - USD_FILTER_AMOUNT=2
   gateway:
     build:
       context: ./src/
@@ -107,6 +97,7 @@ services:
     container_name: sum_0
     depends_on:
     - promediator_0
+    - promediator_1
     environment:
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
@@ -118,6 +109,7 @@ services:
     - OUTPUT_EXCHANGE_NAME=sum_results_exchange
     - PROMEDIATOR_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
+    - DATE_FILTER_AMOUNT=2
   sum_1:
     build:
       context: ./src/
@@ -125,6 +117,7 @@ services:
     container_name: sum_1
     depends_on:
     - promediator_0
+    - promediator_1
     environment:
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
@@ -136,6 +129,7 @@ services:
     - OUTPUT_EXCHANGE_NAME=sum_results_exchange
     - PROMEDIATOR_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
+    - DATE_FILTER_AMOUNT=2
   usd_filter_0:
     build:
       context: ./src/
@@ -152,6 +146,8 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic
   usd_filter_1:
     build:
       context: ./src/
@@ -168,6 +164,8 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=usd_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic
   promediator_0:
     build:
       context: ./src/
@@ -175,6 +173,7 @@ services:
     container_name: promediator_0
     depends_on:
     - transactions_saver_0
+    - transactions_saver_1
     environment:
     - ID=0
     - MOM_PORT=5672
@@ -191,6 +190,7 @@ services:
     container_name: promediator_1
     depends_on:
     - transactions_saver_0
+    - transactions_saver_1
     environment:
     - ID=1
     - MOM_PORT=5672
@@ -207,6 +207,7 @@ services:
     container_name: transactions_saver_0
     depends_on:
       - q3_amount_filter_0
+      - q3_amount_filter_1
     volumes:
       - ./src/transactions_saver/cache:/storage
     environment:
@@ -223,6 +224,7 @@ services:
     - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
     - CONTROL_TOPIC_NAME=transactions_saver_control_topic
     - Q3_AMOUNT_FILTER_AMOUNT=2
+    - DATE_FILTER_AMOUNT=2
   transactions_saver_1:
     build:
       context: ./src/
@@ -230,6 +232,7 @@ services:
     container_name: transactions_saver_1
     depends_on:
       - q3_amount_filter_0
+      - q3_amount_filter_1
     volumes:
       - ./src/transactions_saver/cache:/storage
     environment:
@@ -246,6 +249,7 @@ services:
       - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
       - CONTROL_TOPIC_NAME=transactions_saver_control_topic
       - Q3_AMOUNT_FILTER_AMOUNT=2
+      - DATE_FILTER_AMOUNT=2
   q3_amount_filter_0:
     build:
       context: ./src/

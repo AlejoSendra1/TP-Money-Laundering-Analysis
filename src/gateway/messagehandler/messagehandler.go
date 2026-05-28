@@ -9,7 +9,7 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
-const QUERYS_AMOUNT = 1
+const QUERYS_AMOUNT = 5
 
 type MessageHandler struct {
 	UserId             int64
@@ -25,10 +25,10 @@ func NewMessageHandler() MessageHandler {
 
 	// A MODIFICAR CON VARIABLES DE ENTORNO - TO DO
 	eofExpectedByQuery := make(map[transaction.QueryID]int)
-	eofExpectedByQuery[transaction.Query1] = 0
-	eofExpectedByQuery[transaction.Query2] = 0
-	eofExpectedByQuery[transaction.Query3] = 0
-	eofExpectedByQuery[transaction.Query4] = 0
+	eofExpectedByQuery[transaction.Query1] = 2
+	eofExpectedByQuery[transaction.Query2] = 2
+	eofExpectedByQuery[transaction.Query3] = 2
+	eofExpectedByQuery[transaction.Query4] = 1
 	eofExpectedByQuery[transaction.Query5] = 2
 
 	return MessageHandler{
@@ -66,12 +66,16 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 }
 
 func (messageHandler *MessageHandler) assertClientEnd() bool {
+	count := 0
 	for key, val := range messageHandler.eorCountByQuery {
-		if messageHandler.eorExpectedByQuery[key] != val {
-			return false
+		if messageHandler.eorExpectedByQuery[key] == val {
+			count += 1
 		}
 	}
-	return true
+	if count == QUERYS_AMOUNT {
+		return true
+	}
+	return false
 }
 
 func getQueryID(data []interface{}) (transaction.QueryID, error) {

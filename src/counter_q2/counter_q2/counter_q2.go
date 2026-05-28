@@ -27,6 +27,7 @@ type CounterQ2Config struct {
 	CounterAmount   int
 	ControlExchange string
 	BatchSize       int
+	USDFilterAmount int
 }
 
 type bankEntry struct {
@@ -42,9 +43,9 @@ type CounterQ2 struct {
 	outputExchanges []middleware.Middleware
 	controlOutputs  []middleware.Middleware // one per peer
 	controlInput    middleware.Middleware
-
-	mutex       sync.Mutex
-	topByClient map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
+	eofCounter      map[int64]int // client_id -> count of EOFs received from peers (to know when to flush)
+	mutex           sync.Mutex
+	topByClient     map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
 }
 
 func getJoinerIndex(bank string, joinAmount int) int {
@@ -123,6 +124,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		controlOutputs:  controlOutputs,
 		controlInput:    controlInput,
 		topByClient:     make(map[int64]map[int]bankEntry),
+		eofCounter:      make(map[int64]int),
 	}, nil
 }
 
@@ -198,12 +200,13 @@ func (counter *CounterQ2) processBatch(clientID int64, transactions []transactio
 	if !ok {
 		banks = make(map[int]bankEntry)
 		counter.topByClient[clientID] = banks
+		counter.eofCounter[clientID] = 0
 	}
 	for _, tx := range transactions {
 		prev, exists := banks[tx.FromBank]
 		if !exists || tx.Amount > prev.amount {
 			banks[tx.FromBank] = bankEntry{amount: tx.Amount, account: tx.FromAccount}
-			slog.Info("New top", "client_id", clientID, "bank", tx.FromBank, "amount", tx.Amount, "account", tx.FromAccount)
+			//slog.Info("New top", "client_id", clientID, "bank", tx.FromBank, "amount", tx.Amount, "account", tx.FromAccount)
 		}
 	}
 }
@@ -241,8 +244,15 @@ func (counter *CounterQ2) sendControlEOF(clientID int64) error {
 // flushClient pops partial state for clientID and sends it to the correct joiner(s).
 func (counter *CounterQ2) flushClient(clientID int64) error {
 	counter.mutex.Lock()
+	counter.eofCounter[clientID] += 1
+	if counter.eofCounter[clientID] != counter.config.USDFilterAmount {
+		slog.Info("Waiting for more EOFs from usd filter")
+		counter.mutex.Unlock()
+		return nil
+	}
 	banks := counter.topByClient[clientID]
 	delete(counter.topByClient, clientID)
+	delete(counter.eofCounter, clientID)
 	counter.mutex.Unlock()
 
 	if err := counter.sendData(clientID, banks); err != nil {
@@ -278,7 +288,7 @@ func (counter *CounterQ2) sendData(clientID int64, banks map[int]bankEntry) erro
 			if err := counter.outputExchanges[idx].Send(*msg); err != nil {
 				return fmt.Errorf("sending data chunk to joiner %d: %w", idx, err)
 			}
-			slog.Info("Sent batch to joiner", "client_id", clientID, "joiner", idx, "count", len(chunk))
+			//slog.Info("Sent batch to joiner", "client_id", clientID, "joiner", idx, "count", len(chunk))
 		}
 	}
 	return nil

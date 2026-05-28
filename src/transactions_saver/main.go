@@ -72,6 +72,12 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 		return transactions_saver.TransactionsSaverConfig{}, errors.New("CONTROL_TOPIC_NAME environment variable is required")
 	}
 
+	dateFilterAmount, err := strconv.Atoi(os.Getenv("DATE_FILTER_AMOUNT"))
+	if err != nil {
+		return transactions_saver.TransactionsSaverConfig{}, errors.New("DATE_FILTER_AMOUNT environment variable is required and must be a number")
+
+	}
+
 	return transactions_saver.TransactionsSaverConfig{
 		Id:                       id,
 		MomHost:                  momHost,
@@ -86,6 +92,7 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 		ControlExchangeName:      controlExchangeName,
 		ControlTopic:             controlTopic,
 		Q3AmountFilterAmount:     q3AmountFilterAmount,
+		DateFilterAmount:         dateFilterAmount,
 	}, nil
 }
 

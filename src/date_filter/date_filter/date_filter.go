@@ -2,6 +2,8 @@ package date_filter
 
 import (
 	"log/slog"
+	"sync"
+	"tp_distribuidos/common/messageprotocol/inner/control"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -9,24 +11,26 @@ import (
 )
 
 type DateFilterConfig struct {
-	MomHost            string
-	MomPort            int
-	InputQueue         string
-	InputExchangeName  string
-	InputTopic         string
-	OutputExchangeName string
-	OutputTopic1       string
-	OutputTopic2       string
+	MomHost             string
+	MomPort             int
+	InputQueue          string
+	InputExchangeName   string
+	InputTopic          string
+	OutputExchangeName  string
+	OutputTopic1        string
+	OutputTopic2        string
+	ControlExchangeName string
+	ControlTopic        string
+	USDFilterAmount     int
 }
 
 type DateFilter struct {
 	inputQueue      middleware.Middleware
 	outputExchanges map[string]middleware.Middleware
+	controlExchange middleware.Middleware
+	eofCounter      map[int64]int
 	config          DateFilterConfig
-	// para debug
-	received    int
-	approved    int
-	batchesSent int
+	mu              sync.Mutex
 }
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
@@ -47,13 +51,20 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		return nil, err
 	}
 
-	outputExchangeTopic2, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic2}, connSettings) // solo para probar
+	outputExchangeTopic2, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic2}, connSettings)
 	if err != nil {
 		inputQueue.Close()
 		outputExchangeTopic1.Close()
 		return nil, err
 	}
 
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchangeTopic1.Close()
+		outputExchangeTopic2.Close()
+		return nil, err
+	}
 	outputExchanges := map[string]middleware.Middleware{
 		config.OutputTopic1: outputExchangeTopic1,
 		config.OutputTopic2: outputExchangeTopic2,
@@ -62,24 +73,28 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 	return &DateFilter{
 		inputQueue:      inputQueue,
 		outputExchanges: outputExchanges,
+		controlExchange: controlExchange,
+		eofCounter:      make(map[int64]int),
 		config:          config,
-		received:        0,
-		approved:        0,
-		batchesSent:     0,
 	}, nil
 }
 
 func (dateFilter *DateFilter) Run() {
+	go dateFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		dateFilter.handleControlMessage(&msg, ack, nack)
+	})
+
 	dateFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		dateFilter.handleMessage(&msg, ack, nack)
 	})
 }
 
 func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	// TODO: Una vez que pase el filtro, el campo Timestamp ya no es necesario
+	dateFilter.mu.Lock()
+	defer dateFilter.mu.Unlock()
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
+		slog.Error("While deserializing message", "err", err)
 		nack()
 		return
 	}
@@ -114,36 +129,33 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 }
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Transactions received", "Amount", dateFilter.received)
-	slog.Info("Transactions approved", "Amount", dateFilter.approved)
-	slog.Info("Batches sent", "Amount", dateFilter.batchesSent)
-
-	msg, err := inner.SerializeEOF(clientID, true, "date_filter") // TO DO agregar otra var de entorno y para group tmb
+	slog.Info("Arrived EOF record message", "clientID", clientID)
+	ctrlMsg, err := control.SerializeControlMessage(control.ControlMessage{Type: control.TypeEOF, ClientID: clientID})
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing control message", "err", err)
 		return err
 	}
-
-	for topic := range dateFilter.outputExchanges {
-		err := dateFilter.outputExchanges[topic].Send(*msg)
-		if err != nil {
-			return err
-		}
+	if err = dateFilter.controlExchange.Send(*ctrlMsg); err != nil {
+		slog.Error("While sending control message", "err", err, "clientID", clientID)
+		return err
 	}
 	return nil
 }
 
 func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
+	if _, ok := dateFilter.eofCounter[clientID]; !ok {
+		dateFilter.eofCounter[clientID] = 0
+	}
 	topics := map[string][]transaction.Transaction{
 		dateFilter.config.OutputTopic1: {},
 		dateFilter.config.OutputTopic2: {},
 	}
 	for _, transactionRecord := range transactionRecords {
-		dateFilter.received += 1
 		topic := dateFilter.getOutputTopic(transactionRecord)
 		if topic == "" {
 			continue
 		}
+
 		topics[topic] = append(topics[topic], transactionRecord)
 	}
 
@@ -152,18 +164,51 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 			continue
 		}
 		err := dateFilter.sendOutput(transactions, clientID, topic)
-		//para testing -------
-		if topic == dateFilter.config.OutputTopic1 {
-			dateFilter.approved += len(transactions)
-			dateFilter.batchesSent += 1
-		}
-		//fin testing --------
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	dateFilter.mu.Lock()
+	defer dateFilter.mu.Unlock()
+
+	slog.Info("Arrived control message", "msg", msg)
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err)
+		nack()
+		return
+	}
+
+	clientID := controlMessage.ClientID
+	dateFilter.eofCounter[clientID] += 1
+	if dateFilter.eofCounter[clientID] != dateFilter.config.USDFilterAmount {
+		slog.Info("Received EOF from other instance, waiting for more...")
+		ack()
+		return
+	}
+
+	msgEOF, err := inner.SerializeEOF(clientID, true, "date_filter") // TO DO agregar otra var de entorno y para group tmb
+	if err != nil {
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		nack()
+		return
+	}
+
+	for topic := range dateFilter.outputExchanges {
+		err := dateFilter.outputExchanges[topic].Send(*msgEOF)
+		if err != nil {
+			slog.Info("While sending to topics", "topic", topic)
+			return
+		}
+	}
+	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	delete(dateFilter.eofCounter, clientID)
+	ack()
 }
 
 func (dateFilter *DateFilter) getOutputTopic(transaction transaction.Transaction) string {
@@ -182,13 +227,13 @@ func (dateFilter *DateFilter) getOutputTopic(transaction transaction.Transaction
 func (dateFilter *DateFilter) sendOutput(transactionRecords []transaction.Transaction, clientID int64, topic string) error {
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
-		slog.Info("While serializing data message", "err", err, "clientID", clientID)
+		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 	outputExchange, _ := dateFilter.outputExchanges[topic]
 
 	if err = outputExchange.Send(*message); err != nil {
-		slog.Info("While sending data message", "err", err, "clientID", clientID)
+		slog.Debug("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil

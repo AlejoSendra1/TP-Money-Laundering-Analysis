@@ -67,6 +67,10 @@ func loadConfig() (counter_q2.CounterQ2Config, error) {
 		}
 	}
 
+	usdFilterAmount, err := strconv.Atoi(os.Getenv("USD_FILTER_AMOUNT"))
+	if err != nil {
+		return counter_q2.CounterQ2Config{}, errors.New("USD_FILTER_AMOUNT environment variable is required and must be a number")
+	}
 	return counter_q2.CounterQ2Config{
 		ID:              id,
 		MomHost:         momHost,
@@ -79,6 +83,7 @@ func loadConfig() (counter_q2.CounterQ2Config, error) {
 		CounterAmount:   counterAmount,
 		ControlExchange: controlExchange,
 		BatchSize:       batchSize,
+		USDFilterAmount: usdFilterAmount,
 	}, nil
 }
 

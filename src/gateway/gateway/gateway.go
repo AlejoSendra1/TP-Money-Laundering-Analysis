@@ -141,75 +141,78 @@ loop:
 }
 
 func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, ack func(), nack func()) {
-	clientIndex := -1
-	wasProcessed := false
-	slog.Info("Received response msg", "body", middlewareMsg.Body)
+	var targetClient clientregistry.ClientState
+	var clientIndex int = -1
+	found := false
 
-	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
-		for i, client := range clients {
-			msg, err := inner.DeserializeMessage(&middlewareMsg)
-			if err != nil {
-				slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
-				nack()
-				return
-			}
-
-			if client.Handler.UserId != msg.ClientID {
-				slog.Info("Client can't process this message", "Current client", client.Handler.UserId, "Received client", msg.ClientID)
-				continue
-			}
-
-			switch msg.MsgType {
-			case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
-				slog.Info("response received", "query", msg.MsgType, "Content", msg.Data)
-
-				serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), *msg) // ojo aprovechamos el hecho de que ambos protocolos tienen mismo queryreslts
-				if err != nil {
-					slog.Error("While serealizing response", "err", err, "clientID", msg.ClientID, "content", msg.Data)
-					nack()
-					return
-				}
-				gateway.sendResponse(client.Conn, serialization)
-				slog.Info("Enviando resultados", "query", msg.MsgType, "Content", msg.Data)
-				if err != nil {
-					slog.Error("While sending results to client", "err", err, "clientID", msg.ClientID, "content", msg.Data)
-					nack()
-					return
-				}
-			case inner.EndOfRecords:
-				// una vez que se reciben todos los results se notifica al cliente y se borra
-				clientEnded, err := client.Handler.HandleQueryEOR(msg)
-				if err != nil {
-					slog.Error("While handling query response", "err", err, "clientID", msg.ClientID, "content", msg.Data)
-					nack()
-					return
-				}
-
-				if clientEnded {
-					response := serializer.SerializeEOR()
-					gateway.sendResponse(client.Conn, response)
-					clientIndex = i // seteamos el valor para eliminar al cliente
-				}
-
-			default:
-				slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID, "content", msg.Data)
-				return
-			}
-			wasProcessed = true
-			break
-		}
-		if !wasProcessed {
-			slog.Warn("No client handler could process this message", "message", middlewareMsg.Body)
-		}
-
-		ack()
-	})
-
-	if clientIndex >= 0 {
-		slog.Info("Client received all result queries, removing from registry", "clientIndex", clientIndex)
-		gateway.registry.Remove(clientIndex)
+	// Deserializamos el mensaje de la cola antes de bloquear nada
+	msg, err := inner.DeserializeMessage(&middlewareMsg)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err)
+		nack()
 		return
 	}
+
+	// Lock corto: Solo buscamos el cliente idóneo en el registro
+	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
+		for i, client := range clients {
+			if client.Handler.UserId == msg.ClientID {
+				targetClient = client
+				clientIndex = i
+				found = true
+				break
+			}
+		}
+	})
+
+	if !found {
+		slog.Warn("No client handler could process this message", "clientID", msg.ClientID)
+		ack() // Si el cliente se desconectó, descartamos/confirmamos para no trabar la cola
+		return
+	}
+
+	// Procesamos y enviamos AFUERA del lock del registro
+	switch msg.MsgType {
+	case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
+		//slog.Info("Response received from MOM", "query", msg.MsgType, "clientID", msg.ClientID)
+
+		serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), *msg)
+		if err != nil {
+			slog.Error("While serializing response", "err", err)
+			nack()
+			return
+		}
+
+		if err := gateway.sendResponse(targetClient.Conn, serialization); err != nil {
+			slog.Error("While sending results to client", "err", err)
+			nack()
+			return
+		}
+
+	case inner.EndOfRecords:
+		clientEnded, err := targetClient.Handler.HandleQueryEOR(msg)
+		if err != nil {
+			slog.Error("While handling query EOR", "err", err)
+			nack()
+			return
+		}
+
+		if clientEnded {
+			response := serializer.SerializeEOR()
+			_ = gateway.sendResponse(targetClient.Conn, response)
+
+			slog.Info("Client received all result queries, removing from registry", "clientID", msg.ClientID)
+			// Removemos usando el índice detectado previamente
+			gateway.registry.Remove(clientIndex)
+		}
+
+	default:
+		slog.Error("Unexpected msg type received", "msgType", msg.MsgType)
+		nack()
+		return
+	}
+
+	ack()
 }
 
 func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
@@ -257,19 +260,9 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 }
 
 func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
-
 	if err := safeio.WriteAll(socket, data); err != nil {
 		slog.Error("While writing queries result message", "err", err)
 		return fmt.Errorf("While writing queries result message: %w", err)
-	}
-	msgType, err := external.ReadMsgType(socket)
-	if err != nil {
-		slog.Error("While reading message type", "err", err)
-		return fmt.Errorf("While reading queries result message: %w", err)
-	}
-	if msgType != external.Ack {
-		slog.Info("Expected ACK message")
-		return fmt.Errorf("Waiting for ack msg: %w", err)
 	}
 	return nil
 }

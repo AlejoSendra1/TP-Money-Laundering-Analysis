@@ -59,6 +59,11 @@ func loadConfig() (sum.SumConfig, error) {
 		return sum.SumConfig{}, errors.New("PROMEDIATOR_PREFIX environment variable is required")
 	}
 
+	DateFilterAmount, err := strconv.Atoi(os.Getenv("DATE_FILTER_AMOUNT"))
+	if err != nil {
+		return sum.SumConfig{}, errors.New("DATE_FILTER_AMOUNT environment variable is required and must be a number")
+	}
+
 	return sum.SumConfig{
 		MomHost:              momHost,
 		MomPort:              momPort,
@@ -70,6 +75,7 @@ func loadConfig() (sum.SumConfig, error) {
 		OutputExchangeName:   outputExchangeName,
 		PromediatorAmount:    promediatorAmount,
 		PromedietorPrefix:    promedietorPrefix,
+		DateFilterAmount:     DateFilterAmount,
 	}, nil
 }
 

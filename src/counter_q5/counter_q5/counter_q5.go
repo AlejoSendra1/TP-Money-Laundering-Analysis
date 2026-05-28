@@ -27,9 +27,9 @@ type CounterQ5Config struct {
 // CounterQ5 reads USD-converted PaymentRecords from currencies_cache,
 // counts records with amount < 1 per payment format, and flushes results on EOF.
 type CounterQ5 struct {
-	config      CounterQ5Config
-	inputQueue  middleware.Middleware
-	outputQueue middleware.Middleware
+	config         CounterQ5Config
+	inputQueue     middleware.Middleware
+	outputQueue    middleware.Middleware
 	controlOutputs []middleware.Middleware
 	controlInput   middleware.Middleware
 
@@ -223,7 +223,7 @@ func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error 
 	if err := counter.outputQueue.Send(*msg); err != nil {
 		return fmt.Errorf("sending count results: %w", err)
 	}
-	slog.Info("Sent count results", "client_id", clientID, "payment_formats", len(records), "data", records)
+	//slog.Info("Sent count results", "client_id", clientID, "payment_formats", len(records), "data", records)
 	return nil
 }
 

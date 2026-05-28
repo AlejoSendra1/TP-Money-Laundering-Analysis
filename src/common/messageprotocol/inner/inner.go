@@ -63,7 +63,7 @@ func DeserializeMessage(message *middleware.Message) (*MessageClient, error) {
 }
 
 func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middleware.Message, error) {
-	slog.Info("serializando eof")
+	//slog.Info("serializando eof")
 	data := []interface{}{}
 
 	// agregamos el tipo de msg

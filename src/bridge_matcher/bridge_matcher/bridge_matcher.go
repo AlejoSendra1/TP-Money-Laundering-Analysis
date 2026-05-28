@@ -1,10 +1,11 @@
 package bridge_matcher
 
 import (
-	"fmt"
+	"hash"
 	"hash/fnv"
 	"log/slog"
 	"slices"
+	"strconv"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -12,7 +13,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 5
+const DestinationThreshold = 2
 
 type BridgeMatcherConfig struct {
 	ID                    int
@@ -38,13 +39,14 @@ type BridgeMatcher struct {
 	Registers            map[int64]map[string]map[string]struct{}
 	groupWorkersNotified map[int64][]string
 	bridgesReadyForEOR   map[int64][]int // tracks which peers sent ReadyForEOF
+	hasher               hash.Hash32
 }
 
 //TODO LIMIPIAR DATOS DE LOS CLIENTES
 
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-	instance_name := fmt.Sprintf("%s_%d", config.WorkerPrefix, config.ID)
+	instance_name := makeKey(config.WorkerPrefix, config.ID)
 
 	// input - batches con transacciones con origenes que mapean a esta instancia de bridge matcher
 	inputQueue, err := middleware.NewQueueMiddleware(instance_name, connSettings)
@@ -55,7 +57,6 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 	inputQueue.BindToTopics(config.ControlExchangeName, FANOUT)
 
 	// input - control
-	// (No para EOF, de eso se encargan de mandar todos los groups)
 	// (Se envian los sospechosos y sus posibles puentes para que la instancia receptora envie aquellas transacciones realizadas por los puentes)
 	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings) // control
 	if err != nil {
@@ -77,6 +78,7 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		groupWorkersNotified: make(map[int64][]string),
 		config:               config,
 		bridgesReadyForEOR:   make(map[int64][]int),
+		hasher:               fnv.New32a(),
 	}, nil
 }
 
@@ -152,8 +154,8 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, sen
 		return nil
 	}
 
-	// enviar toda la data aca
-	bridgeMatcher.sendSuspiciousAccounts()
+	// Por cada cliente va a enviar las cuentas que tenga, al menos "DestinationThreshold" cantidad de cuentas destino
+	bridgeMatcher.sendSuspiciousAccounts(clientID)
 
 	readyMsg, err := inner.SerializeReadyForEOR(clientID, bridgeMatcher.config.ID)
 	if err != nil {
@@ -166,20 +168,22 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, sen
 }
 
 func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
+	if bridgeMatcher.Registers[clientID] == nil {
+		bridgeMatcher.Registers[clientID] = make(map[string]map[string]struct{})
+	}
+	clientRegisters := bridgeMatcher.Registers[clientID]
+
 	for _, transaction := range transactionRecords {
-		origin := fmt.Sprintf("%s_%d", transaction.FromAccount, transaction.FromBank)
-		destiny := fmt.Sprintf("%s_%d", transaction.ToAccount, transaction.ToBank)
+		origin := makeKey(transaction.FromAccount, transaction.FromBank)
+		destiny := makeKey(transaction.ToAccount, transaction.ToBank)
 		// Inicializar mapas si no existen
-		if bridgeMatcher.Registers[clientID] == nil {
-			bridgeMatcher.Registers[clientID] = make(map[string]map[string]struct{})
-		}
-		if bridgeMatcher.Registers[clientID][origin] == nil {
-			bridgeMatcher.Registers[clientID][origin] = make(map[string]struct{})
+		if clientRegisters[origin] == nil {
+			clientRegisters[origin] = make(map[string]struct{})
 		}
 
 		// Agregar cuenta destino al set
-		slog.Info("transaccion a guardar", "origen", origin, "destiny", destiny)
-		bridgeMatcher.Registers[clientID][origin][destiny] = struct{}{}
+		//slog.Info("transaccion a guardar", "origen", origin, "destiny", destiny)
+		clientRegisters[origin][destiny] = struct{}{}
 	}
 
 	return nil
@@ -193,16 +197,18 @@ func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int6
 	}
 
 	// definimos el destino de todos los mensajes
-	hash := fnv.New32a()
-	hash.Write([]byte(origin))
-	workerIndex := int(hash.Sum32()) % bridgeMatcher.config.NextFaseWorkersAmount
-	topic := fmt.Sprintf("%s_%d", bridgeMatcher.config.NextFaseWorkersPrefix, workerIndex)
+	bridgeMatcher.hasher.Reset()
+	bridgeMatcher.hasher.Write([]byte(origin))
+	workerIndex := int(bridgeMatcher.hasher.Sum32()) % bridgeMatcher.config.NextFaseWorkersAmount
+
+	topic := makeKey(bridgeMatcher.config.NextFaseWorkersPrefix, workerIndex)
+
+	if bridgeMatcher.Registers[clientID] == nil {
+		return nil
+	}
 
 	for _, possibleBridge := range possibleBridges {
 		// si no hay registros de ese cliente, corto, no tengo nada para mandar
-		if bridgeMatcher.Registers[clientID] == nil {
-			break
-		}
 		// si NO hay registros de ese puente salto
 		if bridgeMatcher.Registers[clientID][possibleBridge] == nil {
 			continue
@@ -234,13 +240,13 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 
 	// all peers are done sending suspects, safe to EOF downstream
 	msg, err := inner.SerializeEOF(clientID, false,
-		fmt.Sprintf("%s_%d", "bridge_matcher", bridgeMatcher.config.ID))
+		makeKey("bridge_matcher", bridgeMatcher.config.ID))
 	if err != nil {
 		return err
 	}
 	slog.Info("Sending EOR", "Client", clientID)
 	for i := range bridgeMatcher.config.NextFaseWorkersAmount {
-		topic := fmt.Sprintf("%s_%d", bridgeMatcher.config.NextFaseWorkersPrefix, i)
+		topic := makeKey(bridgeMatcher.config.NextFaseWorkersPrefix, i)
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
 	}
 
@@ -257,33 +263,20 @@ func (bridgeMatcher *BridgeMatcher) notifAll(clientID int64, susAccount string, 
 		return err
 	}
 
-	// notificamos al join correspondiente
-	hash := fnv.New32a()
-	hash.Write([]byte(susAccount))
-	workerIndex := int(hash.Sum32()) % bridgeMatcher.config.NextFaseWorkersAmount
-	topic := fmt.Sprintf("%s_%d", bridgeMatcher.config.NextFaseWorkersPrefix, workerIndex)
-
-	if err := bridgeMatcher.outputExchange.SendToTopic(*msg, topic); err != nil {
-		slog.Info("While sending data message", "err", err, "clientID", clientID)
-		return err
-	}
-
-	// notificamos al resto de bridges
+	// notificamos a los bridges
 	bridgeMatcher.controlExchange.Send(*msg)
 	return nil
 }
 
-// Por cada cliente va a enviar las cuentas que tenga, al menos "DestinationThreshold" cantidad de cuentas destino
-func (bridgeMatcher *BridgeMatcher) sendSuspiciousAccounts() error {
-	slog.Info("enviando los sospechosos")
-	for client, register := range bridgeMatcher.Registers {
-		for origin, destinos := range register {
-			// se verifica si se pasó el humbral y se envian los datos
-			if len(destinos) >= DestinationThreshold {
-				slog.Info("Suspicious account found", "origin", origin, "bridges", destinos)
-				if err := bridgeMatcher.notifAll(client, origin, destinos); err != nil {
-					return fmt.Errorf("error sending to control exchange for client %d , transaction %s: %w", client, origin, err)
-				}
+func (bm *BridgeMatcher) sendSuspiciousAccounts(clientID int64) error {
+	register, ok := bm.Registers[clientID]
+	if !ok {
+		return nil
+	}
+	for origin, destinos := range register {
+		if len(destinos) >= DestinationThreshold {
+			if err := bm.notifAll(clientID, origin, destinos); err != nil {
+				return err
 			}
 		}
 	}
@@ -326,4 +319,8 @@ func (bridgeMatcher *BridgeMatcher) cleanupClient(clientID int64) {
 	delete(bridgeMatcher.groupWorkersNotified, clientID)
 	delete(bridgeMatcher.bridgesReadyForEOR, clientID)
 	slog.Info("Cleaned up client state", "clientID", clientID)
+}
+
+func makeKey(account string, bank int) string {
+	return account + "_" + strconv.Itoa(bank)
 }
