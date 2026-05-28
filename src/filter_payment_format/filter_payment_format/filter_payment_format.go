@@ -1,8 +1,6 @@
 package filter_payment_format
 
 import (
-	"crypto/md5"
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"os"
@@ -27,9 +25,9 @@ type FilterPaymentFormatConfig struct {
 	InputQueue           string
 	InputExchangeName    string
 	InputTopic           string
-	OutputPrefix         string
-	OutputAmount         int
+	OutputQueue          string // cola compartida hacia currencies_cache (competing consumers)
 	FilterAmount         int
+	USDFilterAmount      int
 	FilterPaymentControl string
 	BatchSize            int
 }
@@ -37,28 +35,20 @@ type FilterPaymentFormatConfig struct {
 // FilterPaymentFormat filters transactions by payment format (Wire, ACH) and
 // routes approved transactions to the appropriate downstream exchange.
 type FilterPaymentFormat struct {
-	config          FilterPaymentFormatConfig
-	inputQueue      middleware.Middleware
-	outputExchanges []middleware.Middleware // one per downstream pod instance
-	controlOutputs  []middleware.Middleware // one per peer pod
-	controlInput    middleware.Middleware   // own control inbox
+	config         FilterPaymentFormatConfig
+	inputQueue     middleware.Middleware
+	outputQueue    middleware.Middleware // cola compartida hacia currencies_cache
+	controlOutputs []middleware.Middleware
+	controlInput   middleware.Middleware
 
-	mutex          sync.Mutex
-	bufferByClient map[int64]map[string][]transaction.PaymentRecord // client_id -> paymentFormat -> pending records
-}
-
-// getOutputIndex replicates the Python MD5-based routing:
-// hash(payment_format) % outputAmount
-func getOutputIndex(paymentFormat string, outputAmount int) int {
-	sum := md5.Sum([]byte(paymentFormat))
-	val := binary.BigEndian.Uint64(sum[:8])
-	return int(val % uint64(outputAmount))
+	mutex            sync.Mutex
+	bufferByClient   map[int64]map[string][]transaction.PaymentRecord
+	eofCountByClient map[int64]int
 }
 
 func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFormat, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 
-	// Input queue — binds to the upstream transactions exchange
 	inputQueue, err := middleware.CreateQueueMiddleware(config.InputQueue, connSettings)
 	if err != nil {
 		return nil, fmt.Errorf("creating input queue: %w", err)
@@ -68,19 +58,11 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 		return nil, fmt.Errorf("binding input queue: %w", err)
 	}
 
-	// One output exchange per downstream pod instance
-	outputExchanges := make([]middleware.Middleware, config.OutputAmount)
-	for i := 0; i < config.OutputAmount; i++ {
-		key := fmt.Sprintf("%s_%d", config.OutputPrefix, i)
-		exchange, err := middleware.CreateExchangeMiddleware(config.OutputPrefix, []string{key}, connSettings)
-		if err != nil {
-			inputQueue.Close()
-			for j := 0; j < i; j++ {
-				outputExchanges[j].Close()
-			}
-			return nil, fmt.Errorf("creating output exchange %d: %w", i, err)
-		}
-		outputExchanges[i] = exchange
+	// Cola compartida de salida hacia currencies_cache (competing consumers)
+	outputQueue, err := middleware.CreateQueueMiddleware(config.OutputQueue, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		return nil, fmt.Errorf("creating output queue: %w", err)
 	}
 
 	// Control output exchanges — one per peer (all filter instances except self)
@@ -93,9 +75,7 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 		exchange, err := middleware.CreateExchangeMiddleware(config.FilterPaymentControl, []string{key}, connSettings)
 		if err != nil {
 			inputQueue.Close()
-			for _, outputExchange := range outputExchanges {
-				outputExchange.Close()
-			}
+			outputQueue.Close()
 			for _, controlOutput := range controlOutputs {
 				controlOutput.Close()
 			}
@@ -104,14 +84,11 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 		controlOutputs = append(controlOutputs, exchange)
 	}
 
-	// Own control input exchange — receives EOF notifications from peers
 	myControlKey := fmt.Sprintf("%s_%d", config.FilterPaymentControl, config.ID)
 	controlInput, err := middleware.CreateExchangeMiddleware(config.FilterPaymentControl, []string{myControlKey}, connSettings)
 	if err != nil {
 		inputQueue.Close()
-		for _, outputExchange := range outputExchanges {
-			outputExchange.Close()
-		}
+		outputQueue.Close()
 		for _, controlOutput := range controlOutputs {
 			controlOutput.Close()
 		}
@@ -119,12 +96,13 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 	}
 
 	return &FilterPaymentFormat{
-		config:          config,
-		inputQueue:      inputQueue,
-		outputExchanges: outputExchanges,
-		controlOutputs:  controlOutputs,
-		controlInput:    controlInput,
-		bufferByClient:  make(map[int64]map[string][]transaction.PaymentRecord),
+		config:           config,
+		inputQueue:       inputQueue,
+		outputQueue:      outputQueue,
+		controlOutputs:   controlOutputs,
+		controlInput:     controlInput,
+		bufferByClient:   make(map[int64]map[string][]transaction.PaymentRecord),
+		eofCountByClient: make(map[int64]int),
 	}, nil
 }
 
@@ -165,16 +143,26 @@ func (filter *FilterPaymentFormat) handleMessage(msg middleware.Message, ack, na
 	}
 
 	if isEof {
-		slog.Info("EOF received, notifying peers and flushing", "client_id", clientID)
+		slog.Info("Direct EOF received, notifying peers", "client_id", clientID)
 		if err := filter.sendControlEOF(clientID); err != nil {
 			slog.Error("Sending control EOF to peers", "err", err, "client_id", clientID)
 			nack()
 			return
 		}
-		if err := filter.flushClient(clientID); err != nil {
-			slog.Error("Flushing client on EOF", "err", err, "client_id", clientID)
-			nack()
-			return
+
+		filter.mutex.Lock()
+		filter.eofCountByClient[clientID]++
+		count := filter.eofCountByClient[clientID]
+		filter.mutex.Unlock()
+
+		slog.Info("EOF accumulated", "client_id", clientID, "count", count, "expected", filter.config.USDFilterAmount)
+		if count >= filter.config.USDFilterAmount {
+			delete(filter.eofCountByClient, clientID)
+			if err := filter.flushClient(clientID); err != nil {
+				slog.Error("Flushing client on direct EOF", "err", err, "client_id", clientID)
+				nack()
+				return
+			}
 		}
 		ack()
 		return
@@ -233,22 +221,20 @@ func (filter *FilterPaymentFormat) sendIfHaveBatchSize(clientID int64) error {
 	return nil
 }
 
-// sendBatch serializes and sends a slice of PaymentRecords to the output exchange
-// determined by hashing paymentFormat.
+// sendBatch serializes and sends a slice of PaymentRecords to the shared output queue.
 func (filter *FilterPaymentFormat) sendBatch(clientID int64, paymentFormat string, records []transaction.PaymentRecord) error {
-	outputIndex := getOutputIndex(paymentFormat, filter.config.OutputAmount)
 	msg, err := inner.SerializePaymentRecordMessage(clientID, records)
 	if err != nil {
 		return fmt.Errorf("serializing batch for payment format %s: %w", paymentFormat, err)
 	}
-	if err := filter.outputExchanges[outputIndex].Send(*msg); err != nil {
-		return fmt.Errorf("sending batch to output exchange %d: %w", outputIndex, err)
+	if err := filter.outputQueue.Send(*msg); err != nil {
+		return fmt.Errorf("sending batch for payment format %s: %w", paymentFormat, err)
 	}
-	slog.Info("Sent batch", "client_id", clientID, "payment_format", paymentFormat, "count", len(records), "output_index", outputIndex)
+	slog.Info("Sent batch", "client_id", clientID, "payment_format", paymentFormat, "count", len(records))
 	return nil
 }
 
-// flushClient sends any remaining buffered records for clientID and then sends the EOF marker.
+// flushClient sends remaining buffered records for clientID and then the per-format EOFs.
 func (filter *FilterPaymentFormat) flushClient(clientID int64) error {
 	filter.mutex.Lock()
 	shards := filter.bufferByClient[clientID]
@@ -265,18 +251,16 @@ func (filter *FilterPaymentFormat) flushClient(clientID int64) error {
 	return filter.forwardEOF(clientID)
 }
 
-// forwardEOF sends an EOF marker to every output exchange.
+// forwardEOF sends a single EOF to the shared output queue signaling no more data for clientID.
 func (filter *FilterPaymentFormat) forwardEOF(clientID int64) error {
 	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
 	if err != nil {
 		return fmt.Errorf("serializing EOF: %w", err)
 	}
-	for outputIndex, outputExchange := range filter.outputExchanges {
-		if err := outputExchange.Send(*msg); err != nil {
-			return fmt.Errorf("forwarding EOF to output exchange %d: %w", outputIndex, err)
-		}
+	if err := filter.outputQueue.Send(*msg); err != nil {
+		return fmt.Errorf("forwarding EOF: %w", err)
 	}
-	slog.Info("EOF forwarded to all output exchanges", "client_id", clientID)
+	slog.Info("EOF forwarded", "client_id", clientID)
 	return nil
 }
 
@@ -296,7 +280,7 @@ func (filter *FilterPaymentFormat) sendControlEOF(clientID int64) error {
 }
 
 // handleControlMessage processes EOF notifications from peer pods.
-// When a peer sends an EOF, this pod must also flush and forward EOF to its output exchanges.
+// Acumula el EOF bajo el mutex y solo hace flush cuando se reciben todos los EOFs del upstream.
 func (filter *FilterPaymentFormat) handleControlMessage(msg middleware.Message, ack, nack func()) {
 	clientID, _, _, err := inner.DeserializeRawTransactionsMessage(&msg)
 	if err != nil {
@@ -304,21 +288,29 @@ func (filter *FilterPaymentFormat) handleControlMessage(msg middleware.Message, 
 		nack()
 		return
 	}
-	slog.Info("Control EOF received from peer, flushing and forwarding EOF", "client_id", clientID)
-	if err := filter.flushClient(clientID); err != nil {
-		slog.Error("Flushing client from control message", "err", err, "client_id", clientID)
-		nack()
-		return
+	slog.Info("Control EOF received from peer", "client_id", clientID)
+
+	filter.mutex.Lock()
+	filter.eofCountByClient[clientID]++
+	count := filter.eofCountByClient[clientID]
+	filter.mutex.Unlock()
+
+	slog.Info("Control EOF accumulated", "client_id", clientID, "count", count, "expected", filter.config.USDFilterAmount)
+	if count >= filter.config.USDFilterAmount {
+		delete(filter.eofCountByClient, clientID)
+		if err := filter.flushClient(clientID); err != nil {
+			slog.Error("Flushing client on control EOF", "err", err, "client_id", clientID)
+			nack()
+			return
+		}
 	}
 	ack()
 }
 
 func (filter *FilterPaymentFormat) close() {
 	filter.inputQueue.Close()
+	filter.outputQueue.Close()
 	filter.controlInput.Close()
-	for _, outputExchange := range filter.outputExchanges {
-		outputExchange.Close()
-	}
 	for _, controlOutput := range filter.controlOutputs {
 		controlOutput.Close()
 	}

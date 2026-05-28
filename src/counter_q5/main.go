@@ -30,35 +30,35 @@ func loadConfig() (counter_q5.CounterQ5Config, error) {
 		return counter_q5.CounterQ5Config{}, errors.New("INPUT_PREFIX is required")
 	}
 
-	filterAmount, err := strconv.Atoi(os.Getenv("FILTER_AMOUNT"))
-	if err != nil {
-		return counter_q5.CounterQ5Config{}, errors.New("FILTER_AMOUNT is required and must be a number")
-	}
-
-	conversionQueue := os.Getenv("CONVERSION_QUEUE")
-	if conversionQueue == "" {
-		return counter_q5.CounterQ5Config{}, errors.New("CONVERSION_QUEUE is required")
-	}
-
-	convertedPrefix := os.Getenv("CONVERTED_PREFIX")
-	if convertedPrefix == "" {
-		return counter_q5.CounterQ5Config{}, errors.New("CONVERTED_PREFIX is required")
-	}
-
 	outputQueue := os.Getenv("OUTPUT_QUEUE")
 	if outputQueue == "" {
 		return counter_q5.CounterQ5Config{}, errors.New("OUTPUT_QUEUE is required")
 	}
 
+	cacheAmount, err := strconv.Atoi(os.Getenv("CACHE_AMOUNT"))
+	if err != nil {
+		return counter_q5.CounterQ5Config{}, errors.New("CACHE_AMOUNT is required and must be a number")
+	}
+
+	instanceAmount, err := strconv.Atoi(os.Getenv("INSTANCE_AMOUNT"))
+	if err != nil {
+		return counter_q5.CounterQ5Config{}, errors.New("INSTANCE_AMOUNT is required and must be a number")
+	}
+
+	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
+	if controlExchangeName == "" {
+		return counter_q5.CounterQ5Config{}, errors.New("CONTROL_EXCHANGE_NAME is required")
+	}
+
 	return counter_q5.CounterQ5Config{
-		ID:              id,
-		MomHost:         momHost,
-		MomPort:         momPort,
-		InputPrefix:     inputPrefix,
-		FilterAmount:    filterAmount,
-		ConversionQueue: conversionQueue,
-		ConvertedPrefix: convertedPrefix,
-		OutputQueue:     outputQueue,
+		ID:                  id,
+		MomHost:             momHost,
+		MomPort:             momPort,
+		InputPrefix:         inputPrefix,
+		OutputQueue:         outputQueue,
+		CacheAmount:         cacheAmount,
+		InstanceAmount:      instanceAmount,
+		ControlExchangeName: controlExchangeName,
 	}, nil
 }
 

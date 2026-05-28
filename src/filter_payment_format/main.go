@@ -40,14 +40,9 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("INPUT_TOPIC environment variable is required")
 	}
 
-	outputPrefix := os.Getenv("OUTPUT_PREFIX")
-	if outputPrefix == "" {
-		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("OUTPUT_PREFIX environment variable is required")
-	}
-
-	outputAmount, err := strconv.Atoi(os.Getenv("OUTPUT_AMOUNT"))
-	if err != nil {
-		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("OUTPUT_AMOUNT environment variable is required and must be a number")
+	outputQueue := os.Getenv("OUTPUT_QUEUE")
+	if outputQueue == "" {
+		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
 	}
 
 	filterAmount, err := strconv.Atoi(os.Getenv("FILTER_AMOUNT"))
@@ -74,8 +69,7 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		InputQueue:           inputQueue,
 		InputExchangeName:    inputExchangeName,
 		InputTopic:           inputTopic,
-		OutputPrefix:         outputPrefix,
-		OutputAmount:         outputAmount,
+		OutputQueue:          outputQueue,
 		FilterAmount:         filterAmount,
 		FilterPaymentControl: filterPaymentControl,
 		BatchSize:            batchSize,
@@ -105,4 +99,3 @@ func main() {
 	})))
 	os.Exit(run())
 }
-
