@@ -36,6 +36,7 @@ type DateFilter struct {
 	outputExchanges map[string]middleware.Middleware
 	controlExchange middleware.Middleware
 	eofCounter      map[int64]int
+	qtyTx           map[int64]map[string]int
 	config          DateFilterConfig
 	mu              sync.Mutex
 }
@@ -82,6 +83,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		outputExchanges: outputExchanges,
 		controlExchange: controlExchange,
 		eofCounter:      make(map[int64]int),
+		qtyTx:           make(map[int64]map[string]int),
 		config:          config,
 	}, nil
 }
@@ -151,7 +153,12 @@ func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
 
 func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
 	if _, ok := dateFilter.eofCounter[clientID]; !ok {
+		slog.Info("New client arrived", "clientID", clientID)
 		dateFilter.eofCounter[clientID] = 0
+		dateFilter.qtyTx[clientID] = make(map[string]int)
+		dateFilter.qtyTx[clientID] = make(map[string]int)
+		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic1] = 0
+		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic2] = 0
 	}
 	topics := map[string][]transaction.Transaction{
 		dateFilter.config.OutputTopic1: {},
@@ -170,6 +177,7 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 		if len(transactions) == 0 {
 			continue
 		}
+		dateFilter.qtyTx[clientID][topic] += len(transactions)
 		err := dateFilter.sendOutput(transactions, clientID, topic)
 		if err != nil {
 			return err
@@ -207,14 +215,17 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 	}
 
 	for topic := range dateFilter.outputExchanges {
+		slog.Info("size transactions sent", "topic", topic, "qtyTx", dateFilter.qtyTx[clientID][topic])
 		err := dateFilter.outputExchanges[topic].Send(*msgEOF)
 		if err != nil {
 			slog.Info("While sending to topics", "topic", topic)
 			return
 		}
+		delete(dateFilter.qtyTx[clientID], topic)
 	}
 	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
 	delete(dateFilter.eofCounter, clientID)
+
 	ack()
 }
 
@@ -222,9 +233,9 @@ func (dateFilter *DateFilter) getOutputTopic(transaction transaction.Transaction
 	date := transaction.Timestamp.UTC().Format("2006-01-02")
 
 	switch {
-	case date >= DateMinEarlyPeriod && date <= DateMaxEarlyPeriod:
+	case date >= DateMinEarlyPeriod && date < DateMaxEarlyPeriod:
 		return dateFilter.config.OutputTopic1
-	case date >= DateMinLaterPeriod && date <= DateMaxLaterPeriod:
+	case date >= DateMinLaterPeriod && date < DateMaxLaterPeriod:
 		return dateFilter.config.OutputTopic2
 	default:
 		return ""
