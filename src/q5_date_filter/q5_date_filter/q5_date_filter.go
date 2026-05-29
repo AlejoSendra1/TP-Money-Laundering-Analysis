@@ -13,6 +13,10 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
+// Segun el enunciado, early period es de [2022-09-01, 2022-09-05], pero en la notebook usa los de abajo...
+const DateMinEarlyPeriod = "2022-09-01"
+const DateMaxEarlyPeriod = "2022-09-06"
+
 type Q5DateFilterConfig struct {
 	ID                  int
 	MomHost             string
@@ -200,7 +204,7 @@ func (f *Q5DateFilter) handleDataMessage(records []transaction.Transaction, clie
 	var filtered []transaction.Transaction
 	for _, tx := range records {
 		date := tx.Timestamp.UTC().Format("2006-01-02")
-		if date >= "2022-09-01" && date <= "2022-09-05" {
+		if date >= DateMinEarlyPeriod && date <= DateMaxEarlyPeriod {
 			filtered = append(filtered, tx)
 		}
 	}

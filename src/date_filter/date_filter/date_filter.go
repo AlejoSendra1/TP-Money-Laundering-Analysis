@@ -10,6 +10,13 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
+// Segun el enunciado, early period es de [2022-09-01, 2022-09-05], pero en la notebook usa los de abajo...
+const DateMinEarlyPeriod = "2022-09-01"
+const DateMaxEarlyPeriod = "2022-09-06"
+
+const DateMinLaterPeriod = "2022-09-06"
+const DateMaxLaterPeriod = "2022-09-15"
+
 type DateFilterConfig struct {
 	MomHost             string
 	MomPort             int
@@ -215,9 +222,9 @@ func (dateFilter *DateFilter) getOutputTopic(transaction transaction.Transaction
 	date := transaction.Timestamp.UTC().Format("2006-01-02")
 
 	switch {
-	case date >= "2022-09-01" && date <= "2022-09-05":
+	case date >= DateMinEarlyPeriod && date <= DateMaxEarlyPeriod:
 		return dateFilter.config.OutputTopic1
-	case date >= "2022-09-06" && date <= "2022-09-15":
+	case date >= DateMinLaterPeriod && date <= DateMaxLaterPeriod:
 		return dateFilter.config.OutputTopic2
 	default:
 		return ""
