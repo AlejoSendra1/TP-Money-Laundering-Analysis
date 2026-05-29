@@ -9,8 +9,6 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
-const QUERYS_AMOUNT = 5
-
 type MessageHandler struct {
 	UserId             int64
 	eorCountByQuery    map[transaction.QueryID]int // EOFs recibidos por query
@@ -25,15 +23,22 @@ func NewMessageHandler() MessageHandler {
 
 	// A MODIFICAR CON VARIABLES DE ENTORNO - TO DO
 	eofExpectedByQuery := make(map[transaction.QueryID]int)
-	eofExpectedByQuery[transaction.Query1] = 2
-	eofExpectedByQuery[transaction.Query2] = 2
-	eofExpectedByQuery[transaction.Query3] = 2
+	eofExpectedByQuery[transaction.Query1] = 0
+	eofExpectedByQuery[transaction.Query2] = 0
+	eofExpectedByQuery[transaction.Query3] = 0
 	eofExpectedByQuery[transaction.Query4] = 1
-	eofExpectedByQuery[transaction.Query5] = 2
+	eofExpectedByQuery[transaction.Query5] = 0
+
+	eorCountByQuery := make(map[transaction.QueryID]int)
+	eorCountByQuery[transaction.Query1] = 0
+	eorCountByQuery[transaction.Query2] = 0
+	eorCountByQuery[transaction.Query3] = 0
+	eorCountByQuery[transaction.Query4] = 0
+	eorCountByQuery[transaction.Query5] = 0
 
 	return MessageHandler{
 		UserId:             n,
-		eorCountByQuery:    make(map[transaction.QueryID]int),
+		eorCountByQuery:    eorCountByQuery,
 		eorExpectedByQuery: eofExpectedByQuery,
 	}
 }
@@ -52,10 +57,12 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 		return false, err
 	}
 
-	if messageHandler.eorCountByQuery[queryID] == messageHandler.eorExpectedByQuery[queryID] {
-		slog.Info("esta situacion no deberia darse, hay alguna entidad de mas no declarada")
-		return false, nil
-	}
+	/*
+		if messageHandler.eorCountByQuery[queryID] == messageHandler.eorExpectedByQuery[queryID] {
+			slog.Info("esta situacion no deberia darse, hay alguna entidad de mas no declarada")
+			return false, nil
+		}
+	*/
 	messageHandler.eorCountByQuery[queryID] += 1
 
 	if messageHandler.assertClientEnd() {
@@ -66,16 +73,12 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 }
 
 func (messageHandler *MessageHandler) assertClientEnd() bool {
-	count := 0
 	for key, val := range messageHandler.eorCountByQuery {
-		if messageHandler.eorExpectedByQuery[key] == val {
-			count += 1
+		if messageHandler.eorExpectedByQuery[key] > val {
+			return false
 		}
 	}
-	if count == QUERYS_AMOUNT {
-		return true
-	}
-	return false
+	return true
 }
 
 func getQueryID(data []interface{}) (transaction.QueryID, error) {

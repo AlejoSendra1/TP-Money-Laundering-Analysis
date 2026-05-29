@@ -42,8 +42,6 @@ type BridgeMatcher struct {
 	hasher               hash.Hash32
 }
 
-//TODO LIMIPIAR DATOS DE LOS CLIENTES
-
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 	instance_name := makeKey(config.WorkerPrefix, config.ID)
@@ -176,6 +174,12 @@ func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64
 	for _, transaction := range transactionRecords {
 		origin := makeKey(transaction.FromAccount, transaction.FromBank)
 		destiny := makeKey(transaction.ToAccount, transaction.ToBank)
+
+		if origin == destiny {
+			slog.Info("Se cumplen los repes", "origen", origin, "destino", destiny)
+			continue
+		}
+
 		// Inicializar mapas si no existen
 		if clientRegisters[origin] == nil {
 			clientRegisters[origin] = make(map[string]struct{})

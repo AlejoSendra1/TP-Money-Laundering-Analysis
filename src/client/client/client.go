@@ -232,6 +232,7 @@ func (client *Client) sendTransactionRecords() error {
 	if err := client.sendBatch(&batch); err != nil {
 		return err
 	}
+	client.transactionsSentCounter += int64(len(batch))
 	str := fmt.Sprint("transacciones enviadas: ", client.transactionsSentCounter)
 	slog.Info(str)
 
