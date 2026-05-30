@@ -10,6 +10,13 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
+// Segun el enunciado, early period es de [2022-09-01, 2022-09-05], pero en la notebook usa los de abajo...
+const DateMinEarlyPeriod = "2022-09-01"
+const DateMaxEarlyPeriod = "2022-09-06"
+
+const DateMinLaterPeriod = "2022-09-06"
+const DateMaxLaterPeriod = "2022-09-15"
+
 type DateFilterConfig struct {
 	MomHost             string
 	MomPort             int
@@ -29,6 +36,7 @@ type DateFilter struct {
 	outputExchanges map[string]middleware.Middleware
 	controlExchange middleware.Middleware
 	eofCounter      map[int64]int
+	qtyTx           map[int64]map[string]int
 	config          DateFilterConfig
 	mu              sync.Mutex
 	// debug
@@ -77,6 +85,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		outputExchanges: outputExchanges,
 		controlExchange: controlExchange,
 		eofCounter:      make(map[int64]int),
+		qtyTx:           make(map[int64]map[string]int),
 		config:          config,
 	}, nil
 }
@@ -123,11 +132,11 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 			return
 		}
 		ack()
+		return
 	default:
-		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
-
+		slog.Info("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
+		nack()
 	}
-
 }
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
@@ -146,7 +155,11 @@ func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
 
 func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
 	if _, ok := dateFilter.eofCounter[clientID]; !ok {
+		slog.Info("New client arrived", "clientID", clientID)
 		dateFilter.eofCounter[clientID] = 0
+		dateFilter.qtyTx[clientID] = make(map[string]int)
+		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic1] = 0
+		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic2] = 0
 	}
 	topics := map[string][]transaction.Transaction{
 		dateFilter.config.OutputTopic1: {},
@@ -165,10 +178,7 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 		if len(transactions) == 0 {
 			continue
 		}
-		if topic == dateFilter.config.OutputTopic1 {
-			dateFilter.counter += len(transactions)
-
-		}
+		dateFilter.qtyTx[clientID][topic] += len(transactions)
 		err := dateFilter.sendOutput(transactions, clientID, topic)
 		if err != nil {
 			return err
@@ -206,16 +216,20 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 	}
 
 	for topic := range dateFilter.outputExchanges {
+		slog.Info("size transactions sent", "topic", topic, "qtyTx", dateFilter.qtyTx[clientID][topic])
 		err := dateFilter.outputExchanges[topic].Send(*msgEOF)
 		if err != nil {
 			slog.Info("While sending to topics", "topic", topic)
+			nack()
 			return
 		}
+		delete(dateFilter.qtyTx[clientID], topic)
 	}
 	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
 	slog.Info("Cantidad envida topic 1", "val", dateFilter.counter)
 
 	delete(dateFilter.eofCounter, clientID)
+
 	ack()
 }
 
@@ -223,9 +237,9 @@ func (dateFilter *DateFilter) getOutputTopic(transaction transaction.Transaction
 	date := transaction.Timestamp.UTC().Format("2006-01-02")
 
 	switch {
-	case date >= "2022-09-01" && date <= "2022-09-05":
+	case date >= DateMinEarlyPeriod && date < DateMaxEarlyPeriod:
 		return dateFilter.config.OutputTopic1
-	case date >= "2022-09-06" && date <= "2022-09-15":
+	case date >= DateMinLaterPeriod && date < DateMaxLaterPeriod:
 		return dateFilter.config.OutputTopic2
 	default:
 		return ""

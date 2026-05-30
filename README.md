@@ -15,7 +15,7 @@ El presente trabajo apunta al desarrollo de un sistema distribuido que pueda det
 - Escalado horizontal e independientemente para cada tipo de nodo.
 
 # Arquitectura general del sistema
-**insertar diagrama de robustes gral
+![Diagrama de robustez](https://github.com/AlejoSendra1/TP-Money-Laundering-Analysis/blob/9ad8c6f5396eba93b86ad4697a48a1c59fbffc20/documentation/diagrama_de_robustez.png)
 
 ## Ejecución
 

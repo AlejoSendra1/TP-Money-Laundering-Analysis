@@ -6,9 +6,12 @@ services:
     container_name: client_0
     depends_on:
       - usd_filter_0
+      - usd_filter_1
+      - q5_date_filter_0
+      - q5_date_filter_1
     environment:
-      - BATCH_SIZE=10
-      - INPUT_FILE=/datasets/input_ale.csv
+      - BATCH_SIZE=200
+      - INPUT_FILE=/datasets/LI-Small_Trans.csv
       - OUTPUT_FILE=/output/output.csv
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=gateway
@@ -57,6 +60,10 @@ services:
     depends_on:
       - q1_amount_filter_0
       - q1_amount_filter_1
+      - q2_counter_0
+      - q2_counter_1
+      - date_filter_0
+      - date_filter_1
     environment:
       - INPUT_QUEUE=usd_filter_queue
       - INPUT_EXCHANGE_NAME=transactions_exchange
@@ -75,6 +82,10 @@ services:
     depends_on:
       - q1_amount_filter_0
       - q1_amount_filter_1
+      - q2_counter_0
+      - q2_counter_1
+      - date_filter_0
+      - date_filter_1
     environment:
       - INPUT_QUEUE=usd_filter_queue
       - INPUT_EXCHANGE_NAME=transactions_exchange
@@ -281,8 +292,8 @@ services:
       dockerfile: promediator/Dockerfile
     container_name: promediator_0
     depends_on:
-      - transactions_saver_0
-      - transactions_saver_1
+      - q3_amount_filter_0
+      - q3_amount_filter_1
     environment:
       - ID=0
       - MOM_PORT=5672
@@ -298,8 +309,8 @@ services:
       dockerfile: promediator/Dockerfile
     container_name: promediator_1
     depends_on:
-      - transactions_saver_0
-      - transactions_saver_1
+      - q3_amount_filter_0
+      - q3_amount_filter_1
     environment:
       - ID=1
       - MOM_PORT=5672
@@ -316,6 +327,7 @@ services:
     container_name: transactions_saver_0
     depends_on:
       - q3_amount_filter_0
+      - q3_amount_filter_1
     volumes:
       - ./src/transactions_saver/cache:/storage
     environment:
@@ -340,6 +352,7 @@ services:
     container_name: transactions_saver_1
     depends_on:
       - q3_amount_filter_0
+      - q3_amount_filter_1
     volumes:
       - ./src/transactions_saver/cache:/storage
     environment:
