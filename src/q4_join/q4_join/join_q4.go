@@ -88,7 +88,7 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 			return
 		}
 	case inner.PossibleFraudDestinations:
-		slog.Info("Possible fraud recibido", "client", msg.ClientID, "data", msg.Data)
+
 		if err := join.handlePossibleFraudDestinationsMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
@@ -159,7 +159,6 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 		}
 		if len(join.sourceSinkRegisters[clientID][source][possibleSink]) == DestinationThreshold {
 			msg, _ := inner.SerializeQ4SinkAndSource(clientID, source, possibleSink)
-			slog.Info("Sending Q4 result to output queue", "clientID", clientID, "source", source, "sink", possibleSink, "body", msg.Body)
 			join.outputQueue.Send(*msg)
 		}
 	}

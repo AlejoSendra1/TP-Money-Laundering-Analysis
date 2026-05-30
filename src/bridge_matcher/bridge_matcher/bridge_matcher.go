@@ -40,7 +40,6 @@ type BridgeMatcher struct {
 	groupWorkersNotified map[int64][]string
 	bridgesReadyForEOR   map[int64][]int // tracks which peers sent ReadyForEOF
 	hasher               hash.Hash32
-	counter              int
 }
 
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
@@ -78,7 +77,6 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		config:               config,
 		bridgesReadyForEOR:   make(map[int64][]int),
 		hasher:               fnv.New32a(),
-		counter:              0,
 	}, nil
 }
 
@@ -228,8 +226,6 @@ func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int6
 			return err
 		}
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
-		bridgeMatcher.counter += len(possibleBridgeDestinations)
-		bridgeMatcher.counter++
 	}
 
 	return nil
@@ -259,7 +255,6 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	}
 
 	// cleanup after all EOFs are sent
-	slog.Info("Equivalencias a registros enviadas", "cantidad", bridgeMatcher.counter)
 	bridgeMatcher.cleanupClient(clientID)
 	return nil
 }

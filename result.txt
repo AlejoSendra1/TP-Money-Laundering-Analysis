@@ -1,0 +1,466 @@
+mkdir -p output
+COMPOSE_HTTP_TIMEOUT=300 docker compose -f docker-compose.yaml up --build --remove-orphans --detach
+#1 [internal] load local bake definitions
+#1 reading from stdin 20.82kB done
+#1 DONE 0.0s
+
+#2 [q1_amount_filter_0 internal] load build definition from Dockerfile
+#2 DONE 0.0s
+
+#3 [gateway internal] load build definition from Dockerfile
+#3 DONE 0.0s
+
+#4 [sum_0 internal] load build definition from Dockerfile
+#4 DONE 0.0s
+
+#5 [transactions_saver_0 internal] load build definition from Dockerfile
+#5 DONE 0.0s
+
+#6 [promediator_1 internal] load build definition from Dockerfile
+#6 DONE 0.0s
+
+#7 [filter_payment_format_0 internal] load build definition from Dockerfile
+#7 DONE 0.0s
+
+#8 [client_0 internal] load build definition from Dockerfile
+#8 DONE 0.0s
+
+#9 [bridge_matcher_1 internal] load build definition from Dockerfile
+#9 DONE 0.0s
+
+#10 [counter_q5_1 internal] load build definition from Dockerfile
+#10 DONE 0.0s
+
+#11 [rabbitmq internal] load build definition from Dockerfile
+#11 DONE 0.0s
+
+#12 [q4_join_0 internal] load build definition from Dockerfile
+#12 DONE 0.0s
+
+#13 [currencies_cache_0 internal] load build definition from Dockerfile
+#13 DONE 0.0s
+
+#14 [q2_counter_0 internal] load build definition from Dockerfile
+#14 DONE 0.0s
+
+#15 [usd_filter_1 internal] load build definition from Dockerfile
+#15 DONE 0.0s
+
+#16 [date_filter_1 internal] load build definition from Dockerfile
+#16 DONE 0.0s
+
+#17 [q2_join_1 internal] load build definition from Dockerfile
+#17 DONE 0.0s
+
+#18 [q3_amount_filter_0 internal] load build definition from Dockerfile
+#18 DONE 0.0s
+
+#19 [q5_date_filter_1 internal] load build definition from Dockerfile
+#19 DONE 0.0s
+
+#20 [group_1 internal] load build definition from Dockerfile
+#20 transferring dockerfile:
+#20 transferring dockerfile: 549B done
+#20 DONE 1.9s
+
+#21 [group_1 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 ...
+
+#3 [gateway internal] load build definition from Dockerfile
+#3 transferring dockerfile: 556B done
+#3 DONE 2.3s
+
+#22 [gateway internal] load metadata for docker.io/library/busybox:latest
+#22 ...
+
+#2 [q1_amount_filter_1 internal] load build definition from Dockerfile
+#2 transferring dockerfile: 605B 0.1s done
+#2 DONE 2.5s
+
+#22 [q1_amount_filter_0 internal] load metadata for docker.io/library/busybox:latest
+#22 ...
+
+#11 [rabbitmq internal] load build definition from Dockerfile
+#11 transferring dockerfile: 107B done
+#11 DONE 2.4s
+
+#22 [q1_amount_filter_1 internal] load metadata for docker.io/library/busybox:latest
+#22 ...
+
+#16 [date_filter_0 internal] load build definition from Dockerfile
+#16 transferring dockerfile: 580B done
+#16 DONE 3.9s
+
+#5 [transactions_saver_0 internal] load build definition from Dockerfile
+#5 transferring dockerfile: 622B done
+#5 ...
+
+#22 [date_filter_0 internal] load metadata for docker.io/library/busybox:latest
+#22 ...
+
+#8 [client_0 internal] load build definition from Dockerfile
+#8 transferring dockerfile: 550B done
+#8 DONE 8.8s
+
+#15 [usd_filter_1 internal] load build definition from Dockerfile
+#15 transferring dockerfile: 574B done
+#15 ...
+
+#4 [sum_0 internal] load build definition from Dockerfile
+#4 ...
+
+#10 [counter_q5_1 internal] load build definition from Dockerfile
+#10 ...
+
+#14 [q2_counter_0 internal] load build definition from Dockerfile
+#14 ...
+
+#17 [q2_join_0 internal] load build definition from Dockerfile
+#17 ...
+
+#7 [filter_payment_format_0 internal] load build definition from Dockerfile
+#7 ...
+
+#19 [q5_date_filter_1 internal] load build definition from Dockerfile
+#19 ...
+
+#13 [currencies_cache_0 internal] load build definition from Dockerfile
+#13 ...
+
+#9 [bridge_matcher_0 internal] load build definition from Dockerfile
+#9 ...
+
+#6 [promediator_1 internal] load build definition from Dockerfile
+#6 ...
+
+#12 [q4_join_0 internal] load build definition from Dockerfile
+#12 ...
+
+#18 [q3_amount_filter_0 internal] load build definition from Dockerfile
+#18 ...
+
+#5 [transactions_saver_1 internal] load build definition from Dockerfile
+#5 DONE 11.2s
+
+#22 [client_0 internal] load metadata for docker.io/library/busybox:latest
+#22 ...
+
+#21 [client_0 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 ...
+
+#22 [transactions_saver_0 internal] load metadata for docker.io/library/busybox:latest
+#22 ...
+
+#23 [rabbitmq internal] load metadata for docker.io/library/rabbitmq:3.9.16-management-alpine
+#23 ...
+
+#21 [transactions_saver_1 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 ...
+
+#15 [usd_filter_0 internal] load build definition from Dockerfile
+#15 DONE 13.2s
+
+#12 [q4_join_0 internal] load build definition from Dockerfile
+#12 ...
+
+#9 [bridge_matcher_0 internal] load build definition from Dockerfile
+#9 transferring dockerfile:
+#9 transferring dockerfile: 597B done
+#9 ...
+
+#21 [group_2 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 DONE 12.2s
+
+#13 [currencies_cache_0 internal] load build definition from Dockerfile
+#13 ...
+
+#21 [usd_filter_1 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 ...
+
+#23 [rabbitmq internal] load metadata for docker.io/library/rabbitmq:3.9.16-management-alpine
+#23 DONE 14.3s
+
+#24 [rabbitmq internal] load .dockerignore
+#24 ...
+
+#9 [bridge_matcher_0 internal] load build definition from Dockerfile
+#9 DONE 17.9s
+
+#22 [client_0 internal] load metadata for docker.io/library/busybox:latest
+#22 DONE 16.3s
+
+#25 [client_0 internal] load .dockerignore
+#25 DONE 0.0s
+
+#14 [q2_counter_0 internal] load build definition from Dockerfile
+#14 transferring dockerfile: 401B done
+#14 ...
+
+#13 [currencies_cache_1 internal] load build definition from Dockerfile
+#13 transferring dockerfile: 468B done
+#13 DONE 18.7s
+
+#25 [q1_amount_filter_1 internal] load .dockerignore
+#25 ...
+
+#14 [q2_counter_1 internal] load build definition from Dockerfile
+#14 DONE 19.3s
+
+#21 [bridge_matcher_0 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 DONE 18.0s
+
+#4 [sum_0 internal] load build definition from Dockerfile
+#4 transferring dockerfile: 532B done
+#4 ...
+
+#22 [bridge_matcher_0 internal] load metadata for docker.io/library/busybox:latest
+#22 DONE 19.5s
+
+#4 [sum_0 internal] load build definition from Dockerfile
+#4 DONE 22.6s
+
+#25 [bridge_matcher_0 internal] load .dockerignore
+#25 transferring context: 2B done
+#25 ...
+
+#24 [rabbitmq internal] load .dockerignore
+#24 transferring context: 2B done
+#24 DONE 6.0s
+
+#22 [sum_0 internal] load metadata for docker.io/library/busybox:latest
+#22 ...
+
+#12 [q4_join_0 internal] load build definition from Dockerfile
+#12 transferring dockerfile: 559B done
+#12 DONE 23.8s
+
+#10 [counter_q5_1 internal] load build definition from Dockerfile
+#10 transferring dockerfile: 400B done
+#10 ...
+
+#21 [q2_counter_0 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 DONE 22.1s
+
+#10 [counter_q5_1 internal] load build definition from Dockerfile
+#10 DONE 24.4s
+
+#25 [q2_counter_0 internal] load .dockerignore
+#25 transferring context: 2B done
+#25 ...
+
+#26 [currencies_cache_1 internal] load metadata for docker.io/library/alpine:latest
+#26 DONE 4.8s
+
+#25 [currencies_cache_1 internal] load .dockerignore
+#25 transferring context: 2B done
+#25 DONE 6.1s
+
+#21 [counter_q5_1 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 ...
+
+#27 [date_filter_1 internal] load build context
+#27 DONE 0.0s
+
+#28 [transactions_saver_0 internal] load build context
+#28 DONE 0.0s
+
+#29 [q1_amount_filter_0 internal] load build context
+#29 DONE 0.0s
+
+#30 [group_2 internal] load build context
+#30 DONE 0.0s
+
+#31 [gateway internal] load build context
+#31 DONE 0.0s
+
+#32 [bridge_matcher_0 internal] load build context
+#32 DONE 0.0s
+
+#33 [client_0 internal] load build context
+#33 DONE 0.0s
+
+#34 [currencies_cache_1 internal] load build context
+#34 DONE 0.0s
+
+#35 [usd_filter_0 internal] load build context
+#35 DONE 0.0s
+
+#36 [q2_counter_1 internal] load build context
+#36 DONE 0.0s
+
+#37 [q2_counter_1 builder 1/9] FROM docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191
+#37 resolve docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191
+#37 ...
+
+#6 [promediator_1 internal] load build definition from Dockerfile
+#6 transferring dockerfile: 580B done
+#6 DONE 26.7s
+
+#38 [q2_counter_1 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#38 resolve docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#38 ...
+
+#19 [q5_date_filter_1 internal] load build definition from Dockerfile
+#19 transferring dockerfile: 595B done
+#19 DONE 27.7s
+
+#17 [q2_join_0 internal] load build definition from Dockerfile
+#17 transferring dockerfile: 386B done
+#17 ...
+
+#18 [q3_amount_filter_0 internal] load build definition from Dockerfile
+#18 transferring dockerfile: 610B done
+#18 DONE 28.3s
+
+#21 [q5_date_filter_0 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 ...
+
+#17 [q2_join_0 internal] load build definition from Dockerfile
+#17 DONE 28.7s
+
+#22 [q5_date_filter_0 internal] load metadata for docker.io/library/busybox:latest
+#22 DONE 25.6s
+
+#25 [sum_1 internal] load .dockerignore
+#25 transferring context: 2B done
+#25 DONE 6.1s
+
+#39 [sum_0 internal] load build context
+#39 DONE 0.0s
+
+#37 [q4_join_0 builder 1/9] FROM docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191
+#37 ...
+
+#40 [q4_join_0 internal] load build context
+#40 DONE 0.0s
+
+#41 [rabbitmq 1/2] FROM docker.io/library/rabbitmq:3.9.16-management-alpine@sha256:3126a9d84c6061b21cc17531f1d417dbab3840158a5718c5c2ed17ddbab173c2
+#41 resolve docker.io/library/rabbitmq:3.9.16-management-alpine@sha256:3126a9d84c6061b21cc17531f1d417dbab3840158a5718c5c2ed17ddbab173c2 5.2s done
+#41 DONE 5.9s
+
+#7 [filter_payment_format_0 internal] load build definition from Dockerfile
+#7 transferring dockerfile: 455B 0.1s done
+#7 ...
+
+#42 [rabbitmq 2/2] RUN apk update && apk add curl
+#42 CACHED
+
+#7 [filter_payment_format_0 internal] load build definition from Dockerfile
+#7 DONE 30.3s
+
+#38 [q4_join_0 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#38 ...
+
+#25 [q5_date_filter_1 internal] load .dockerignore
+#25 transferring context: 2B done
+#25 DONE 6.1s
+
+#21 [q5_date_filter_1 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#21 DONE 28.4s
+
+#43 [promediator_1 internal] load build context
+#43 DONE 0.0s
+
+#44 [q3_amount_filter_0 internal] load build context
+#44 DONE 0.0s
+
+#45 [q5_date_filter_1 internal] load build context
+#45 DONE 0.0s
+
+#46 [counter_q5_0 internal] load build context
+#46 DONE 0.0s
+
+#38 [counter_q5_0 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#38 ...
+
+#37 [promediator_0 builder 1/9] FROM docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191
+#37 resolve docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 5.5s done
+#37 DONE 6.0s
+
+#30 [group_1 internal] load build context
+#30 ...
+
+#38 [q5_date_filter_0 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#38 resolve docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d 5.7s done
+#38 DONE 6.4s
+
+#46 [counter_q5_1 internal] load build context
+#46 transferring context: 11.82kB 0.1s done
+#46 ...
+
+#47 [currencies_cache_0 stage-1 1/3] FROM docker.io/library/alpine:latest@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
+#47 resolve docker.io/library/alpine:latest@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 5.6s done
+#47 DONE 6.5s
+
+#36 [q2_counter_0 internal] load build context
+#36 transferring context: 14.97kB done
+#36 ...
+
+#46 [counter_q5_1 internal] load build context
+#46 DONE 1.3s
+
+#34 [currencies_cache_1 internal] load build context
+#34 transferring context: 21.96kB done
+#34 ...
+
+#36 [q2_counter_1 internal] load build context
+#36 DONE 2.0s
+
+#25 [q2_join_0 internal] load .dockerignore
+#25 transferring context: 2B done
+#25 DONE 6.1s
+
+#22 [q2_join_0 internal] load metadata for docker.io/library/busybox:latest
+#22 DONE 30.0s
+
+#29 [q1_amount_filter_1 internal] load build context
+#29 transferring context: 10.87kB done
+#29 ...
+
+#34 [currencies_cache_0 internal] load build context
+#34 DONE 2.9s
+
+#48 [rabbitmq] exporting to image
+#48 exporting layers done
+#48 exporting manifest sha256:18b283b1df91136d4e15e846534846811d560135425c1aaaa7cbcb60d34488a5 0.6s done
+#48 exporting config sha256:f850263b9b821874029985aca120e07c776d67e4dd9e7c961405d982b98eb570 0.7s done
+#48 exporting attestation manifest sha256:f031e1a7faa243f103a31e5286ca6ad1bd0a389a93f37f40afadfcbe66d4a0c9
+#48 ...
+
+#29 [q1_amount_filter_0 internal] load build context
+#29 DONE 3.8s
+
+#37 [q2_join_1 builder 1/9] FROM docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191
+#37 resolve docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 5.5s done
+#37 DONE 6.0s
+
+#38 [q2_join_1 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#38 resolve docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d 5.7s done
+#38 DONE 6.4s
+
+#48 [rabbitmq] exporting to image
+#48 exporting attestation manifest sha256:f031e1a7faa243f103a31e5286ca6ad1bd0a389a93f37f40afadfcbe66d4a0c9 2.5s done
+#48 exporting manifest list sha256:a37a2c0567ea45b13a643b68b1ee7a51720aeeca5021447a10a89ecbc5071bc5
+#48 exporting manifest list sha256:a37a2c0567ea45b13a643b68b1ee7a51720aeeca5021447a10a89ecbc5071bc5 0.9s done
+#48 naming to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest
+#48 naming to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest 0.2s done
+#48 unpacking to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest
+#48 ...
+
+#39 [sum_0 internal] load build context
+#39 transferring context: 13.44kB done
+#39 DONE 5.3s
+
+#48 [rabbitmq] exporting to image
+#48 unpacking to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest 0.2s done
+#48 DONE 6.2s
+
+#28 [transactions_saver_0 internal] load build context
+#28 transferring context: 23.20kB done
+#28 ...
+
+#40 [q4_join_0 internal] load build context
+#40 transferring context: 10.44kB done
+#40 DONE 5.6s
+
+#35 [usd_filter_1 internal] load build context

@@ -23,11 +23,11 @@ func NewMessageHandler() MessageHandler {
 
 	// A MODIFICAR CON VARIABLES DE ENTORNO - TO DO
 	eofExpectedByQuery := make(map[transaction.QueryID]int)
-	eofExpectedByQuery[transaction.Query1] = 0
-	eofExpectedByQuery[transaction.Query2] = 0
-	eofExpectedByQuery[transaction.Query3] = 0
+	eofExpectedByQuery[transaction.Query1] = 2
+	eofExpectedByQuery[transaction.Query2] = 2
+	eofExpectedByQuery[transaction.Query3] = 2
 	eofExpectedByQuery[transaction.Query4] = 1
-	eofExpectedByQuery[transaction.Query5] = 0
+	eofExpectedByQuery[transaction.Query5] = 2
 
 	eorCountByQuery := make(map[transaction.QueryID]int)
 	eorCountByQuery[transaction.Query1] = 0
