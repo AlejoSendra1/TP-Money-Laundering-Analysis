@@ -388,7 +388,7 @@ func SerializeQuery1ResultMessage(clientId int64, queryResult []transaction.LowA
 // especifico de la Query 4 dsp ver como mover de aca ------
 // ----------------------------------------------------------
 
-func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]struct{}) (*middleware.Message, error) {
+func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]int) (*middleware.Message, error) {
 	bridges := []interface{}{}
 	for key, _ := range possibleBridges {
 		bridges = append(bridges, key)
@@ -433,15 +433,15 @@ func DeserializeSuspiciousMsgData(data []interface{}) (string, []string, error) 
 	return susAccount, transactions, nil
 }
 
-func SerializesPossibleFraudDestinations(clientID int64, origin string, possibleBridge string, possibleFraudDestinations map[string]struct{}) (*middleware.Message, error) {
+func SerializesPossibleFraudDestinations(clientID int64, origin string, possibleBridge string, possibleFraudDestinations map[string]int) (*middleware.Message, error) {
 	dest := []interface{}{}
 	for key, _ := range possibleFraudDestinations {
 		dest = append(dest, key)
 	}
 	data := []interface{}{
-		origin,         // plain string at data[0]
-		possibleBridge, // plain string at data[1]
-		dest,           // slice of bridges at data[2]
+		origin,         // plain string
+		possibleBridge, // plain string
+		dest,           // slice of strings
 	}
 
 	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: PossibleFraudDestinations, Data: data})

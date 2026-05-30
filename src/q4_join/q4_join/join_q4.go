@@ -11,7 +11,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 2
+const DestinationThreshold = 5
 
 type JoinConfig struct {
 	ID                    int
@@ -29,6 +29,7 @@ type Join struct {
 	config                JoinConfig
 	sourceSinkRegisters   map[int64]map[string]map[string][]string
 	bridgeWorkersNotified map[int64][]string
+	counter               int
 }
 
 func NewJoinWorker(config JoinConfig) (*Join, error) {
@@ -54,6 +55,7 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 		config:                config,
 		sourceSinkRegisters:   make(map[int64]map[string]map[string][]string),
 		bridgeWorkersNotified: make(map[int64][]string),
+		counter:               0,
 	}, nil
 }
 
@@ -114,7 +116,8 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 		return err
 	}
 
-	slog.Info("Sending EOR message to output queue", "clientID", clientID, "messageSizeBytes", len(msg.Body))
+	slog.Info("Sending EOR message to output queue", "clientID", clientID)
+	slog.Info("total recibidos", "val", join.counter)
 	if err := join.outputQueue.Send(*msg); err != nil {
 		return err
 	}
@@ -146,6 +149,11 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 
 	// por cada destino actualizamos su listado de puentes con los sinks dados
 	for _, possibleSink := range possibleSinks {
+		join.counter++
+		if source == possibleSink {
+			continue
+		}
+
 		if join.sourceSinkRegisters[clientID][source][possibleSink] == nil {
 			join.sourceSinkRegisters[clientID][source][possibleSink] = make([]string, 0, 10)
 		}

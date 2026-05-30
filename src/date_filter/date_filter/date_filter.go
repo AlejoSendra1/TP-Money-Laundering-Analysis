@@ -31,6 +31,8 @@ type DateFilter struct {
 	eofCounter      map[int64]int
 	config          DateFilterConfig
 	mu              sync.Mutex
+	// debug
+	counter int
 }
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
@@ -163,6 +165,10 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 		if len(transactions) == 0 {
 			continue
 		}
+		if topic == dateFilter.config.OutputTopic1 {
+			dateFilter.counter += len(transactions)
+
+		}
 		err := dateFilter.sendOutput(transactions, clientID, topic)
 		if err != nil {
 			return err
@@ -207,6 +213,8 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 		}
 	}
 	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	slog.Info("Cantidad envida topic 1", "val", dateFilter.counter)
+
 	delete(dateFilter.eofCounter, clientID)
 	ack()
 }

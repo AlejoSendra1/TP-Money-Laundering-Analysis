@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/inner"
 )
@@ -46,6 +47,8 @@ type CSVWriter struct {
 	basePath     string
 	queryFiles   map[string]*os.File
 	queryWriters map[string]*csv.Writer
+	q4mutex      sync.Mutex
+	q4Written    map[[2]string]struct{}
 }
 
 func (c *CSVWriter) getCount() int64 {
@@ -60,6 +63,7 @@ func NewCSVWriter(baseFilepath string) (*CSVWriter, error) {
 		basePath:     filepath.Dir(baseFilepath),
 		queryFiles:   make(map[string]*os.File),
 		queryWriters: make(map[string]*csv.Writer),
+		q4Written:    make(map[[2]string]struct{}),
 	}, nil
 }
 
@@ -260,12 +264,24 @@ func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 		return fmt.Errorf("expected strings in data fields for q4")
 	}
 
-	if err := w.Write([]string{part0, part1}); err != nil {
-		return fmt.Errorf("writing q4 row 1: %w", err)
+	c.q4mutex.Lock()
+	pair1 := [2]string{part0, part1}
+	if _, seen := c.q4Written[pair1]; !seen {
+		if err := w.Write([]string{part0, part1}); err != nil {
+			return fmt.Errorf("writing q4 row 1: %w", err)
+		}
+		c.q4Written[pair1] = struct{}{}
 	}
-	if err := w.Write([]string{part2, part3}); err != nil {
-		return fmt.Errorf("writing q4 row 2: %w", err)
+
+	pair2 := [2]string{part2, part3}
+	if _, seen := c.q4Written[pair2]; !seen {
+		if err := w.Write([]string{part2, part3}); err != nil {
+			return fmt.Errorf("writing q4 row 2: %w", err)
+		}
+		c.q4Written[pair2] = struct{}{}
 	}
+	c.q4mutex.Unlock()
+
 	w.Flush()
 	c.counter++
 	return w.Error()

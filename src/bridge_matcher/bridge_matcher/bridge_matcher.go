@@ -13,7 +13,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 2
+const DestinationThreshold = 5
 
 type BridgeMatcherConfig struct {
 	ID                    int
@@ -36,7 +36,7 @@ type BridgeMatcher struct {
 	config          BridgeMatcherConfig
 	//structs no pueden ser keys directamente so:
 	// 1er key: cliente , 2da key: cuenta_banco, 3er key: cuentaDest_bancoDest
-	Registers            map[int64]map[string]map[string]struct{}
+	Registers            map[int64]map[string]map[string]int
 	groupWorkersNotified map[int64][]string
 	bridgesReadyForEOR   map[int64][]int // tracks which peers sent ReadyForEOF
 	hasher               hash.Hash32
@@ -72,7 +72,7 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		inputQueue:           inputQueue,
 		outputExchange:       *outputExchange,
 		controlExchange:      controlExchange,
-		Registers:            make(map[int64]map[string]map[string]struct{}),
+		Registers:            make(map[int64]map[string]map[string]int),
 		groupWorkersNotified: make(map[int64][]string),
 		config:               config,
 		bridgesReadyForEOR:   make(map[int64][]int),
@@ -167,7 +167,7 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, sen
 
 func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
 	if bridgeMatcher.Registers[clientID] == nil {
-		bridgeMatcher.Registers[clientID] = make(map[string]map[string]struct{})
+		bridgeMatcher.Registers[clientID] = make(map[string]map[string]int)
 	}
 	clientRegisters := bridgeMatcher.Registers[clientID]
 
@@ -175,19 +175,14 @@ func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64
 		origin := makeKey(transaction.FromAccount, transaction.FromBank)
 		destiny := makeKey(transaction.ToAccount, transaction.ToBank)
 
-		if origin == destiny {
-			slog.Info("Se cumplen los repes", "origen", origin, "destino", destiny)
-			continue
-		}
-
 		// Inicializar mapas si no existen
 		if clientRegisters[origin] == nil {
-			clientRegisters[origin] = make(map[string]struct{})
+			clientRegisters[origin] = make(map[string]int)
 		}
 
 		// Agregar cuenta destino al set
 		//slog.Info("transaccion a guardar", "origen", origin, "destiny", destiny)
-		clientRegisters[origin][destiny] = struct{}{}
+		clientRegisters[origin][destiny]++
 	}
 
 	return nil
@@ -211,7 +206,12 @@ func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int6
 		return nil
 	}
 
+	lastPossibleBridge := ""
 	for _, possibleBridge := range possibleBridges {
+		if lastPossibleBridge == possibleBridge {
+			continue
+		}
+		lastPossibleBridge = possibleBridge
 		// si no hay registros de ese cliente, corto, no tengo nada para mandar
 		// si NO hay registros de ese puente salto
 		if bridgeMatcher.Registers[clientID][possibleBridge] == nil {
@@ -260,7 +260,7 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 }
 
 // Notifica a todos los pares/copias, y al join correspondiente, sobre una cuenta sospechosa
-func (bridgeMatcher *BridgeMatcher) notifAll(clientID int64, susAccount string, possibleBridges map[string]struct{}) error {
+func (bridgeMatcher *BridgeMatcher) notifAll(clientID int64, susAccount string, possibleBridges map[string]int) error {
 	msg, err := inner.SerializeSuspiciousAccountInfo(clientID, susAccount, possibleBridges)
 	if err != nil {
 		slog.Info("While serializing SuspiciousAccountInfo message", "err", err, "clientID", clientID)
@@ -278,13 +278,17 @@ func (bm *BridgeMatcher) sendSuspiciousAccounts(clientID int64) error {
 		return nil
 	}
 	for origin, destinos := range register {
-		if len(destinos) >= DestinationThreshold {
+		if assertThresholdCondition(destinos) {
 			if err := bm.notifAll(clientID, origin, destinos); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func assertThresholdCondition(destinos map[string]int) bool {
+	return len(destinos) >= DestinationThreshold
 }
 
 func (bridgeMatcher *BridgeMatcher) updateClientEORCondition(clientID int64, worker string) {
