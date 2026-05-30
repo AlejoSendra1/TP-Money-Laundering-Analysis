@@ -200,28 +200,25 @@ func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int6
 		return nil
 	}
 
-	lastPossibleBridge := ""
+	possibleBridgesAndSinks := make(map[string]map[string]int)
 	for _, possibleBridge := range possibleBridges {
-		if lastPossibleBridge == possibleBridge {
-			continue
-		}
-		lastPossibleBridge = possibleBridge
-		// si no hay registros de ese cliente, corto, no tengo nada para mandar
+
 		// si NO hay registros de ese puente salto
 		if bridgeMatcher.Registers[clientID][possibleBridge] == nil {
 			continue
 		}
-		// en caso contrario mando los que tenga, ruteando por la cuenta que origino la alerta
-		possibleBridgeDestinations := bridgeMatcher.Registers[clientID][possibleBridge]
-
-		msg, err := inner.SerializesPossibleFraudDestinations(clientID, origin, possibleBridge, possibleBridgeDestinations)
-		if err != nil {
-			slog.Info("While serializing PossibleFraudDestinations message", "err", err, "clientID", clientID)
-			return err
-		}
-		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
+		// sino
+		// agrego el puente al listado
+		// y agrego las cuentas a las que le haya enviado al listado
+		possibleBridgesAndSinks[possibleBridge] = bridgeMatcher.Registers[clientID][possibleBridge]
 	}
 
+	msg, err := inner.SerializesPossibleFraudDestinations(clientID, origin, possibleBridgesAndSinks)
+	if err != nil {
+		slog.Info("While serializing PossibleFraudDestinations message", "err", err, "clientID", clientID)
+		return err
+	}
+	bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
 	return nil
 }
 

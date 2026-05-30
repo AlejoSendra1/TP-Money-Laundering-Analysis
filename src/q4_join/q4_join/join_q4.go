@@ -125,14 +125,16 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 }
 
 func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []interface{}) error {
-	source, bridge, possibleSinks, err := inner.DeserializePossibleFraudDestinations(data)
+	source, possibleBridgesAndSinks, err := inner.DeserializePossibleFraudDestinations(data)
 	if err != nil {
 		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 
 	// Actualizar y Verificar si se alcanzó el umbral
-	join.updateOriginAccountCondition(clientID, source, bridge, possibleSinks)
+	for possibleBridge, sinks := range possibleBridgesAndSinks {
+		join.updateOriginAccountCondition(clientID, source, possibleBridge, sinks)
+	}
 	return nil
 }
 
