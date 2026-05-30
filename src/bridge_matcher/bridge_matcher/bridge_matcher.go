@@ -13,7 +13,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 5
+const DestinationThreshold = 2
 
 type BridgeMatcherConfig struct {
 	ID                    int
@@ -40,6 +40,7 @@ type BridgeMatcher struct {
 	groupWorkersNotified map[int64][]string
 	bridgesReadyForEOR   map[int64][]int // tracks which peers sent ReadyForEOF
 	hasher               hash.Hash32
+	counter              int
 }
 
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
@@ -77,6 +78,7 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		config:               config,
 		bridgesReadyForEOR:   make(map[int64][]int),
 		hasher:               fnv.New32a(),
+		counter:              0,
 	}, nil
 }
 
@@ -182,7 +184,7 @@ func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64
 
 		// Agregar cuenta destino al set
 		//slog.Info("transaccion a guardar", "origen", origin, "destiny", destiny)
-		clientRegisters[origin][destiny]++
+		clientRegisters[origin][destiny] = 1
 	}
 
 	return nil
@@ -226,6 +228,8 @@ func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int6
 			return err
 		}
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
+		bridgeMatcher.counter += len(possibleBridgeDestinations)
+		bridgeMatcher.counter++
 	}
 
 	return nil
@@ -255,6 +259,7 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	}
 
 	// cleanup after all EOFs are sent
+	slog.Info("Equivalencias a registros enviadas", "cantidad", bridgeMatcher.counter)
 	bridgeMatcher.cleanupClient(clientID)
 	return nil
 }
@@ -278,17 +283,13 @@ func (bm *BridgeMatcher) sendSuspiciousAccounts(clientID int64) error {
 		return nil
 	}
 	for origin, destinos := range register {
-		if assertThresholdCondition(destinos) {
+		if len(destinos) >= DestinationThreshold {
 			if err := bm.notifAll(clientID, origin, destinos); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
-}
-
-func assertThresholdCondition(destinos map[string]int) bool {
-	return len(destinos) >= DestinationThreshold
 }
 
 func (bridgeMatcher *BridgeMatcher) updateClientEORCondition(clientID int64, worker string) {

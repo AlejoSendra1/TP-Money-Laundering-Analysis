@@ -36,6 +36,7 @@ type Group struct {
 	eofCounter          map[int64]int
 	controlMutex        sync.Mutex
 	precalculatedTopics []string
+	counter             int
 }
 
 func NewGroupWorker(config GroupConfig) (*Group, error) {
@@ -76,6 +77,7 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		eofCounter:          make(map[int64]int),
 		controlMutex:        sync.Mutex{},
 		precalculatedTopics: precalculatedTopics,
+		counter:             0,
 	}, nil
 }
 
@@ -196,6 +198,7 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 		if err := groupWorker.outputExchange.SendToTopic(*msg, topic); err != nil {
 			return err
 		}
+		slog.Info("Cantidad de mensajes enviados al bridge", "val", groupWorker.counter)
 	}
 
 	return nil
@@ -207,12 +210,17 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 		groupWorker.eofCounter[clientID] = 0
 	}
 	groupWorker.controlMutex.Unlock()
+
 	// transacciones para cada worker de la proxima fase
 	//slog.Info("Received Tansaction batch from ", "clientID", clientID)
 	workerByBatches := make(map[int][]transaction.Transaction)
 
 	hash := fnv.New32a()
 	for _, transaction := range transactionRecords {
+		if transaction.FromAccount == transaction.ToAccount && transaction.FromBank == transaction.ToBank {
+			continue
+		}
+
 		hash.Reset()
 		hash.Write([]byte(transaction.FromAccount))
 		workerIndex := int(hash.Sum32()) % groupWorker.config.NextFaseWorkersAmount
@@ -237,6 +245,7 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 
 func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []transaction.Transaction, topic string) error {
 	//slog.Info("Sending Tansactions from ", "clientID", clientID, " to topic: ", topic)
+	groupWorker.counter += len(transactionRecords)
 	message, err := inner.SerializeMessage(clientID, transactionRecords)
 	if err != nil {
 		slog.Info("While serializing data message", "err", err, "clientID", clientID)
