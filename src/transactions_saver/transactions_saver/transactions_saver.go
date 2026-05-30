@@ -1,12 +1,9 @@
 package transactions_saver
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/inner/control"
@@ -37,24 +34,9 @@ type TransactionsSaver struct {
 	notificationExchange middleware.Middleware
 	controlExchange      middleware.Middleware
 	config               TransactionsSaverConfig
-	clientStates         map[int64]*ClientState
+	clientStates         map[int64]*ClientState // Ahora mapea al nuevo tipo State
 	eofCounter           map[int64]int
-	mu                   sync.Mutex // protege clientStates
-}
-
-type ClientState struct {
-	mu               sync.Mutex // protege estado del cliente y el flujo a seguir
-	notificationEOFs int
-	receivedFlowEOF  bool
-	qtyTx            int
-	flushed          bool
-	flushing         bool
-	storage          *ClientStorage
-}
-
-type ClientStorage struct {
-	mu       sync.Mutex // protege archivo
-	filePath string
+	mu                   sync.Mutex // Protege clientStates y eofCounter
 }
 
 func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, error) {
@@ -119,12 +101,11 @@ func (transactionsSaver *TransactionsSaver) Run() {
 func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middleware.Message, ack, nack func()) {
 	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
+		slog.Error("While deserializing message", "err", err, "middlewareMsg", middlewareMsg)
 		nack()
 		return
 	}
 
-	//slog.Info("Mensaje recibido", "data", msg.Data)
 	switch msg.MsgType {
 	case inner.EndOfRecords:
 		if err := transactionsSaver.handleEndOfRecordMessage(msg.ClientID); err != nil {
@@ -173,45 +154,70 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessage(msg *middl
 		return
 	}
 	if !isEof {
+		slog.Info("Only received average notification message, not average data", "clientID", clientID)
 		ack()
 		return
 	}
 
-	transactionsSaver.mu.Lock()
+	slog.Info("Received averages notification message", "clientID", clientID)
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
-	transactionsSaver.mu.Unlock()
-
-	clientState.mu.Lock()
-	clientState.notificationEOFs++
-	if clientState.notificationEOFs != transactionsSaver.config.Q3AmountFilterAmount {
-		clientState.mu.Unlock()
+	if !clientState.ShouldStartFlush(transactionsSaver.config.Q3AmountFilterAmount) {
+		slog.Info("Dont flush disk because still waiting for more averages notification",
+			"clientID", clientID,
+			"receivedNotifications", clientState.notificationEOFs,
+			"expectedNotifications", transactionsSaver.config.Q3AmountFilterAmount,
+		)
 		ack()
 		return
 	}
-	clientState.flushing = true
-	storage := clientState.storage
-	clientState.mu.Unlock()
 
-	if err := transactionsSaver.flushClientTransactions(clientID, storage); err != nil {
+	if err = clientState.Storage.FlushTransactions(clientID, transactionsSaver.sendToOutput); err != nil {
 		slog.Error("While flushing transactions for client", "err", err, "clientID", clientID)
 		nack()
 		return
 	}
+	if clientState.MarkFlushAndCheckFinish() {
+		if err = transactionsSaver.finishClient(clientID); err != nil {
+			nack() // Manejar bien este caso...
+			return
+		}
+	} else {
+		slog.Info("Flushed disk, but cannot send client EOF because it hasnt been received yet")
+	}
+	ack()
+}
 
-	clientState.mu.Lock()
-	clientState.flushing = false
-	clientState.flushed = true
-	slog.Info("Received final EOF from notification, transactions flushed, try send EOF to output", "clientID", clientID)
-	if err := transactionsSaver.tryFinalize(clientID, clientState); err != nil {
-		slog.Error("While finalizing client after notification EOF", "err", err, "clientID", clientID)
-		clientState.mu.Unlock()
+func (transactionsSaver *TransactionsSaver) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	controlMessage, err := control.DeserializeControlMessage(msg)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
-	shouldCleanup := clientState.receivedFlowEOF && clientState.flushed
-	clientState.mu.Unlock()
-	if shouldCleanup {
-		transactionsSaver.cleanupClientState(clientID)
+	clientID := controlMessage.ClientID
+	slog.Info("Received EOF message", "clientID", clientID)
+
+	transactionsSaver.mu.Lock()
+	transactionsSaver.eofCounter[clientID]++
+	if transactionsSaver.eofCounter[clientID] != transactionsSaver.config.DateFilterAmount {
+		slog.Info("Dont send EOF because still waiting for more EOFs",
+			"clientID", clientID,
+			"receivedEOFCount", transactionsSaver.eofCounter[clientID],
+			"expectedEOFCount", transactionsSaver.config.DateFilterAmount)
+		transactionsSaver.mu.Unlock()
+		ack()
+		return
+	}
+	transactionsSaver.mu.Unlock()
+
+	clientState := transactionsSaver.getOrCreateClientState(clientID)
+	if clientState.MarkEOFAndCheckFinish() {
+		if err = transactionsSaver.finishClient(clientID); err != nil {
+			nack() // Manejar bien este caso...
+			return
+		}
+	} else {
+		slog.Info("Received client EOF, but cannot send because disk has not been flushed yet")
 	}
 	ack()
 }
@@ -227,149 +233,18 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 		})
 	}
 
-	transactionsSaver.mu.Lock()
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
-	transactionsSaver.mu.Unlock()
-
-	clientState.mu.Lock()
-	clientState.qtyTx += len(transactionRecords)
-	if clientState.flushed || clientState.flushing {
-		clientState.mu.Unlock()
-		return transactionsSaver.sendToOutput(clientID, transactions)
+	if clientState.ShouldBuffData(len(transactionRecords)) {
+		return clientState.Storage.StoreTransactions(transactions)
 	}
-	storage := clientState.storage
-	err := transactionsSaver.storeTransactions(transactions, storage)
-	clientState.mu.Unlock()
-	return err
+	return transactionsSaver.sendToOutput(clientID, transactions)
 }
 
-func (transactionsSaver *TransactionsSaver) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
-	controlMessage, err := control.DeserializeControlMessage(msg)
-	if err != nil {
-		slog.Error("While deserializing control message", "err", err)
-		nack()
-		return
-	}
-	slog.Info("Arrived EOF from control message", "clientID", controlMessage.ClientID)
-	transactionsSaver.mu.Lock()
-	transactionsSaver.eofCounter[controlMessage.ClientID] += 1
-	if transactionsSaver.eofCounter[controlMessage.ClientID] != transactionsSaver.config.DateFilterAmount {
-		slog.Info("Received EOF from other instance, waiting for more...", "clientID", controlMessage.ClientID)
-		transactionsSaver.mu.Unlock()
-		ack()
-		return
-	}
-	state := transactionsSaver.getOrCreateClientState(controlMessage.ClientID)
-	state.mu.Lock()
-	state.receivedFlowEOF = true
-	slog.Info("Received EOF from instance, try send EOF to output", "clientID", controlMessage.ClientID)
-	shouldCleanup := state.receivedFlowEOF && state.flushed
-	if err = transactionsSaver.tryFinalize(controlMessage.ClientID, state); err != nil {
-		state.mu.Unlock()
-		transactionsSaver.mu.Unlock()
-		nack()
-		return
-	}
-	state.mu.Unlock()
-	transactionsSaver.mu.Unlock()
-	if shouldCleanup {
-		transactionsSaver.cleanupClientState(controlMessage.ClientID)
-	}
-	ack()
-}
-
-func (transactionsSaver *TransactionsSaver) storeTransactions(transactions []transaction.ThresholdFilteredTransfer, storage *ClientStorage) error {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-
-	file, err := os.OpenFile(storage.filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0664)
-	if err != nil {
-		return fmt.Errorf("opening transaction file on disk: %w", err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	jsonData, err := json.Marshal(transactions)
-	if err != nil {
-		return fmt.Errorf("marshaling transaction batch to json: %w", err)
-	}
-	if _, err := writer.Write(append(jsonData, '\n')); err != nil {
-		return fmt.Errorf("writing transaction batch to disk: %w", err)
-	}
-
-	if err := writer.Flush(); err != nil {
-		return fmt.Errorf("flushing transaction batch buffer: %w", err)
-	}
-	return nil
-}
-
-func (transactionsSaver *TransactionsSaver) flushClientTransactions(clientID int64, storage *ClientStorage) error {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-
-	if storage.filePath == "" {
-		slog.Info("No transactions to flush from disk", "clientID", clientID)
-		return nil
-	}
-
-	slog.Info("Flushing transactions from disk to output", "clientID", clientID, "filePath", storage.filePath)
-	if err := transactionsSaver.readAndSendFromFile(clientID, storage.filePath); err != nil {
-		return err
-	}
-
-	if err := os.Remove(storage.filePath); err != nil && !os.IsNotExist(err) {
-		slog.Error("Failed to delete temporary file from disk", "path", storage.filePath, "err", err)
-	} else if !os.IsNotExist(err) {
-		slog.Debug("Temporary client file deleted from disk successfully", "clientID", clientID)
-	}
-	return nil
-}
-
-func (transactionsSaver *TransactionsSaver) readAndSendFromFile(clientID int64, filePath string) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("opening file for flushing: %w", err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	// Ojo si el batch es muy grande, scanner puede fallar en ese caso.
-
-	for scanner.Scan() {
-		var txs []transaction.ThresholdFilteredTransfer
-		if err := json.Unmarshal(scanner.Bytes(), &txs); err != nil {
-			return fmt.Errorf("unmarshaling transaction batch from disk stream: %w", err)
-		}
-		if len(txs) == 0 {
-			continue
-		}
-		if err := transactionsSaver.sendToOutput(clientID, txs); err != nil {
-			return err
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("reading transactions file stream: %w", err)
-	}
-	return nil
-}
-
-func (transactionsSaver *TransactionsSaver) tryFinalize(clientID int64, state *ClientState) error {
-	if !state.receivedFlowEOF || !state.flushed {
-		slog.Info("Too early to send EOF", "clientID", clientID, "receivedFlowEOF", state.receivedFlowEOF, "flushed", state.flushed)
-		return nil
-	}
+func (transactionsSaver *TransactionsSaver) sentEOF(clientID int64) error {
 	if err := transactionsSaver.sendToOutput(clientID, []transaction.ThresholdFilteredTransfer{}); err != nil {
 		return err
 	}
 	slog.Info("Client processing completed - EOF sent", "clientID", clientID)
-	slog.Info("Size transactions sent", "qty", state.qtyTx)
 	return nil
 }
 
@@ -387,44 +262,41 @@ func (transactionsSaver *TransactionsSaver) sendToOutput(clientID int64, txs []t
 }
 
 func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int64) *ClientState {
-	if state, exists := transactionsSaver.clientStates[clientID]; exists {
-		return state
-	}
-	transactionsSaver.eofCounter[clientID] = 0
-	filePath := filepath.Join(transactionsSaver.config.StorageDir,
-		fmt.Sprintf("client_%d_instance_%d.jsonl", clientID, transactionsSaver.config.Id))
-	state := &ClientState{
-		mu:               sync.Mutex{},
-		notificationEOFs: 0,
-		receivedFlowEOF:  false,
-		qtyTx:            0,
-		flushed:          false,
-		flushing:         false,
-		storage: &ClientStorage{
-			filePath: filePath,
-		},
-	}
-	transactionsSaver.clientStates[clientID] = state
-	return state
-}
-
-func (transactionsSaver *TransactionsSaver) cleanupClientState(clientID int64) {
 	transactionsSaver.mu.Lock()
 	defer transactionsSaver.mu.Unlock()
 
-	state, exists := transactionsSaver.clientStates[clientID]
-	if !exists {
-		return
+	if state, exists := transactionsSaver.clientStates[clientID]; exists {
+		return state
 	}
+	slog.Info("Client new arrived", "clientID", clientID)
+	transactionsSaver.eofCounter[clientID] = 0
+	fileName := fmt.Sprintf("client_%d_instance_%d.jsonl", clientID, transactionsSaver.config.Id)
+	clientState := NewClientState(transactionsSaver.config.StorageDir, fileName)
+	transactionsSaver.clientStates[clientID] = clientState
+	return clientState
+}
 
-	if state.storage.filePath != "" {
-		if err := os.Remove(state.storage.filePath); err != nil && !os.IsNotExist(err) {
-			slog.Error("Failed to delete temporary file from disk", "path", state.storage.filePath, "err", err)
-		} else if !os.IsNotExist(err) {
-			slog.Debug("Temporary client file deleted from disk successfully", "clientID", clientID)
-		}
+func (transactionsSaver *TransactionsSaver) cleanupClientState(clientID int64) error {
+	transactionsSaver.mu.Lock()
+	defer transactionsSaver.mu.Unlock()
+
+	clientState, exists := transactionsSaver.clientStates[clientID]
+	if !exists {
+		return nil
+	}
+	err := clientState.Storage.RemoveFile()
+	if err != nil {
+		return err
 	}
 	delete(transactionsSaver.clientStates, clientID)
 	delete(transactionsSaver.eofCounter, clientID)
-	slog.Info("Cleanup client", "clientID", clientID)
+	slog.Info("Cleanup client completed", "clientID", clientID)
+	return nil
+}
+
+func (transactionsSaver *TransactionsSaver) finishClient(clientID int64) error {
+	if err := transactionsSaver.sentEOF(clientID); err != nil {
+		return err
+	}
+	return transactionsSaver.cleanupClientState(clientID)
 }

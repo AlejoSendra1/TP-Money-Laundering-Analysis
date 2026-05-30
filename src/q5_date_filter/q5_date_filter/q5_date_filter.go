@@ -204,7 +204,7 @@ func (f *Q5DateFilter) handleDataMessage(records []transaction.Transaction, clie
 	var filtered []transaction.Transaction
 	for _, tx := range records {
 		date := tx.Timestamp.UTC().Format("2006-01-02")
-		if date >= DateMinEarlyPeriod && date <= DateMaxEarlyPeriod {
+		if date >= DateMinEarlyPeriod && date < DateMaxEarlyPeriod {
 			filtered = append(filtered, tx)
 		}
 	}
