@@ -388,6 +388,58 @@ func SerializeQuery1ResultMessage(clientId int64, queryResult []transaction.LowA
 // especifico de la Query 4 dsp ver como mover de aca ------
 // ----------------------------------------------------------
 
+func SerializeAccountsMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
+	data := []interface{}{}
+
+	for _, transaction := range transactionBatch {
+		datum := []interface{}{
+			transaction.FromBank,
+			transaction.ToBank,
+			transaction.FromAccount,
+			transaction.ToAccount,
+		}
+		data = append(data, datum)
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: TransactionBatch, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializeAccountsMessage(data []interface{}) ([]transaction.TransactionAccounts, error) { // fiaca implementar un type solo para la q4
+	transactions := make([]transaction.TransactionAccounts, 0, len(data))
+
+	for _, datum := range data {
+		fields, ok := datum.([]interface{})
+		if !ok {
+			return transactions, fmt.Errorf("In record: expected array, got %T", datum)
+		}
+
+		fromBank, ok2 := fields[0].(float64) // JSON numbers decode as float64
+		toBank, ok3 := fields[1].(float64)
+		fromAccount, ok4 := fields[2].(string)
+		toAccount, ok5 := fields[3].(string)
+
+		if !ok2 || !ok3 || !ok4 || !ok5 {
+			return transactions, fmt.Errorf("Parsing record: type mismatch in one or more fields: %T", datum)
+		}
+
+		transactions = append(transactions,
+			transaction.TransactionAccounts{
+				FromBank:    int(fromBank),
+				ToBank:      int(toBank),
+				FromAccount: fromAccount,
+				ToAccount:   toAccount,
+			})
+	}
+
+	return transactions, nil
+}
+
 func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]int) (*middleware.Message, error) {
 	bridges := []interface{}{}
 	for key, _ := range possibleBridges {

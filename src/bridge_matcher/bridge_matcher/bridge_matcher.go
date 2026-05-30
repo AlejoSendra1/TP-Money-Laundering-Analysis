@@ -9,7 +9,6 @@ import (
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
-	"tp_distribuidos/common/transaction"
 )
 
 const FANOUT = ""
@@ -110,17 +109,7 @@ func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Mess
 		}
 
 	case inner.TransactionBatch:
-		//obtenemos las transacciones
-		//slog.Info("Received msg", "type", "tranasction batch")
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-
-		// hacemos lo q haya q hacer con las transa
-		if err := bridgeMatcher.handleTransactionBatchMessage(msg.ClientID, transactions); err != nil {
+		if err := bridgeMatcher.handleTransactionBatchMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
@@ -165,15 +154,20 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, sen
 	return nil
 }
 
-func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
+func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, data []interface{}) error {
+	records, err := inner.DeserializeAccountsMessage(data)
+	if err != nil {
+		return err
+	}
+
 	if bridgeMatcher.Registers[clientID] == nil {
 		bridgeMatcher.Registers[clientID] = make(map[string]map[string]int)
 	}
 	clientRegisters := bridgeMatcher.Registers[clientID]
 
-	for _, transaction := range transactionRecords {
-		origin := makeKey(transaction.FromAccount, transaction.FromBank)
-		destiny := makeKey(transaction.ToAccount, transaction.ToBank)
+	for _, record := range records {
+		origin := makeKey(record.FromAccount, record.FromBank)
+		destiny := makeKey(record.ToAccount, record.ToBank)
 
 		// Inicializar mapas si no existen
 		if clientRegisters[origin] == nil {
