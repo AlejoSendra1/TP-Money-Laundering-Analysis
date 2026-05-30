@@ -130,11 +130,11 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 			return
 		}
 		ack()
+		return
 	default:
-		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
-
+		slog.Info("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
+		nack()
 	}
-
 }
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
@@ -155,7 +155,6 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 	if _, ok := dateFilter.eofCounter[clientID]; !ok {
 		slog.Info("New client arrived", "clientID", clientID)
 		dateFilter.eofCounter[clientID] = 0
-		dateFilter.qtyTx[clientID] = make(map[string]int)
 		dateFilter.qtyTx[clientID] = make(map[string]int)
 		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic1] = 0
 		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic2] = 0
@@ -219,6 +218,7 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 		err := dateFilter.outputExchanges[topic].Send(*msgEOF)
 		if err != nil {
 			slog.Info("While sending to topics", "topic", topic)
+			nack()
 			return
 		}
 		delete(dateFilter.qtyTx[clientID], topic)
