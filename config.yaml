@@ -1,0 +1,41 @@
+# config.yaml
+
+# Cantidad de instancias del flujo del sistema
+scale:
+  # Flujo en comun
+  usd_filter: 2
+  date_filter: 2
+  
+  # Query 1
+  q1_amount_filter: 2
+  
+  # Query 2
+  counter_q2: 2
+  join_q2: 2
+  
+  # Query 3
+  sum: 2
+  promediator: 2
+  transactions_saver: 2
+  q3_amount_filter: 2
+  
+  # Query 4
+  group: 3  
+  bridge_matcher: 2
+  q4_join: 1 # Solo puede tener 1 replica? (dejar a 1)
+  
+  # Query 5
+  q5_date_filter: 2
+  filter_payment_format: 2
+  counter_q5: 2
+  currencies_cache: 2
+
+# Lista de clientes con sus configuraciones específicas
+clients:
+  # client_0
+  - batch_size: 200
+    input_file: "/datasets/LI-Small_Trans.csv"
+  # client_1
+  # ...
+  # client_N
+  # ...

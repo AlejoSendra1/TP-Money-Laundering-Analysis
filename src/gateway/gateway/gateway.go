@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+	"tp_distribuidos/common/transaction"
 
 	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/common/messageprotocol/external"
@@ -19,13 +20,18 @@ import (
 )
 
 type GatewayConfig struct {
-	InputQueueName     string
-	OutputExchangeName string
-	OutputTopic        string
-	ServerHost         string
-	ServerPort         string
-	MomHost            string
-	MomPort            int
+	InputQueueName      string
+	OutputExchangeName  string
+	OutputTopic         string
+	ServerHost          string
+	ServerPort          string
+	MomHost             string
+	MomPort             int
+	EofExpectedByQuery1 int
+	EofExpectedByQuery2 int
+	EofExpectedByQuery3 int
+	EofExpectedByQuery4 int
+	EofExpectedByQuery5 int
 }
 
 type Gateway struct {
@@ -35,6 +41,7 @@ type Gateway struct {
 	outputExchange middleware.Middleware
 	listener       net.Listener
 	running        atomic.Bool
+	config         GatewayConfig
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -58,7 +65,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
-	gateway := &Gateway{batchCounter: 0, outputExchange: outputExchange, inputQueue: inputQueue, listener: listener}
+	gateway := &Gateway{batchCounter: 0, outputExchange: outputExchange, inputQueue: inputQueue, listener: listener, config: config}
 	gateway.running.Store(true)
 	return gateway, nil
 }
@@ -72,7 +79,13 @@ func (gateway *Gateway) Run() error {
 	go gateway.handleSignals()
 
 	slog.Info("Accepting connections...")
-
+	eorMap := map[transaction.QueryID]int{
+		transaction.Query1: gateway.config.EofExpectedByQuery1,
+		transaction.Query2: gateway.config.EofExpectedByQuery2,
+		transaction.Query3: gateway.config.EofExpectedByQuery3,
+		transaction.Query4: gateway.config.EofExpectedByQuery4,
+		transaction.Query5: gateway.config.EofExpectedByQuery5,
+	}
 	for {
 		conn, err := gateway.listener.Accept()
 		if err != nil {
@@ -84,7 +97,7 @@ func (gateway *Gateway) Run() error {
 
 		slog.Info("Client connected...")
 
-		handler := messagehandler.NewMessageHandler()
+		handler := messagehandler.NewMessageHandler(eorMap)
 		client := clientregistry.ClientState{Conn: conn, Handler: &handler}
 		gateway.registry.Add(client)
 

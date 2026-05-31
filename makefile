@@ -32,7 +32,6 @@ switch:
 	@echo "3) Un cliente, una sola réplica de cada elemento de la query 3"
 	@echo "4) Un cliente, una sola réplica de cada elemento de la query 4"
 	@echo "5) Un cliente, una sola réplica de cada elemento de la query 5"
-	@echo "full) Todas las queries juntas"
-	@read -p "Selecciona uno [1-5/full]: " option;	\
+	@read -p "Selecciona uno [1-5]: " option;	\
 	cp ./scenarios/$${option}.yaml docker-compose.yaml
 .PHONY: switch

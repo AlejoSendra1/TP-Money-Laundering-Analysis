@@ -9,6 +9,8 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
+const QUERIES_AMOUNT = 5
+
 type MessageHandler struct {
 	UserId             int64
 	eorCountByQuery    map[transaction.QueryID]int // EOFs recibidos por query
@@ -17,17 +19,9 @@ type MessageHandler struct {
 
 type accumulatorFunc func(current, incoming any) any
 
-func NewMessageHandler() MessageHandler {
+func NewMessageHandler(eofExpectedByQuery map[transaction.QueryID]int) MessageHandler {
 	n := rand.Int64()
 	slog.Info("UserId created", "value", n)
-
-	// A MODIFICAR CON VARIABLES DE ENTORNO - TO DO
-	eofExpectedByQuery := make(map[transaction.QueryID]int)
-	eofExpectedByQuery[transaction.Query1] = 0
-	eofExpectedByQuery[transaction.Query2] = 0
-	eofExpectedByQuery[transaction.Query3] = 0
-	eofExpectedByQuery[transaction.Query4] = 3
-	eofExpectedByQuery[transaction.Query5] = 0
 
 	eorCountByQuery := make(map[transaction.QueryID]int)
 	eorCountByQuery[transaction.Query1] = 0
@@ -57,14 +51,23 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 		return false, err
 	}
 
-	/*
-		if messageHandler.eorCountByQuery[queryID] == messageHandler.eorExpectedByQuery[queryID] {
-			slog.Info("esta situacion no deberia darse, hay alguna entidad de mas no declarada")
-			return false, nil
-		}
-	*/
-	messageHandler.eorCountByQuery[queryID] += 1
+	currentCount := messageHandler.eorCountByQuery[queryID]
+	expectedCount := messageHandler.eorExpectedByQuery[queryID]
 
+	if currentCount >= expectedCount {
+		slog.Info("Unexpected EOR received: expected count already reached",
+			"query", queryID-3,
+			"current_count", currentCount,
+			"expected_count", expectedCount,
+		)
+		return false, nil
+	}
+	messageHandler.eorCountByQuery[queryID]++
+	slog.Info("EOR received for query",
+		"query", queryID-3,
+		"current_count", messageHandler.eorCountByQuery[queryID],
+		"expected_count", expectedCount,
+	)
 	if messageHandler.assertClientEnd() {
 		return true, nil
 	}
@@ -73,12 +76,32 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 }
 
 func (messageHandler *MessageHandler) assertClientEnd() bool {
-	for key, val := range messageHandler.eorCountByQuery {
-		if messageHandler.eorExpectedByQuery[key] > val {
-			return false
+	completedQueries := 0
+	for queryID, expected := range messageHandler.eorExpectedByQuery {
+		current := messageHandler.eorCountByQuery[queryID]
+		if current == expected {
+			slog.Info("All EORs received for specific query", "query", queryID-3)
+			completedQueries++
+		} else {
+			slog.Info("Query still awaiting EORs",
+				"query", queryID-3,
+				"current_count", current,
+				"expected_count", expected,
+			)
 		}
 	}
-	return true
+	if completedQueries == QUERIES_AMOUNT {
+		slog.Info("All queries successfully processed. Terminating client session",
+			"user_id", messageHandler.UserId,
+			"completed_queries", completedQueries,
+		)
+		return true
+	}
+	slog.Info("Client processing in progress: awaiting remaining queries",
+		"completed_queries", completedQueries,
+		"total_queries_expected", QUERIES_AMOUNT,
+	)
+	return false
 }
 
 func getQueryID(data []interface{}) (transaction.QueryID, error) {
