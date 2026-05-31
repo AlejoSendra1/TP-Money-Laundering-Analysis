@@ -56,7 +56,7 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 
 	if currentCount >= expectedCount {
 		slog.Info("Unexpected EOR received: expected count already reached",
-			"query_id", queryID-3,
+			"query", queryID-3,
 			"current_count", currentCount,
 			"expected_count", expectedCount,
 		)
@@ -64,7 +64,7 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 	}
 	messageHandler.eorCountByQuery[queryID]++
 	slog.Info("EOR received for query",
-		"query_id", queryID-3,
+		"query", queryID-3,
 		"current_count", messageHandler.eorCountByQuery[queryID],
 		"expected_count", expectedCount,
 	)
@@ -80,11 +80,11 @@ func (messageHandler *MessageHandler) assertClientEnd() bool {
 	for queryID, expected := range messageHandler.eorExpectedByQuery {
 		current := messageHandler.eorCountByQuery[queryID]
 		if current == expected {
-			slog.Info("All EORs received for specific query", "query_id", queryID-3)
+			slog.Info("All EORs received for specific query", "query", queryID-3)
 			completedQueries++
 		} else {
 			slog.Info("Query still awaiting EORs",
-				"query_id", queryID-3,
+				"query", queryID-3,
 				"current_count", current,
 				"expected_count", expected,
 			)
