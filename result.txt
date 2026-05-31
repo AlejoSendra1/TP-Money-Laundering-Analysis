@@ -1,0 +1,1559 @@
+mkdir -p output
+COMPOSE_HTTP_TIMEOUT=300 docker compose -f docker-compose.yaml up --build --remove-orphans --detach
+#1 [internal] load local bake definitions
+#1 reading from stdin 9.36kB done
+#1 DONE 0.0s
+
+#2 [q4_join_1 internal] load build definition from Dockerfile
+#2 transferring dockerfile: 559B done
+#2 DONE 0.6s
+
+#3 [q4_join_0 internal] load metadata for docker.io/library/busybox:latest
+#3 ...
+
+#4 [rabbitmq internal] load build definition from Dockerfile
+#4 transferring dockerfile: 107B done
+#4 DONE 0.7s
+
+#3 [q4_join_1 internal] load metadata for docker.io/library/busybox:latest
+#3 ...
+
+#5 [usd_filter_1 internal] load build definition from Dockerfile
+#5 transferring dockerfile: 574B done
+#5 DONE 0.9s
+
+#3 [usd_filter_1 internal] load metadata for docker.io/library/busybox:latest
+#3 ...
+
+#6 [bridge_matcher_0 internal] load build definition from Dockerfile
+#6 transferring dockerfile: 597B done
+#6 DONE 1.2s
+
+#3 [bridge_matcher_2 internal] load metadata for docker.io/library/busybox:latest
+#3 ...
+
+#7 [gateway internal] load build definition from Dockerfile
+#7 transferring dockerfile: 556B done
+#7 DONE 1.7s
+
+#8 [group_0 internal] load build definition from Dockerfile
+#8 transferring dockerfile: 549B done
+#8 DONE 1.8s
+
+#3 [gateway internal] load metadata for docker.io/library/busybox:latest
+#3 ...
+
+#9 [date_filter_0 internal] load build definition from Dockerfile
+#9 transferring dockerfile: 580B done
+#9 DONE 2.0s
+
+#3 [group_1 internal] load metadata for docker.io/library/busybox:latest
+#3 ...
+
+#10 [client_0 internal] load build definition from Dockerfile
+#10 transferring dockerfile: 550B done
+#10 DONE 3.6s
+
+#11 [date_filter_0 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#11 ...
+
+#12 [rabbitmq internal] load metadata for docker.io/library/rabbitmq:3.9.16-management-alpine
+#12 DONE 3.2s
+
+#11 [client_0 internal] load metadata for docker.io/library/golang:1.24-alpine3.23
+#11 DONE 3.7s
+
+#13 [rabbitmq internal] load .dockerignore
+#13 transferring context: 2B done
+#13 DONE 0.6s
+
+#3 [usd_filter_1 internal] load metadata for docker.io/library/busybox:latest
+#3 DONE 4.1s
+
+#14 [bridge_matcher_1 internal] load .dockerignore
+#14 transferring context: 2B done
+#14 DONE 0.9s
+
+#15 [rabbitmq 1/2] FROM docker.io/library/rabbitmq:3.9.16-management-alpine@sha256:3126a9d84c6061b21cc17531f1d417dbab3840158a5718c5c2ed17ddbab173c2
+#15 resolve docker.io/library/rabbitmq:3.9.16-management-alpine@sha256:3126a9d84c6061b21cc17531f1d417dbab3840158a5718c5c2ed17ddbab173c2
+#15 ...
+
+#16 [date_filter_1 internal] load build context
+#16 DONE 0.0s
+
+#17 [bridge_matcher_0 internal] load build context
+#17 DONE 0.0s
+
+#18 [usd_filter_1 internal] load build context
+#18 DONE 0.0s
+
+#19 [gateway internal] load build context
+#19 DONE 0.0s
+
+#20 [group_1 internal] load build context
+#20 DONE 0.0s
+
+#21 [q4_join_0 internal] load build context
+#21 DONE 0.0s
+
+#22 [client_0 internal] load build context
+#22 DONE 0.0s
+
+#23 [usd_filter_1 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#23 resolve docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#23 ...
+
+#15 [rabbitmq 1/2] FROM docker.io/library/rabbitmq:3.9.16-management-alpine@sha256:3126a9d84c6061b21cc17531f1d417dbab3840158a5718c5c2ed17ddbab173c2
+#15 resolve docker.io/library/rabbitmq:3.9.16-management-alpine@sha256:3126a9d84c6061b21cc17531f1d417dbab3840158a5718c5c2ed17ddbab173c2 1.0s done
+#15 DONE 1.2s
+
+#24 [rabbitmq 2/2] RUN apk update && apk add curl
+#24 CACHED
+
+#25 [usd_filter_1 builder 1/9] FROM docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191
+#25 resolve docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191
+#25 resolve docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 1.3s done
+#25 resolve docker.io/library/golang:1.24-alpine3.23@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 1.3s done
+#25 DONE 1.6s
+
+#23 [date_filter_0 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#23 resolve docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d 1.4s done
+#23 resolve docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d 1.4s done
+#23 DONE 1.7s
+
+#17 [bridge_matcher_1 internal] load build context
+#17 transferring context: 45.62kB done
+#17 DONE 0.9s
+
+#16 [date_filter_0 internal] load build context
+#16 transferring context: 30.00kB 0.0s done
+#16 ...
+
+#19 [gateway internal] load build context
+#19 transferring context: 43.51kB done
+#19 DONE 1.5s
+
+#21 [q4_join_1 internal] load build context
+#21 transferring context: 39.05kB done
+#21 ...
+
+#16 [date_filter_1 internal] load build context
+#16 DONE 1.8s
+
+#26 [rabbitmq] exporting to image
+#26 exporting layers done
+#26 exporting manifest sha256:18b283b1df91136d4e15e846534846811d560135425c1aaaa7cbcb60d34488a5 0.2s done
+#26 exporting config sha256:f850263b9b821874029985aca120e07c776d67e4dd9e7c961405d982b98eb570 0.3s done
+#26 exporting attestation manifest sha256:cabba045737faa400d71f52e76b5ba94d5a03c3e249df6c15c27725da5427220 1.2s done
+#26 ...
+
+#21 [q4_join_2 internal] load build context
+#21 DONE 2.0s
+
+#26 [rabbitmq] exporting to image
+#26 exporting manifest list sha256:6790b2d827a990b78fd38b373ab41a728ffe1bd923ec9a44795675efe132c95f
+#26 ...
+
+#27 [bridge_matcher_1 builder 3/9] WORKDIR /build/
+#27 CACHED
+
+#28 [bridge_matcher_1 builder 4/9] COPY go.mod .
+#28 CACHED
+
+#29 [bridge_matcher_1 builder 2/9] RUN mkdir -p /build
+#29 CACHED
+
+#30 [bridge_matcher_2 builder 5/9] COPY go.sum .
+#30 CACHED
+
+#26 [rabbitmq] exporting to image
+#26 exporting manifest list sha256:6790b2d827a990b78fd38b373ab41a728ffe1bd923ec9a44795675efe132c95f 0.7s done
+#26 naming to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest
+#26 naming to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest 0.2s done
+#26 unpacking to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest
+#26 unpacking to docker.io/library/tp-money-laundering-analysis-rabbitmq:latest 0.3s done
+#26 DONE 3.8s
+
+#20 [group_2 internal] load build context
+#20 transferring context: 41.62kB 0.0s done
+#20 ...
+
+#22 [client_0 internal] load build context
+#22 transferring context: 45.84kB done
+#22 DONE 3.3s
+
+#18 [usd_filter_0 internal] load build context
+#18 transferring context: 38.91kB done
+#18 ...
+
+#20 [group_0 internal] load build context
+#20 DONE 3.9s
+
+#18 [usd_filter_0 internal] load build context
+#18 DONE 4.1s
+
+#30 [q4_join_1 builder 5/9] COPY go.sum .
+#30 CACHED
+
+#30 [gateway builder 5/9] COPY go.sum .
+#30 CACHED
+
+#31 [bridge_matcher_0 builder 6/9] COPY common ./common
+#31 ...
+
+#30 [usd_filter_1 builder 5/9] COPY go.sum .
+#30 CACHED
+
+#31 [usd_filter_1 builder 6/9] COPY common ./common
+#31 ...
+
+#30 [client_0 builder 5/9] COPY go.sum .
+#30 CACHED
+
+#31 [client_0 builder 6/9] COPY common ./common
+#31 ...
+
+#30 [group_1 builder 5/9] COPY go.sum .
+#30 CACHED
+
+#30 [group_2 builder 5/9] COPY go.sum .
+#30 CACHED
+
+#31 [group_2 builder 6/9] COPY common ./common
+#31 DONE 4.2s
+
+#32 [usd_filter_0 builder 7/9] RUN go mod download
+#32 ...
+
+#33 [rabbitmq] resolving provenance for metadata file
+#33 DONE 0.0s
+
+#32 [bridge_matcher_2 builder 7/9] RUN go mod download
+#32 DONE 5.1s
+
+#34 [client_0 builder 4/9] COPY go.mod .
+#34 CACHED
+
+#35 [client_0 builder 7/9] RUN go mod download
+#35 CACHED
+
+#36 [client_0 builder 6/9] COPY common ./common
+#36 CACHED
+
+#37 [client_0 builder 5/9] COPY go.sum .
+#37 CACHED
+
+#38 [usd_filter_1 builder 7/9] RUN go mod download
+#38 CACHED
+
+#39 [usd_filter_1 builder 5/9] COPY go.sum .
+#39 CACHED
+
+#40 [usd_filter_1 builder 6/9] COPY common ./common
+#40 CACHED
+
+#41 [usd_filter_1 builder 4/9] COPY go.mod .
+#41 CACHED
+
+#42 [group_2 builder 4/9] COPY go.mod .
+#42 CACHED
+
+#43 [group_2 builder 5/9] COPY go.sum .
+#43 CACHED
+
+#44 [group_2 builder 6/9] COPY common ./common
+#44 CACHED
+
+#45 [group_2 builder 7/9] RUN go mod download
+#45 CACHED
+
+#46 [date_filter_1 builder 7/9] RUN go mod download
+#46 CACHED
+
+#47 [date_filter_1 builder 6/9] COPY common ./common
+#47 CACHED
+
+#48 [date_filter_1 builder 4/9] COPY go.mod .
+#48 CACHED
+
+#49 [date_filter_1 builder 5/9] COPY go.sum .
+#49 CACHED
+
+#50 [gateway builder 6/9] COPY common ./common
+#50 CACHED
+
+#51 [gateway builder 5/9] COPY go.sum .
+#51 CACHED
+
+#52 [gateway builder 4/9] COPY go.mod .
+#52 CACHED
+
+#53 [gateway builder 7/9] RUN go mod download
+#53 CACHED
+
+#27 [group_2 builder 3/9] WORKDIR /build/
+#27 CACHED
+
+#54 [q4_join_1 builder 6/9] COPY common ./common
+#54 CACHED
+
+#55 [q4_join_1 builder 5/9] COPY go.sum .
+#55 CACHED
+
+#56 [q4_join_1 builder 7/9] RUN go mod download
+#56 CACHED
+
+#57 [q4_join_1 builder 4/9] COPY go.mod .
+#57 CACHED
+
+#29 [group_2 builder 2/9] RUN mkdir -p /build
+#29 CACHED
+
+#58 [q4_join_1 builder 8/9] COPY q4_join .
+#58 ...
+
+#59 [client_0 builder 8/9] COPY client .
+#59 DONE 6.1s
+
+#60 [group_2 builder 8/9] COPY group .
+#60 ...
+
+#61 [client_0 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/client
+#61 ...
+
+#62 [bridge_matcher_0 builder 8/9] COPY bridge_matcher .
+#62 DONE 6.5s
+
+#63 [usd_filter_0 builder 8/9] COPY usd_filter .
+#63 DONE 6.6s
+
+#64 [date_filter_1 builder 8/9] COPY date_filter .
+#64 ...
+
+#65 [bridge_matcher_0 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/bridge_matcher
+#65 ...
+
+#64 [date_filter_0 builder 8/9] COPY date_filter .
+#64 DONE 7.2s
+
+#58 [q4_join_2 builder 8/9] COPY q4_join .
+#58 DONE 7.3s
+
+#66 [usd_filter_0 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/usd_filter
+#66 ...
+
+#67 [gateway builder 8/9] COPY gateway .
+#67 DONE 7.8s
+
+#68 [date_filter_1 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/date_filter
+#68 ...
+
+#60 [group_1 builder 8/9] COPY group .
+#60 DONE 8.1s
+
+#69 [q4_join_1 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/q4_join
+#69 ...
+
+#70 [group_0 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/group
+#70 ...
+
+#71 [gateway builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/gateway
+#71 ...
+
+#70 [group_0 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/group
+#70 DONE 70.3s
+
+#23 [usd_filter_0 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#23 ...
+
+#61 [client_0 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/client
+#61 DONE 72.6s
+
+#23 [date_filter_1 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#23 ...
+
+#69 [q4_join_1 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/q4_join
+#69 DONE 71.1s
+
+#65 [bridge_matcher_1 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/bridge_matcher
+#65 DONE 72.4s
+
+#71 [gateway builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/gateway
+#71 DONE 71.1s
+
+#68 [date_filter_1 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/date_filter
+#68 DONE 71.9s
+
+#23 [client_0 stage-1 1/2] FROM docker.io/library/busybox:latest@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+#23 CACHED
+
+#66 [usd_filter_0 builder 9/9] RUN CGO_ENABLED=0 GOOS=linux go build -o bin/usd_filter
+#66 DONE 72.5s
+
+#72 [group_2 stage-1 2/2] COPY --from=builder /build/bin/group /group
+#72 DONE 3.7s
+
+#73 [bridge_matcher_0 stage-1 2/2] COPY --from=builder /build/bin/bridge_matcher /bridge_matcher
+#73 ...
+
+#74 [client_0 stage-1 2/2] COPY --from=builder /build/bin/client /client
+#74 DONE 3.5s
+
+#75 [q4_join_0 stage-1 2/2] COPY --from=builder /build/bin/q4_join /q4_join
+#75 ...
+
+#76 [client_0] exporting to image
+#76 exporting layers
+#76 ...
+
+#73 [bridge_matcher_0 stage-1 2/2] COPY --from=builder /build/bin/bridge_matcher /bridge_matcher
+#73 DONE 7.1s
+
+#77 [group_2] exporting to image
+#77 ...
+
+#75 [q4_join_2 stage-1 2/2] COPY --from=builder /build/bin/q4_join /q4_join
+#75 DONE 7.5s
+
+#78 [bridge_matcher_2] exporting to image
+#78 ...
+
+#79 [usd_filter_1 stage-1 2/2] COPY --from=builder /build/bin/usd_filter /usd_filter
+#79 DONE 8.3s
+
+#80 [q4_join_0] exporting to image
+#80 ...
+
+#81 [date_filter_0 stage-1 2/2] COPY --from=builder /build/bin/date_filter /date_filter
+#81 DONE 9.6s
+
+#82 [usd_filter_0] exporting to image
+#82 exporting layers
+#82 ...
+
+#83 [gateway stage-1 2/2] COPY --from=builder /build/bin/gateway /gateway
+#83 DONE 9.9s
+
+#84 [usd_filter_1] exporting to image
+#84 ...
+
+#85 [group_0] exporting to image
+#85 exporting layers 10.1s done
+#85 ...
+
+#86 [group_1] exporting to image
+#86 exporting layers 10.3s done
+#86 ...
+
+#87 [gateway] exporting to image
+#87 ...
+
+#86 [group_1] exporting to image
+#86 exporting manifest sha256:cabaaba61c3eb7a05919f128429f1ef5218bd152913e14e1ec0a4221d93d473a
+#86 ...
+
+#88 [bridge_matcher_1] exporting to image
+#88 exporting layers 9.4s done
+#88 exporting manifest sha256:fae7bc3b09f0cef7a4989f8bb94bd7bdf1fc93afb5efbe198eeaff0d93b2dcf0
+#88 ...
+
+#89 [bridge_matcher_0] exporting to image
+#89 exporting layers 9.4s done
+#89 exporting manifest sha256:63c30bc20a25d50dd7a3b623694a452a87664bb94f294cd4752cc23b7469cc6d
+#89 ...
+
+#90 [q4_join_2] exporting to image
+#90 ...
+
+#91 [q4_join_1] exporting to image
+#91 ...
+
+#86 [group_1] exporting to image
+#86 exporting manifest sha256:cabaaba61c3eb7a05919f128429f1ef5218bd152913e14e1ec0a4221d93d473a 2.4s done
+#86 exporting config sha256:f820cc6d88a9d4c79bdfb7eefb1c0e0f2a2c96baf3898eca4d176fbcc746cbb9
+#86 ...
+
+#92 [date_filter_0] exporting to image
+#92 ...
+
+#93 [date_filter_1] exporting to image
+#93 ...
+
+#88 [bridge_matcher_1] exporting to image
+#88 exporting manifest sha256:fae7bc3b09f0cef7a4989f8bb94bd7bdf1fc93afb5efbe198eeaff0d93b2dcf0 3.0s done
+#88 exporting config sha256:3ae886224c022538479caf3df770b42b019b5abe05c9579009ceaf44b27230be
+#88 exporting config sha256:3ae886224c022538479caf3df770b42b019b5abe05c9579009ceaf44b27230be 3.0s done
+#88 ...
+
+#77 [group_2] exporting to image
+#77 exporting layers 10.4s done
+#77 exporting manifest sha256:588a5264ca0a3bcdb789643687b2db290d38787638441cce9e6a0cbdec4b22b6 2.6s done
+#77 exporting config sha256:26fce5b7a4034190b85efcc9dd07a5454f51a8f2c1a162906808eead151e4f9b 3.1s done
+#77 ...
+
+#91 [q4_join_1] exporting to image
+#91 exporting layers 11.1s done
+#91 exporting manifest sha256:207261270aca479026a3bee4d3b81012a878a6d33def294dd235f55a0b6f9daf 3.0s done
+#91 exporting config sha256:1f6d43a84575cde6bb79b5b99df3e9d4035e524b04f650c52026462079bf645c
+#91 ...
+
+#76 [client_0] exporting to image
+#76 exporting layers 10.3s done
+#76 exporting manifest sha256:bf7280bcd166f88d0816807049d0b4c80766cf4d3ea13ac8ce00b639e41fdcdc 2.3s done
+#76 exporting config sha256:e4321c1614da3f69d55d7d9ad12f58878f16b0f0dd35ab487b17036edd8cef9e 3.2s done
+#76 ...
+
+#82 [usd_filter_0] exporting to image
+#82 exporting layers 15.0s done
+#82 exporting manifest sha256:38286eb5ec2ca929b8e0ad55b80672c534a88f6c779c285cad134e9d9096494d
+#82 ...
+
+#85 [group_0] exporting to image
+#85 exporting manifest sha256:8fde4560db2121122fa1c0085d80a0b049a11b542c3b36a73d86687b31a82d29 2.4s done
+#85 exporting config sha256:cfd3607c21b2f18fee14838ab681315654130c21bf0ca2333869ad5434a24f83 3.2s done
+#85 exporting attestation manifest sha256:2e324c7cd4c7d4961e98f33c208500e0e0e2976133608e2f79eaca3a28a9c757
+#85 ...
+
+#91 [q4_join_1] exporting to image
+#91 exporting config sha256:1f6d43a84575cde6bb79b5b99df3e9d4035e524b04f650c52026462079bf645c 3.1s done
+#91 ...
+
+#78 [bridge_matcher_2] exporting to image
+#78 exporting layers 9.5s done
+#78 exporting manifest sha256:6d28fca5f1e5481ca121497e98fb8476bd4ba456bd0406674e348b96ab59ed69 2.9s done
+#78 exporting config sha256:5d50c78cfe8c31581ebf67318651abe66bbf721daaa50c6e8c660088b0e60729 2.9s done
+#78 exporting attestation manifest sha256:58a7223f1c9cf75a228bb6f465fc1f7851d18ebb47025f8c4d135f8ef77dc997
+#78 ...
+
+#87 [gateway] exporting to image
+#87 exporting layers 16.4s done
+#87 exporting manifest sha256:2b341903c2bcce75a829be67e35e8a821f9cc82d2ffbaf1e990e01a9e1d72c86
+#87 ...
+
+#80 [q4_join_0] exporting to image
+#80 exporting layers 11.0s done
+#80 exporting manifest sha256:f4311c18709fdb14c6c594aad7d0eafba6b40f08de7216cb5c8ebde032111e40 3.0s done
+#80 exporting config sha256:afbd239409df4abcd28f89baa0be3163494f4a5e5f36dd2055df2138bfce2f49 3.1s done
+#80 ...
+
+#90 [q4_join_2] exporting to image
+#90 exporting layers 11.1s done
+#90 exporting manifest sha256:bf97b92d5c8608124cfaa248325bfd6680f77a34d55648ac9cb7d36267136eae 2.9s done
+#90 exporting config sha256:dd9c52b3a0b34fae86d9281c19910b58cac13ecf2082b9f7e3ed49998f88d97c 3.1s done
+#90 exporting attestation manifest sha256:05619fd6d92377eb96bfdbf1c0c87c0962f3c5de53b2478649e40d135d4b4deb
+#90 ...
+
+#82 [usd_filter_0] exporting to image
+#82 exporting manifest sha256:38286eb5ec2ca929b8e0ad55b80672c534a88f6c779c285cad134e9d9096494d 3.5s done
+#82 exporting config sha256:96f9b77f293368c89c1b5585037af6cd51b674dbebe7f35f7686ffbf9db97546
+#82 exporting config sha256:96f9b77f293368c89c1b5585037af6cd51b674dbebe7f35f7686ffbf9db97546 2.5s done
+#82 ...
+
+#89 [bridge_matcher_0] exporting to image
+#89 exporting manifest sha256:63c30bc20a25d50dd7a3b623694a452a87664bb94f294cd4752cc23b7469cc6d 2.8s done
+#89 exporting config sha256:a0bcd5805ffdf85012aef4d5cbf282da192c2ff37cc825296be25d8425862e90 2.9s done
+#89 exporting attestation manifest sha256:735a54a19371f3735f61bfab04ccbaaf151d92009b33517e01abd7e11f0b24b6
+#89 ...
+
+#91 [q4_join_1] exporting to image
+#91 exporting attestation manifest sha256:7fb55b46ae6c4fc3ab5bc5567f0e20e80201481497a2974c2786c1e02fe04d02
+#91 ...
+
+#86 [group_1] exporting to image
+#86 exporting config sha256:f820cc6d88a9d4c79bdfb7eefb1c0e0f2a2c96baf3898eca4d176fbcc746cbb9 3.2s done
+#86 exporting attestation manifest sha256:e510059e02f9ecd3720eb4650c28e4806e5c5957a2e2c176efd5b9623985bf28
+#86 ...
+
+#87 [gateway] exporting to image
+#87 exporting manifest sha256:2b341903c2bcce75a829be67e35e8a821f9cc82d2ffbaf1e990e01a9e1d72c86 4.1s done
+#87 exporting config sha256:d63e1f3b6972f4615775c55c2f1a5f7d48da7def9d4bf799d5890f55eac9f951
+#87 ...
+
+#76 [client_0] exporting to image
+#76 exporting attestation manifest sha256:c3ef5738ad553e90e7d1711408b6c666c2cd94d817fc5c6ac94d6b0ef0a75cbe 8.3s done
+#76 exporting manifest list sha256:7c3ea9bd9bb6525a1dd7cdef80fc0ac4daf47bd35a5cb4e4768148afd1d378fa
+#76 ...
+
+#77 [group_2] exporting to image
+#77 exporting attestation manifest sha256:da362483e01d846c6dcf5da95376226f1a9b261d822c1cbaaaf3f6b042017b40 8.2s done
+#77 exporting manifest list sha256:c2286746fd99c66e3b49de4dcf320ebb964fc2d0e247bbe3c685f068b2aeab4d
+#77 ...
+
+#84 [usd_filter_1] exporting to image
+#84 exporting layers 15.1s done
+#84 exporting manifest sha256:920814ef277a52ef9cd8b5771c200965873aec3a0e46bfe7e03d87bbfdc7a0cc 3.4s done
+#84 exporting config sha256:b4d85ed2f048cf4e725bb0912be18073409d79358224799b6f7c8e8d0dff7df5 4.5s done
+#84 ...
+
+#82 [usd_filter_0] exporting to image
+#82 exporting attestation manifest sha256:650c69fea4d5b4fd1b2a96a95e2d54bcd7c4aea3a976c88e8586751ffaf0abeb
+#82 ...
+
+#93 [date_filter_1] exporting to image
+#93 exporting layers 16.3s done
+#93 exporting manifest sha256:38acbb3bbb9c55df339ef823380a5979d28c9ca36be102110e4055134345032c 3.4s done
+#93 exporting config sha256:057513500307142bcbac2e44302b9f6e6d79be932a23516eea4cda0a050ee0ef 4.0s done
+#93 ...
+
+#88 [bridge_matcher_1] exporting to image
+#88 exporting attestation manifest sha256:42aa7f9ffb7c083a663671b5e692ae8441422e3fb3a945459635f6b54bd61f79 8.4s done
+#88 exporting manifest list sha256:f64210187af0a1b16b61387b855ff2eb3a77fbf78107943ca7752af723962d34
+#88 ...
+
+#92 [date_filter_0] exporting to image
+#92 exporting layers 16.3s done
+#92 exporting manifest sha256:bb67c197919831f5066dc6346b7ae6d1d0e3a55f37423f35d89fce6a3ad7ae8a 4.3s done
+#92 exporting config sha256:f45c3683f209219452fbc244f8c6c52c6321eaf23f254134596aab144c9b64f9 4.0s done
+#92 ...
+
+#77 [group_2] exporting to image
+#77 exporting manifest list sha256:c2286746fd99c66e3b49de4dcf320ebb964fc2d0e247bbe3c685f068b2aeab4d 3.9s done
+#77 naming to docker.io/library/tp-money-laundering-analysis-group_2:latest
+#77 naming to docker.io/library/tp-money-laundering-analysis-group_2:latest 1.8s done
+#77 unpacking to docker.io/library/tp-money-laundering-analysis-group_2:latest
+#77 ...
+
+#80 [q4_join_0] exporting to image
+#80 exporting attestation manifest sha256:5585115d08b328231df50876b82d38bf3524d1af671f4f99dbd92799c1e081a1 7.9s done
+#80 exporting manifest list sha256:8e54e64b16210ce71901b1b77fb52d784a844d8365ba7658f4b45341a0e003d9
+#80 ...
+
+#88 [bridge_matcher_1] exporting to image
+#88 exporting manifest list sha256:f64210187af0a1b16b61387b855ff2eb3a77fbf78107943ca7752af723962d34 4.0s done
+#88 naming to docker.io/library/tp-money-laundering-analysis-bridge_matcher_1:latest
+#88 naming to docker.io/library/tp-money-laundering-analysis-bridge_matcher_1:latest 1.6s done
+#88 unpacking to docker.io/library/tp-money-laundering-analysis-bridge_matcher_1:latest
+#88 ...
+
+#85 [group_0] exporting to image
+#85 exporting attestation manifest sha256:2e324c7cd4c7d4961e98f33c208500e0e0e2976133608e2f79eaca3a28a9c757 8.3s done
+#85 exporting manifest list sha256:b26bdca0100b25da485c135ab9e906f3898c6df568591fec422f783f12eb87fd 3.9s done
+#85 naming to docker.io/library/tp-money-laundering-analysis-group_0:latest 1.8s done
+#85 unpacking to docker.io/library/tp-money-laundering-analysis-group_0:latest
+#85 ...
+
+#86 [group_1] exporting to image
+#86 exporting attestation manifest sha256:e510059e02f9ecd3720eb4650c28e4806e5c5957a2e2c176efd5b9623985bf28 8.3s done
+#86 exporting manifest list sha256:c1965ec88bf7539b4cc1f5def95e907fa098e3ddf77ffe54182d5a9e4920dd22 3.9s done
+#86 naming to docker.io/library/tp-money-laundering-analysis-group_1:latest 1.8s done
+#86 unpacking to docker.io/library/tp-money-laundering-analysis-group_1:latest
+#86 ...
+
+#80 [q4_join_0] exporting to image
+#80 exporting manifest list sha256:8e54e64b16210ce71901b1b77fb52d784a844d8365ba7658f4b45341a0e003d9 3.5s done
+#80 naming to docker.io/library/tp-money-laundering-analysis-q4_join_0:latest 1.3s done
+#80 unpacking to docker.io/library/tp-money-laundering-analysis-q4_join_0:latest
+#80 ...
+
+#89 [bridge_matcher_0] exporting to image
+#89 exporting attestation manifest sha256:735a54a19371f3735f61bfab04ccbaaf151d92009b33517e01abd7e11f0b24b6 8.4s done
+#89 exporting manifest list sha256:863c86703785e7d21f6b211a65f779b354203974de9757a00caeec40bfa87b93 3.7s done
+#89 naming to docker.io/library/tp-money-laundering-analysis-bridge_matcher_0:latest 1.9s done
+#89 unpacking to docker.io/library/tp-money-laundering-analysis-bridge_matcher_0:latest
+#89 ...
+
+#78 [bridge_matcher_2] exporting to image
+#78 exporting attestation manifest sha256:58a7223f1c9cf75a228bb6f465fc1f7851d18ebb47025f8c4d135f8ef77dc997 8.3s done
+#78 exporting manifest list sha256:6fe4b068f9ab3a82abdb86691664fa2c061988547da3583c1ef8209f3a9eaf76 4.0s done
+#78 naming to docker.io/library/tp-money-laundering-analysis-bridge_matcher_2:latest 1.7s done
+#78 unpacking to docker.io/library/tp-money-laundering-analysis-bridge_matcher_2:latest
+#78 ...
+
+#82 [usd_filter_0] exporting to image
+#82 exporting attestation manifest sha256:650c69fea4d5b4fd1b2a96a95e2d54bcd7c4aea3a976c88e8586751ffaf0abeb 7.5s done
+#82 exporting manifest list sha256:e6d5648e69d30fc59b50e6438480649a7fb29355f57ddf65a25e584330f209fa 3.0s done
+#82 naming to docker.io/library/tp-money-laundering-analysis-usd_filter_0:latest
+#82 ...
+
+#87 [gateway] exporting to image
+#87 exporting config sha256:d63e1f3b6972f4615775c55c2f1a5f7d48da7def9d4bf799d5890f55eac9f951 4.0s done
+#87 exporting attestation manifest sha256:87bb025b314b9a34ce23dad8588bc38ea2c5540cdb774a8fecd7a51f89ac5955
+#87 ...
+
+#91 [q4_join_1] exporting to image
+#91 exporting attestation manifest sha256:7fb55b46ae6c4fc3ab5bc5567f0e20e80201481497a2974c2786c1e02fe04d02 7.9s done
+#91 exporting manifest list sha256:9a843f3999ba23564dcc5709c7c97b477184c67070494e04e1b0a736f32fd694 3.6s done
+#91 naming to docker.io/library/tp-money-laundering-analysis-q4_join_1:latest 1.2s done
+#91 unpacking to docker.io/library/tp-money-laundering-analysis-q4_join_1:latest
+#91 ...
+
+#84 [usd_filter_1] exporting to image
+#84 exporting attestation manifest sha256:20561a2e0895e16bba0fcb038b3dda4443e679ad99bb1a6361b61350f66821b7 6.8s done
+#84 exporting manifest list sha256:a977b3856e05f48e8c67ed9ad6b75fa363446dcb74140dc19b67a40acd0210bc
+#84 ...
+
+#90 [q4_join_2] exporting to image
+#90 exporting attestation manifest sha256:05619fd6d92377eb96bfdbf1c0c87c0962f3c5de53b2478649e40d135d4b4deb 8.0s done
+#90 exporting manifest list sha256:0672d95799271a3e157a0d2397aa0d80bd3662756ccda69636fd7dc09afc9bac 3.5s done
+#90 naming to docker.io/library/tp-money-laundering-analysis-q4_join_2:latest 1.4s done
+#90 unpacking to docker.io/library/tp-money-laundering-analysis-q4_join_2:latest
+#90 ...
+
+#76 [client_0] exporting to image
+#76 exporting manifest list sha256:7c3ea9bd9bb6525a1dd7cdef80fc0ac4daf47bd35a5cb4e4768148afd1d378fa 3.9s done
+#76 naming to docker.io/library/tp-money-laundering-analysis-client_0:latest 1.8s done
+#76 unpacking to docker.io/library/tp-money-laundering-analysis-client_0:latest
+#76 ...
+
+#92 [date_filter_0] exporting to image
+#92 exporting attestation manifest sha256:6267860071f590874327a0c9d7f002bef3a267df261048ad53ad12b299d207c7 7.3s done
+#92 exporting manifest list sha256:4add455adae939cfe31dca0a0e081c17bc2460427cc4a53661a81dbfc9703702
+#92 ...
+
+#87 [gateway] exporting to image
+#87 exporting attestation manifest sha256:87bb025b314b9a34ce23dad8588bc38ea2c5540cdb774a8fecd7a51f89ac5955 7.2s done
+#87 exporting manifest list sha256:0aa9c203125d71c27406e722d6bd1164338bc8da9042ca34acdc8b0146b297f2
+#87 ...
+
+#93 [date_filter_1] exporting to image
+#93 exporting attestation manifest sha256:53a1ab208bff9ad0ac66aede65572523e907d5ff136657eee9b746f5f6238130 5.2s done
+#93 exporting manifest list sha256:f19525241021bceeb53f894e23037176ee9ff391e60e7fb0454028aee96c5e68 4.1s done
+#93 naming to docker.io/library/tp-money-laundering-analysis-date_filter_1:latest
+#93 ...
+
+#82 [usd_filter_0] exporting to image
+#82 naming to docker.io/library/tp-money-laundering-analysis-usd_filter_0:latest 2.7s done
+#82 unpacking to docker.io/library/tp-money-laundering-analysis-usd_filter_0:latest
+#82 ...
+
+#76 [client_0] exporting to image
+#76 unpacking to docker.io/library/tp-money-laundering-analysis-client_0:latest 9.2s done
+#76 DONE 44.7s
+
+#85 [group_0] exporting to image
+#85 unpacking to docker.io/library/tp-money-laundering-analysis-group_0:latest 9.1s done
+#85 DONE 45.2s
+
+#84 [usd_filter_1] exporting to image
+#84 exporting manifest list sha256:a977b3856e05f48e8c67ed9ad6b75fa363446dcb74140dc19b67a40acd0210bc 4.6s done
+#84 naming to docker.io/library/tp-money-laundering-analysis-usd_filter_1:latest 1.1s done
+#84 unpacking to docker.io/library/tp-money-laundering-analysis-usd_filter_1:latest
+#84 ...
+
+#86 [group_1] exporting to image
+#86 unpacking to docker.io/library/tp-money-laundering-analysis-group_1:latest 9.2s done
+#86 DONE 46.6s
+
+#77 [group_2] exporting to image
+#77 unpacking to docker.io/library/tp-money-laundering-analysis-group_2:latest 9.3s done
+#77 DONE 46.6s
+
+#87 [gateway] exporting to image
+#87 exporting manifest list sha256:0aa9c203125d71c27406e722d6bd1164338bc8da9042ca34acdc8b0146b297f2 3.0s done
+#87 naming to docker.io/library/tp-money-laundering-analysis-gateway:latest
+#87 naming to docker.io/library/tp-money-laundering-analysis-gateway:latest 0.7s done
+#87 unpacking to docker.io/library/tp-money-laundering-analysis-gateway:latest
+#87 ...
+
+#89 [bridge_matcher_0] exporting to image
+#89 unpacking to docker.io/library/tp-money-laundering-analysis-bridge_matcher_0:latest 9.3s done
+#89 DONE 43.6s
+
+#88 [bridge_matcher_1] exporting to image
+#88 unpacking to docker.io/library/tp-money-laundering-analysis-bridge_matcher_1:latest 8.4s done
+#88 DONE 43.8s
+
+#92 [date_filter_0] exporting to image
+#92 exporting manifest list sha256:4add455adae939cfe31dca0a0e081c17bc2460427cc4a53661a81dbfc9703702 3.2s done
+#92 naming to docker.io/library/tp-money-laundering-analysis-date_filter_0:latest 0.8s done
+#92 unpacking to docker.io/library/tp-money-laundering-analysis-date_filter_0:latest
+#92 ...
+
+#78 [bridge_matcher_2] exporting to image
+#78 unpacking to docker.io/library/tp-money-laundering-analysis-bridge_matcher_2:latest 9.5s done
+#78 DONE 44.2s
+
+#91 [q4_join_1] exporting to image
+#91 unpacking to docker.io/library/tp-money-laundering-analysis-q4_join_1:latest 9.5s done
+#91 ...
+
+#90 [q4_join_2] exporting to image
+#90 unpacking to docker.io/library/tp-money-laundering-analysis-q4_join_2:latest 8.7s done
+#90 DONE 45.1s
+
+#80 [q4_join_0] exporting to image
+#80 unpacking to docker.io/library/tp-money-laundering-analysis-q4_join_0:latest 8.7s done
+#80 DONE 45.2s
+
+#93 [date_filter_1] exporting to image
+#93 naming to docker.io/library/tp-money-laundering-analysis-date_filter_1:latest 1.9s done
+#93 unpacking to docker.io/library/tp-money-laundering-analysis-date_filter_1:latest
+#93 ...
+
+#91 [q4_join_1] exporting to image
+#91 DONE 45.9s
+
+#87 [gateway] exporting to image
+#87 ...
+
+#82 [usd_filter_0] exporting to image
+#82 unpacking to docker.io/library/tp-money-laundering-analysis-usd_filter_0:latest 8.0s done
+#82 DONE 48.5s
+
+#92 [date_filter_0] exporting to image
+#92 ...
+
+#84 [usd_filter_1] exporting to image
+#84 unpacking to docker.io/library/tp-money-laundering-analysis-usd_filter_1:latest 11.8s done
+#84 DONE 51.7s
+
+#87 [gateway] exporting to image
+#87 unpacking to docker.io/library/tp-money-laundering-analysis-gateway:latest 10.2s done
+#87 ...
+
+#93 [date_filter_1] exporting to image
+#93 unpacking to docker.io/library/tp-money-laundering-analysis-date_filter_1:latest 10.9s done
+#93 DONE 50.3s
+
+#92 [date_filter_0] exporting to image
+#92 unpacking to docker.io/library/tp-money-laundering-analysis-date_filter_0:latest 10.2s done
+#92 DONE 50.8s
+
+#87 [gateway] exporting to image
+#87 DONE 50.4s
+
+#94 [client_0] resolving provenance for metadata file
+#94 ...
+
+#95 [group_2] resolving provenance for metadata file
+#95 ...
+
+#96 [q4_join_2] resolving provenance for metadata file
+#96 ...
+
+#97 [group_0] resolving provenance for metadata file
+#97 ...
+
+#98 [bridge_matcher_2] resolving provenance for metadata file
+#98 ...
+
+#99 [usd_filter_0] resolving provenance for metadata file
+#99 ...
+
+#100 [q4_join_0] resolving provenance for metadata file
+#100 ...
+
+#101 [group_1] resolving provenance for metadata file
+#101 ...
+
+#102 [q4_join_1] resolving provenance for metadata file
+#102 ...
+
+#103 [date_filter_1] resolving provenance for metadata file
+#103 ...
+
+#104 [date_filter_0] resolving provenance for metadata file
+#104 ...
+
+#105 [bridge_matcher_1] resolving provenance for metadata file
+#105 ...
+
+#94 [client_0] resolving provenance for metadata file
+#94 DONE 42.1s
+
+#106 [bridge_matcher_0] resolving provenance for metadata file
+#106 ...
+
+#107 [usd_filter_1] resolving provenance for metadata file
+#107 ...
+
+#108 [gateway] resolving provenance for metadata file
+#108 ...
+
+#95 [group_2] resolving provenance for metadata file
+#95 DONE 39.2s
+
+#99 [usd_filter_0] resolving provenance for metadata file
+#99 DONE 37.3s
+
+#96 [q4_join_2] resolving provenance for metadata file
+#96 ...
+
+#100 [q4_join_0] resolving provenance for metadata file
+#100 DONE 29.1s
+
+#97 [group_0] resolving provenance for metadata file
+#97 ...
+
+#103 [date_filter_1] resolving provenance for metadata file
+#103 DONE 18.7s
+
+#98 [bridge_matcher_2] resolving provenance for metadata file
+#98 ...
+
+#108 [gateway] resolving provenance for metadata file
+#108 DONE 8.9s
+
+#106 [bridge_matcher_0] resolving provenance for metadata file
+#106 DONE 11.9s
+
+#97 [group_0] resolving provenance for metadata file
+#97 DONE 48.8s
+
+#105 [bridge_matcher_1] resolving provenance for metadata file
+#105 DONE 10.7s
+
+#96 [q4_join_2] resolving provenance for metadata file
+#96 ...
+
+#98 [bridge_matcher_2] resolving provenance for metadata file
+#98 DONE 42.5s
+
+#107 [usd_filter_1] resolving provenance for metadata file
+#107 ...
+
+#96 [q4_join_2] resolving provenance for metadata file
+#96 DONE 41.3s
+
+#104 [date_filter_0] resolving provenance for metadata file
+#104 DONE 17.5s
+
+#101 [group_1] resolving provenance for metadata file
+#101 DONE 29.2s
+
+#107 [usd_filter_1] resolving provenance for metadata file
+#107 DONE 19.8s
+
+#102 [q4_join_1] resolving provenance for metadata file
+#102 DONE 32.9s
+docker compose -f docker-compose.yaml logs --follow
+q4_join_0  | 2026/05/31 02:14:11 Binding queue q4_join_0 to exchange q4_join_exchange with routing key q4_join_0
+usd_filter_1  | 2026/05/31 02:14:22 Binding queue usd_filter_queue to exchange transactions_exchange with routing key transactions_topic
+usd_filter_1  | 2026/05/31 02:14:23 INFO New client arrived clientID=3275839440977831430
+group_1       | 2026/05/31 02:14:18 Binding queue group_queue to exchange date_exchange with routing key usd_early_period_transactions_topic
+client_0      | 2026/05/31 02:14:23 INFO Manager de lectura iniciado...
+date_filter_1  | 2026/05/31 02:14:21 Binding queue date_filter_queue to exchange usd_exchange with routing key usd_transactions_topic
+date_filter_1  | 2026/05/31 02:14:24 INFO New client arrived clientID=3275839440977831430
+group_0        | 2026/05/31 02:14:18 Binding queue group_queue to exchange date_exchange with routing key usd_early_period_transactions_topic
+group_2        | 2026/05/31 02:14:18 Binding queue group_queue to exchange date_exchange with routing key usd_early_period_transactions_topic
+bridge_matcher_2  | 2026/05/31 02:14:16 Binding queue bridge_matcher_2 to exchange bridge_matcher_exchange with routing key bridge_matcher_2
+bridge_matcher_2  | 2026/05/31 02:14:16 Binding queue bridge_matcher_2 to exchange bridge_matcher_control_exchange with routing key 
+date_filter_0     | 2026/05/31 02:14:20 Binding queue date_filter_queue to exchange usd_exchange with routing key usd_transactions_topic
+bridge_matcher_1  | 2026/05/31 02:14:15 Binding queue bridge_matcher_1 to exchange bridge_matcher_exchange with routing key bridge_matcher_1
+gateway           | 2026/05/31 02:14:10 INFO Accepting connections...
+gateway           | 2026/05/31 02:14:23 INFO Client connected...
+gateway           | 2026/05/31 02:14:23 INFO UserId created value=3275839440977831430
+date_filter_0     | 2026/05/31 02:14:24 INFO New client arrived clientID=3275839440977831430
+bridge_matcher_1  | 2026/05/31 02:14:15 Binding queue bridge_matcher_1 to exchange bridge_matcher_control_exchange with routing key 
+usd_filter_0      | 2026/05/31 02:14:23 Binding queue usd_filter_queue to exchange transactions_exchange with routing key transactions_topic
+usd_filter_0      | 2026/05/31 02:14:23 INFO New client arrived clientID=3275839440977831430
+q4_join_1         | 2026/05/31 02:14:14 Binding queue q4_join_1 to exchange q4_join_exchange with routing key q4_join_1
+q4_join_2         | 2026/05/31 02:14:14 Binding queue q4_join_2 to exchange q4_join_exchange with routing key q4_join_2
+bridge_matcher_0  | 2026/05/31 02:14:16 Binding queue bridge_matcher_0 to exchange bridge_matcher_exchange with routing key bridge_matcher_0
+bridge_matcher_0  | 2026/05/31 02:14:16 Binding queue bridge_matcher_0 to exchange bridge_matcher_control_exchange with routing key 
+rabbitmq          | 2026-05-31 02:13:59.181817+00:00 [info] <0.228.0> Feature flags: list of feature flags found:
+rabbitmq          | 2026-05-31 02:13:59.205403+00:00 [info] <0.228.0> Feature flags:   [ ] implicit_default_bindings
+rabbitmq          | 2026-05-31 02:13:59.205463+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status
+rabbitmq          | 2026-05-31 02:13:59.205480+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue
+rabbitmq          | 2026-05-31 02:13:59.205498+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue
+rabbitmq          | 2026-05-31 02:13:59.205555+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits
+rabbitmq          | 2026-05-31 02:13:59.205573+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata
+rabbitmq          | 2026-05-31 02:13:59.205586+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes
+rabbitmq          | 2026-05-31 02:13:59.545059+00:00 [noti] <0.44.0> Application syslog exited with reason: stopped
+rabbitmq          | 2026-05-31 02:13:59.545211+00:00 [noti] <0.228.0> Logging: switching to configured handler(s); following messages may not be visible in this log output
+rabbitmq          | [38;5;87m2026-05-31 02:13:59.749257+00:00 [notice] <0.228.0> Logging: configured log handlers are now ACTIVE[0m
+rabbitmq          | 2026-05-31 02:14:00.070309+00:00 [info] <0.228.0> ra: starting system quorum_queues[0m
+rabbitmq          | 2026-05-31 02:14:00.070406+00:00 [info] <0.228.0> starting Ra system: quorum_queues in directory: /var/lib/rabbitmq/mnesia/rabbit@fbccb3e89ef7/quorum/rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:00.144134+00:00 [info] <0.264.0> ra system 'quorum_queues' running pre init for 0 registered servers[0m
+rabbitmq          | 2026-05-31 02:14:00.168225+00:00 [info] <0.265.0> ra: meta data store initialised for system quorum_queues. 0 record(s) recovered[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:00.178052+00:00 [notice] <0.270.0> WAL: ra_log_wal init, open tbls: ra_log_open_mem_tables, closed tbls: ra_log_closed_mem_tables[0m
+rabbitmq          | 2026-05-31 02:14:00.238310+00:00 [info] <0.228.0> ra: starting system coordination[0m
+rabbitmq          | 2026-05-31 02:14:00.238383+00:00 [info] <0.228.0> starting Ra system: coordination in directory: /var/lib/rabbitmq/mnesia/rabbit@fbccb3e89ef7/coordination/rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:00.239158+00:00 [info] <0.277.0> ra system 'coordination' running pre init for 0 registered servers[0m
+rabbitmq          | 2026-05-31 02:14:00.239512+00:00 [info] <0.278.0> ra: meta data store initialised for system coordination. 0 record(s) recovered[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:00.239625+00:00 [notice] <0.283.0> WAL: ra_coordination_log_wal init, open tbls: ra_coordination_log_open_mem_tables, closed tbls: ra_coordination_log_closed_mem_tables[0m
+rabbitmq          | 2026-05-31 02:14:00.269091+00:00 [info] <0.228.0> [0m
+rabbitmq          | 2026-05-31 02:14:00.269091+00:00 [info] <0.228.0>  Starting RabbitMQ 3.9.16 on Erlang 24.3.4 [jit][0m
+rabbitmq          | 2026-05-31 02:14:00.269091+00:00 [info] <0.228.0>  Copyright (c) 2007-2022 VMware, Inc. or its affiliates.[0m
+rabbitmq          | 2026-05-31 02:14:00.269091+00:00 [info] <0.228.0>  Licensed under the MPL 2.0. Website: https://rabbitmq.com[0m
+rabbitmq          | 
+rabbitmq          |   ##  ##      RabbitMQ 3.9.16
+rabbitmq          |   ##  ##
+rabbitmq          |   ##########  Copyright (c) 2007-2022 VMware, Inc. or its affiliates.
+rabbitmq          |   ######  ##
+rabbitmq          |   ##########  Licensed under the MPL 2.0. Website: https://rabbitmq.com
+rabbitmq          | 
+rabbitmq          |   Erlang:      24.3.4 [jit]
+rabbitmq          |   TLS Library: OpenSSL - OpenSSL 1.1.1o  3 May 2022
+rabbitmq          | 
+rabbitmq          |   Doc guides:  https://rabbitmq.com/documentation.html
+rabbitmq          |   Support:     https://rabbitmq.com/contact.html
+rabbitmq          |   Tutorials:   https://rabbitmq.com/getstarted.html
+rabbitmq          |   Monitoring:  https://rabbitmq.com/monitoring.html
+rabbitmq          | 
+rabbitmq          |   Logs: /var/log/rabbitmq/rabbit@fbccb3e89ef7_upgrade.log
+rabbitmq          |         <stdout>
+rabbitmq          | 
+rabbitmq          |   Config file(s): /etc/rabbitmq/conf.d/10-defaults.conf
+rabbitmq          | 
+rabbitmq          |   Starting broker...2026-05-31 02:14:00.270217+00:00 [info] <0.228.0> [0m
+rabbitmq          | 2026-05-31 02:14:00.270217+00:00 [info] <0.228.0>  node           : rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:00.270217+00:00 [info] <0.228.0>  home dir       : /var/lib/rabbitmq[0m
+rabbitmq          | 2026-05-31 02:14:00.270217+00:00 [info] <0.228.0>  config file(s) : /etc/rabbitmq/conf.d/10-defaults.conf[0m
+rabbitmq          | 2026-05-31 02:14:00.270217+00:00 [info] <0.228.0>  cookie hash    : gxzXtXlHKiCZD3TMemelEA==[0m
+rabbitmq          | 2026-05-31 02:14:00.270217+00:00 [info] <0.228.0>  log(s)         : /var/log/rabbitmq/rabbit@fbccb3e89ef7_upgrade.log[0m
+rabbitmq          | 2026-05-31 02:14:00.270217+00:00 [info] <0.228.0>                 : <stdout>[0m
+rabbitmq          | 2026-05-31 02:14:00.270217+00:00 [info] <0.228.0>  database dir   : /var/lib/rabbitmq/mnesia/rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:00.789911+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:00.789963+00:00 [info] <0.228.0> Feature flags:   [ ] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:00.789982+00:00 [info] <0.228.0> Feature flags:   [ ] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:00.789998+00:00 [info] <0.228.0> Feature flags:   [ ] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:00.790040+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:00.790073+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:00.790086+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:00.790100+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:00.790146+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:00.790166+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:03.363998+00:00 [info] <0.228.0> Running boot step pre_boot defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.364055+00:00 [info] <0.228.0> Running boot step rabbit_global_counters defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.364215+00:00 [info] <0.228.0> Running boot step rabbit_osiris_metrics defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.364300+00:00 [info] <0.228.0> Running boot step rabbit_core_metrics defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.364763+00:00 [info] <0.228.0> Running boot step rabbit_alarm defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.374696+00:00 [info] <0.300.0> Memory high watermark set to 5558 MiB (5828765286 bytes) of 13896 MiB (14571913216 bytes) total[0m
+rabbitmq          | 2026-05-31 02:14:03.378271+00:00 [info] <0.302.0> Enabling free disk space monitoring[0m
+rabbitmq          | 2026-05-31 02:14:03.378333+00:00 [info] <0.302.0> Disk free limit set to 50MB[0m
+rabbitmq          | 2026-05-31 02:14:03.381017+00:00 [info] <0.228.0> Running boot step code_server_cache defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.381146+00:00 [info] <0.228.0> Running boot step file_handle_cache defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.381363+00:00 [info] <0.307.0> Limiting to approx 927 file handles (832 sockets)[0m
+rabbitmq          | 2026-05-31 02:14:03.381586+00:00 [info] <0.308.0> FHC read buffering: OFF[0m
+rabbitmq          | 2026-05-31 02:14:03.381628+00:00 [info] <0.308.0> FHC write buffering: ON[0m
+rabbitmq          | 2026-05-31 02:14:03.393230+00:00 [info] <0.228.0> Running boot step worker_pool defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.393343+00:00 [info] <0.285.0> Will use 4 processes for default worker pool[0m
+rabbitmq          | 2026-05-31 02:14:03.393397+00:00 [info] <0.285.0> Starting worker pool 'worker_pool' with 4 processes in it[0m
+rabbitmq          | 2026-05-31 02:14:03.393765+00:00 [info] <0.228.0> Running boot step database defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:03.394146+00:00 [info] <0.228.0> Node database directory at /var/lib/rabbitmq/mnesia/rabbit@fbccb3e89ef7 is empty. Assuming we need to join an existing cluster or initialise from scratch...[0m
+rabbitmq          | 2026-05-31 02:14:03.394219+00:00 [info] <0.228.0> Configured peer discovery backend: rabbit_peer_discovery_classic_config[0m
+rabbitmq          | 2026-05-31 02:14:03.394248+00:00 [info] <0.228.0> Will try to lock with peer discovery backend rabbit_peer_discovery_classic_config[0m
+rabbitmq          | 2026-05-31 02:14:03.394319+00:00 [info] <0.228.0> All discovered existing cluster peers:[0m
+rabbitmq          | 2026-05-31 02:14:03.394343+00:00 [info] <0.228.0> Discovered no peer nodes to cluster with. Some discovery backends can filter nodes out based on a readiness criteria. Enabling debug logging might help troubleshoot.[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:03.396610+00:00 [notice] <0.44.0> Application mnesia exited with reason: stopped[0m
+rabbitmq          | 2026-05-31 02:14:04.875814+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 9 retries left[0m
+rabbitmq          | 2026-05-31 02:14:04.876100+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:04.917108+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 9 retries left[0m
+rabbitmq          | 2026-05-31 02:14:04.917224+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:04.917288+00:00 [info] <0.228.0> Feature flag `drop_unroutable_metric`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:04.917367+00:00 [info] <0.228.0> Feature flag `drop_unroutable_metric`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:04.918705+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:04.918773+00:00 [info] <0.228.0> Feature flags:   [~] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.918798+00:00 [info] <0.228.0> Feature flags:   [ ] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.918823+00:00 [info] <0.228.0> Feature flags:   [ ] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:04.918857+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:04.918877+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.918907+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.918951+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:04.918977+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:04.918998+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:04.926763+00:00 [info] <0.228.0> Feature flag `drop_unroutable_metric`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:04.927930+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:04.927995+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.928019+00:00 [info] <0.228.0> Feature flags:   [ ] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.928036+00:00 [info] <0.228.0> Feature flags:   [ ] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:04.928144+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:04.928164+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.928179+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.928240+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:04.928257+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:04.928273+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:04.937551+00:00 [info] <0.228.0> Feature flag `empty_basic_get_metric`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:04.937624+00:00 [info] <0.228.0> Feature flag `empty_basic_get_metric`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:04.938553+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:04.938590+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.938608+00:00 [info] <0.228.0> Feature flags:   [~] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.938640+00:00 [info] <0.228.0> Feature flags:   [ ] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:04.938657+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:04.938676+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.938694+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.938708+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:04.938722+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:04.938741+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:04.946921+00:00 [info] <0.228.0> Feature flag `empty_basic_get_metric`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:04.948963+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:04.949147+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.949188+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.949204+00:00 [info] <0.228.0> Feature flags:   [ ] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:04.949268+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:04.949285+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.949298+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.949346+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:04.949361+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:04.949375+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:04.956715+00:00 [info] <0.228.0> Feature flag `implicit_default_bindings`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:04.956837+00:00 [info] <0.228.0> Feature flag `implicit_default_bindings`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:04.958512+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:04.958620+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.958670+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.958716+00:00 [info] <0.228.0> Feature flags:   [~] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:04.958775+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:04.958813+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.958903+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.958961+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:04.959000+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:04.959036+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:04.970222+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 0 retries left[0m
+rabbitmq          | 2026-05-31 02:14:04.970383+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:04.970455+00:00 [info] <0.228.0> Feature flag `implicit_default_bindings`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:04.972831+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:04.972902+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.972935+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.972967+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:04.973042+00:00 [info] <0.228.0> Feature flags:   [ ] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:04.973069+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.973122+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.973149+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:04.973172+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:04.973206+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:04.981036+00:00 [info] <0.228.0> Feature flag `maintenance_mode_status`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:04.981125+00:00 [info] <0.228.0> Feature flag `maintenance_mode_status`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:04.982519+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:04.982610+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.982664+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:04.982691+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:04.982730+00:00 [info] <0.228.0> Feature flags:   [~] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:04.982757+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.982794+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:04.982825+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:04.982849+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:04.982879+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:04.993424+00:00 [info] <0.228.0> Creating table rabbit_node_maintenance_states for feature flag `maintenance_mode_status`[0m
+rabbitmq          | 2026-05-31 02:14:05.034809+00:00 [info] <0.228.0> Feature flag `maintenance_mode_status`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:05.037053+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.037130+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.037157+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.037182+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.037218+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.037241+00:00 [info] <0.228.0> Feature flags:   [ ] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.037261+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.037293+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.037317+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.037335+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.045589+00:00 [info] <0.228.0> Feature flag `quorum_queue`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:05.045677+00:00 [info] <0.228.0> Feature flag `quorum_queue`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:05.047349+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.047462+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.047529+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.047565+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.047612+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.047640+00:00 [info] <0.228.0> Feature flags:   [~] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.047675+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.049336+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.049402+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.049448+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.060675+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 9 retries left[0m
+rabbitmq          | 2026-05-31 02:14:05.060807+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:05.060831+00:00 [info] <0.228.0> Feature flag `quorum_queue`:   migrating Mnesia table rabbit_queue...[0m
+rabbitmq          | 2026-05-31 02:14:05.238456+00:00 [info] <0.228.0> Feature flag `quorum_queue`:   migrating Mnesia table rabbit_durable_queue...[0m
+rabbitmq          | 2026-05-31 02:14:05.464752+00:00 [info] <0.228.0> Feature flag `quorum_queue`:   Mnesia tables migration done[0m
+rabbitmq          | 2026-05-31 02:14:05.464902+00:00 [info] <0.228.0> Feature flag `quorum_queue`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:05.468133+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.468221+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.468255+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.468283+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.468370+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.468397+00:00 [info] <0.228.0> Feature flags:   [x] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.468420+00:00 [info] <0.228.0> Feature flags:   [ ] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.468497+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.468524+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.468548+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.484157+00:00 [info] <0.228.0> Feature flag `stream_queue`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:05.484302+00:00 [info] <0.228.0> Feature flag `stream_queue`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:05.486246+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.486345+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.486399+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.486504+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.486554+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.486612+00:00 [info] <0.228.0> Feature flags:   [x] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.486668+00:00 [info] <0.228.0> Feature flags:   [~] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.486712+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.486752+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.486809+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.504739+00:00 [info] <0.228.0> Feature flag `stream_queue`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:05.512490+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.512607+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.512709+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.512761+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.512886+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.513011+00:00 [info] <0.228.0> Feature flags:   [x] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.513087+00:00 [info] <0.228.0> Feature flags:   [x] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.513189+00:00 [info] <0.228.0> Feature flags:   [ ] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.513267+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.513314+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.524226+00:00 [info] <0.228.0> Feature flag `user_limits`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:05.524320+00:00 [info] <0.228.0> Feature flag `user_limits`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:05.525358+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.525403+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.525483+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.525505+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.525532+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.525589+00:00 [info] <0.228.0> Feature flags:   [x] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.525610+00:00 [info] <0.228.0> Feature flags:   [x] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.525631+00:00 [info] <0.228.0> Feature flags:   [~] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.525648+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.525695+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.535498+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 9 retries left[0m
+rabbitmq          | 2026-05-31 02:14:05.535614+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:05.890536+00:00 [info] <0.228.0> Feature flag `user_limits`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:05.894224+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.894360+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.894421+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.894510+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.894594+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.894642+00:00 [info] <0.228.0> Feature flags:   [x] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.894688+00:00 [info] <0.228.0> Feature flags:   [x] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.894796+00:00 [info] <0.228.0> Feature flags:   [x] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.894841+00:00 [info] <0.228.0> Feature flags:   [ ] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.894899+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.908959+00:00 [info] <0.228.0> Feature flag `virtual_host_metadata`: supported, attempt to enable...[0m
+rabbitmq          | 2026-05-31 02:14:05.909052+00:00 [info] <0.228.0> Feature flag `virtual_host_metadata`: mark as enabled=state_changing[0m
+rabbitmq          | 2026-05-31 02:14:05.910659+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:05.910728+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.910816+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:05.910864+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:05.910917+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:05.910957+00:00 [info] <0.228.0> Feature flags:   [x] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.911004+00:00 [info] <0.228.0> Feature flags:   [x] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:05.911051+00:00 [info] <0.228.0> Feature flags:   [x] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:05.911088+00:00 [info] <0.228.0> Feature flags:   [~] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:05.911127+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:05.929226+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 9 retries left[0m
+rabbitmq          | 2026-05-31 02:14:05.929498+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:06.116480+00:00 [info] <0.228.0> Feature flag `virtual_host_metadata`: mark as enabled=true[0m
+rabbitmq          | 2026-05-31 02:14:06.120417+00:00 [info] <0.228.0> Feature flags: list of feature flags found:[0m
+rabbitmq          | 2026-05-31 02:14:06.120571+00:00 [info] <0.228.0> Feature flags:   [x] drop_unroutable_metric[0m
+rabbitmq          | 2026-05-31 02:14:06.120624+00:00 [info] <0.228.0> Feature flags:   [x] empty_basic_get_metric[0m
+rabbitmq          | 2026-05-31 02:14:06.120669+00:00 [info] <0.228.0> Feature flags:   [x] implicit_default_bindings[0m
+rabbitmq          | 2026-05-31 02:14:06.120740+00:00 [info] <0.228.0> Feature flags:   [x] maintenance_mode_status[0m
+rabbitmq          | 2026-05-31 02:14:06.120784+00:00 [info] <0.228.0> Feature flags:   [x] quorum_queue[0m
+rabbitmq          | 2026-05-31 02:14:06.120823+00:00 [info] <0.228.0> Feature flags:   [x] stream_queue[0m
+rabbitmq          | 2026-05-31 02:14:06.120896+00:00 [info] <0.228.0> Feature flags:   [x] user_limits[0m
+rabbitmq          | 2026-05-31 02:14:06.120936+00:00 [info] <0.228.0> Feature flags:   [x] virtual_host_metadata[0m
+rabbitmq          | 2026-05-31 02:14:06.120976+00:00 [info] <0.228.0> Feature flags: feature flag states written to disk: yes[0m
+rabbitmq          | 2026-05-31 02:14:06.135222+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 9 retries left[0m
+rabbitmq          | 2026-05-31 02:14:06.135376+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:06.232142+00:00 [info] <0.228.0> Waiting for Mnesia tables for 30000 ms, 9 retries left[0m
+rabbitmq          | 2026-05-31 02:14:06.232377+00:00 [info] <0.228.0> Successfully synced tables from a peer[0m
+rabbitmq          | 2026-05-31 02:14:06.232482+00:00 [info] <0.228.0> Peer discovery backend rabbit_peer_discovery_classic_config does not support registration, skipping registration.[0m
+rabbitmq          | 2026-05-31 02:14:06.232568+00:00 [info] <0.228.0> Will try to unlock with peer discovery backend rabbit_peer_discovery_classic_config[0m
+rabbitmq          | 2026-05-31 02:14:06.232704+00:00 [info] <0.228.0> Running boot step database_sync defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.232875+00:00 [info] <0.228.0> Running boot step feature_flags defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.233249+00:00 [info] <0.228.0> Running boot step codec_correctness_check defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.233520+00:00 [info] <0.228.0> Running boot step external_infrastructure defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.233590+00:00 [info] <0.228.0> Running boot step rabbit_registry defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.233830+00:00 [info] <0.228.0> Running boot step rabbit_auth_mechanism_cr_demo defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.234052+00:00 [info] <0.228.0> Running boot step rabbit_queue_location_random defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.234190+00:00 [info] <0.228.0> Running boot step rabbit_event defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.234463+00:00 [info] <0.228.0> Running boot step rabbit_auth_mechanism_amqplain defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.234619+00:00 [info] <0.228.0> Running boot step rabbit_auth_mechanism_plain defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.234760+00:00 [info] <0.228.0> Running boot step rabbit_exchange_type_direct defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.234862+00:00 [info] <0.228.0> Running boot step rabbit_exchange_type_fanout defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.234976+00:00 [info] <0.228.0> Running boot step rabbit_exchange_type_headers defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.235065+00:00 [info] <0.228.0> Running boot step rabbit_exchange_type_topic defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.235171+00:00 [info] <0.228.0> Running boot step rabbit_mirror_queue_mode_all defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.235295+00:00 [info] <0.228.0> Running boot step rabbit_mirror_queue_mode_exactly defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.235413+00:00 [info] <0.228.0> Running boot step rabbit_mirror_queue_mode_nodes defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.235548+00:00 [info] <0.228.0> Running boot step rabbit_priority_queue defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.235632+00:00 [info] <0.228.0> Priority queues enabled, real BQ is rabbit_variable_queue[0m
+rabbitmq          | 2026-05-31 02:14:06.235749+00:00 [info] <0.228.0> Running boot step rabbit_queue_location_client_local defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.235899+00:00 [info] <0.228.0> Running boot step rabbit_queue_location_min_masters defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.236026+00:00 [info] <0.228.0> Running boot step kernel_ready defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.236076+00:00 [info] <0.228.0> Running boot step rabbit_sysmon_minder defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.236326+00:00 [info] <0.228.0> Running boot step rabbit_epmd_monitor defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.237499+00:00 [info] <0.570.0> epmd monitor knows us, inter-node communication (distribution) port: 25672[0m
+rabbitmq          | 2026-05-31 02:14:06.237728+00:00 [info] <0.228.0> Running boot step guid_generator defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.283095+00:00 [info] <0.228.0> Running boot step rabbit_node_monitor defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.283632+00:00 [info] <0.574.0> Starting rabbit_node_monitor[0m
+rabbitmq          | 2026-05-31 02:14:06.283830+00:00 [info] <0.228.0> Running boot step delegate_sup defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.284529+00:00 [info] <0.228.0> Running boot step rabbit_memory_monitor defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.284817+00:00 [info] <0.228.0> Running boot step core_initialized defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.284869+00:00 [info] <0.228.0> Running boot step upgrade_queues defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.295197+00:00 [info] <0.228.0> message_store upgrades: 1 to apply[0m
+rabbitmq          | 2026-05-31 02:14:06.295324+00:00 [info] <0.228.0> message_store upgrades: Applying rabbit_variable_queue:move_messages_to_vhost_store[0m
+rabbitmq          | 2026-05-31 02:14:06.295500+00:00 [info] <0.228.0> message_store upgrades: No durable queues found. Skipping message store migration[0m
+rabbitmq          | 2026-05-31 02:14:06.295551+00:00 [info] <0.228.0> message_store upgrades: Removing the old message store data[0m
+rabbitmq          | 2026-05-31 02:14:06.296038+00:00 [info] <0.228.0> message_store upgrades: All upgrades applied successfully[0m
+rabbitmq          | 2026-05-31 02:14:06.350744+00:00 [info] <0.228.0> Running boot step channel_tracking defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.410084+00:00 [info] <0.228.0> Setting up a table for channel tracking on this node: tracked_channel_on_node_rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:06.469271+00:00 [info] <0.228.0> Setting up a table for channel tracking on this node: tracked_channel_table_per_user_on_node_rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:06.469820+00:00 [info] <0.228.0> Running boot step rabbit_channel_tracking_handler defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.469974+00:00 [info] <0.228.0> Running boot step connection_tracking defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.534450+00:00 [info] <0.228.0> Setting up a table for connection tracking on this node: tracked_connection_on_node_rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:06.601598+00:00 [info] <0.228.0> Setting up a table for per-vhost connection counting on this node: tracked_connection_per_vhost_on_node_rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:06.662601+00:00 [info] <0.228.0> Setting up a table for per-user connection counting on this node: tracked_connection_table_per_user_on_node_rabbit@fbccb3e89ef7[0m
+rabbitmq          | 2026-05-31 02:14:06.663148+00:00 [info] <0.228.0> Running boot step rabbit_connection_tracking_handler defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.663282+00:00 [info] <0.228.0> Running boot step rabbit_exchange_parameters defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.663414+00:00 [info] <0.228.0> Running boot step rabbit_mirror_queue_misc defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.663633+00:00 [info] <0.228.0> Running boot step rabbit_policies defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.664348+00:00 [info] <0.228.0> Running boot step rabbit_policy defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.664506+00:00 [info] <0.228.0> Running boot step rabbit_queue_location_validator defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.664621+00:00 [info] <0.228.0> Running boot step rabbit_quorum_memory_manager defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.664715+00:00 [info] <0.228.0> Running boot step rabbit_stream_coordinator defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.666987+00:00 [info] <0.228.0> Running boot step rabbit_vhost_limit defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.667182+00:00 [info] <0.228.0> Running boot step rabbit_mgmt_reset_handler defined by app rabbitmq_management[0m
+rabbitmq          | 2026-05-31 02:14:06.667313+00:00 [info] <0.228.0> Running boot step rabbit_mgmt_db_handler defined by app rabbitmq_management_agent[0m
+rabbitmq          | 2026-05-31 02:14:06.667374+00:00 [info] <0.228.0> Management plugin: using rates mode 'basic'[0m
+rabbitmq          | 2026-05-31 02:14:06.668047+00:00 [info] <0.228.0> Running boot step recovery defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.668904+00:00 [info] <0.228.0> Running boot step empty_db_check defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:06.668963+00:00 [info] <0.228.0> Will seed default virtual host and user...[0m
+rabbitmq          | 2026-05-31 02:14:06.669056+00:00 [info] <0.228.0> Adding vhost '/' (description: 'Default virtual host', tags: [])[0m
+rabbitmq          | 2026-05-31 02:14:07.060618+00:00 [info] <0.635.0> Making sure data directory '/var/lib/rabbitmq/mnesia/rabbit@fbccb3e89ef7/msg_stores/vhosts/628WB79CIFDYO9LJI6DKMI09L' for vhost '/' exists[0m
+rabbitmq          | 2026-05-31 02:14:07.062617+00:00 [info] <0.635.0> Setting segment_entry_count for vhost '/' with 0 queues to '2048'[0m
+rabbitmq          | 2026-05-31 02:14:07.093975+00:00 [info] <0.635.0> Starting message stores for vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:07.094238+00:00 [info] <0.639.0> Message store "628WB79CIFDYO9LJI6DKMI09L/msg_store_transient": using rabbit_msg_store_ets_index to provide index[0m
+rabbitmq          | 2026-05-31 02:14:07.096691+00:00 [info] <0.635.0> Started message store of type transient for vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:07.096858+00:00 [info] <0.643.0> Message store "628WB79CIFDYO9LJI6DKMI09L/msg_store_persistent": using rabbit_msg_store_ets_index to provide index[0m
+rabbitmq          | [38;5;214m2026-05-31 02:14:07.097781+00:00 [warning] <0.643.0> Message store "628WB79CIFDYO9LJI6DKMI09L/msg_store_persistent": rebuilding indices from scratch[0m
+rabbitmq          | 2026-05-31 02:14:07.098773+00:00 [info] <0.635.0> Started message store of type persistent for vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:07.098929+00:00 [info] <0.635.0> Recovering 0 queues of type rabbit_classic_queue took 35ms[0m
+rabbitmq          | 2026-05-31 02:14:07.098961+00:00 [info] <0.635.0> Recovering 0 queues of type rabbit_quorum_queue took 0ms[0m
+rabbitmq          | 2026-05-31 02:14:07.098999+00:00 [info] <0.635.0> Recovering 0 queues of type rabbit_stream_queue took 0ms[0m
+rabbitmq          | 2026-05-31 02:14:07.144336+00:00 [info] <0.228.0> Created user 'guest'[0m
+rabbitmq          | 2026-05-31 02:14:07.186146+00:00 [info] <0.228.0> Successfully set user tags for user 'guest' to [administrator][0m
+rabbitmq          | 2026-05-31 02:14:07.229685+00:00 [info] <0.228.0> Successfully set permissions for 'guest' in virtual host '/' to '.*', '.*', '.*'[0m
+rabbitmq          | 2026-05-31 02:14:07.229872+00:00 [info] <0.228.0> Running boot step rabbit_looking_glass defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.229955+00:00 [info] <0.228.0> Running boot step rabbit_core_metrics_gc defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.230234+00:00 [info] <0.228.0> Running boot step background_gc defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.230551+00:00 [info] <0.228.0> Running boot step routing_ready defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.230623+00:00 [info] <0.228.0> Running boot step pre_flight defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.230680+00:00 [info] <0.228.0> Running boot step notify_cluster defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.230731+00:00 [info] <0.228.0> Running boot step networking defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.230780+00:00 [info] <0.228.0> Running boot step definition_import_worker_pool defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.230867+00:00 [info] <0.285.0> Starting worker pool 'definition_import_pool' with 4 processes in it[0m
+rabbitmq          | 2026-05-31 02:14:07.231234+00:00 [info] <0.228.0> Running boot step cluster_name defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.231312+00:00 [info] <0.228.0> Initialising internal cluster ID to 'rabbitmq-cluster-id-bn0Bpz-hZlvaZXrI3A5sdg'[0m
+rabbitmq          | 2026-05-31 02:14:07.271517+00:00 [info] <0.228.0> Running boot step direct_client defined by app rabbit[0m
+rabbitmq          | 2026-05-31 02:14:07.272099+00:00 [info] <0.228.0> Running boot step rabbit_management_load_definitions defined by app rabbitmq_management[0m
+rabbitmq          | 2026-05-31 02:14:07.272324+00:00 [info] <0.676.0> Resetting node maintenance status[0m
+rabbitmq          | 2026-05-31 02:14:07.287227+00:00 [info] <0.735.0> Management plugin: HTTP (non-TLS) listener started on port 15672[0m
+rabbitmq          | 2026-05-31 02:14:07.287406+00:00 [info] <0.763.0> Statistics database started.[0m
+rabbitmq          | 2026-05-31 02:14:07.287973+00:00 [info] <0.762.0> Starting worker pool 'management_worker_pool' with 3 processes in it[0m
+rabbitmq          | 2026-05-31 02:14:07.300611+00:00 [info] <0.777.0> Prometheus metrics: HTTP (non-TLS) listener started on port 15692[0m
+rabbitmq          | 2026-05-31 02:14:07.300822+00:00 [info] <0.676.0> Ready to start client connection listeners[0m
+rabbitmq          | 2026-05-31 02:14:07.302704+00:00 [info] <0.821.0> started TCP listener on [::]:5672[0m
+rabbitmq          |  completed with 4 plugins.
+rabbitmq          | 2026-05-31 02:14:07.383824+00:00 [info] <0.676.0> Server startup complete; 4 plugins started.[0m
+rabbitmq          | 2026-05-31 02:14:07.383824+00:00 [info] <0.676.0>  * rabbitmq_prometheus[0m
+rabbitmq          | 2026-05-31 02:14:07.383824+00:00 [info] <0.676.0>  * rabbitmq_management[0m
+rabbitmq          | 2026-05-31 02:14:07.383824+00:00 [info] <0.676.0>  * rabbitmq_web_dispatch[0m
+rabbitmq          | 2026-05-31 02:14:07.383824+00:00 [info] <0.676.0>  * rabbitmq_management_agent[0m
+rabbitmq          | 2026-05-31 02:14:08.833215+00:00 [info] <0.841.0> accepting AMQP connection <0.841.0> (172.18.0.3:54172 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:08.834800+00:00 [info] <0.841.0> connection <0.841.0> (172.18.0.3:54172 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:08.838508+00:00 [info] <0.860.0> accepting AMQP connection <0.860.0> (172.18.0.3:54180 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:08.839662+00:00 [info] <0.860.0> connection <0.860.0> (172.18.0.3:54180 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:09.836531+00:00 [notice] <0.874.0> queue 'results_queue' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:09.836866+00:00 [info] <0.869.0> ra: started cluster %2F_results_queue with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:09.836866+00:00 [info] <0.869.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:09.836866+00:00 [info] <0.869.0> Leader: {'%2F_results_queue',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:10.728613+00:00 [info] <0.889.0> accepting AMQP connection <0.889.0> (172.18.0.4:41318 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:10.730200+00:00 [info] <0.889.0> connection <0.889.0> (172.18.0.4:41318 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:11.603534+00:00 [notice] <0.903.0> queue 'q4_join_0' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:11.603800+00:00 [info] <0.898.0> ra: started cluster %2F_q4_join_0 with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:11.603800+00:00 [info] <0.898.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:11.603800+00:00 [info] <0.898.0> Leader: {'%2F_q4_join_0',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:11.941610+00:00 [info] <0.912.0> accepting AMQP connection <0.912.0> (172.18.0.4:41334 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:11.943653+00:00 [info] <0.912.0> connection <0.912.0> (172.18.0.4:41334 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:12.216159+00:00 [info] <0.926.0> accepting AMQP connection <0.926.0> (172.18.0.5:36514 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:12.218853+00:00 [info] <0.926.0> connection <0.926.0> (172.18.0.5:36514 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:12.493073+00:00 [info] <0.943.0> accepting AMQP connection <0.943.0> (172.18.0.6:48648 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:12.495224+00:00 [info] <0.943.0> connection <0.943.0> (172.18.0.6:48648 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:13.588479+00:00 [info] <0.964.0> accepting AMQP connection <0.964.0> (172.18.0.7:34804 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:13.590985+00:00 [info] <0.964.0> connection <0.964.0> (172.18.0.7:34804 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:13.722688+00:00 [notice] <0.940.0> queue 'q4_join_1' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:13.722818+00:00 [info] <0.935.0> ra: started cluster %2F_q4_join_1 with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:13.722818+00:00 [info] <0.935.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:13.722818+00:00 [info] <0.935.0> Leader: {'%2F_q4_join_1',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:14.153508+00:00 [info] <0.1012.0> accepting AMQP connection <0.1012.0> (172.18.0.5:36520 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:14.155715+00:00 [info] <0.1012.0> connection <0.1012.0> (172.18.0.5:36520 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:14.481554+00:00 [notice] <0.958.0> queue 'q4_join_2' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:14.481923+00:00 [info] <0.952.0> ra: started cluster %2F_q4_join_2 with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:14.481923+00:00 [info] <0.952.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:14.481923+00:00 [info] <0.952.0> Leader: {'%2F_q4_join_2',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:14.785675+00:00 [info] <0.1032.0> accepting AMQP connection <0.1032.0> (172.18.0.6:48654 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:14.787842+00:00 [info] <0.1032.0> connection <0.1032.0> (172.18.0.6:48654 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:14.796549+00:00 [info] <0.1045.0> accepting AMQP connection <0.1045.0> (172.18.0.8:42494 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:14.798385+00:00 [info] <0.1045.0> connection <0.1045.0> (172.18.0.8:42494 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:15.042459+00:00 [info] <0.1068.0> accepting AMQP connection <0.1068.0> (172.18.0.9:40528 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:15.044194+00:00 [info] <0.1068.0> connection <0.1068.0> (172.18.0.9:40528 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:15.200732+00:00 [notice] <0.995.0> queue 'bridge_matcher_1' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:15.201018+00:00 [info] <0.973.0> ra: started cluster %2F_bridge_matcher_1 with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:15.201018+00:00 [info] <0.973.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:15.201018+00:00 [info] <0.973.0> Leader: {'%2F_bridge_matcher_1',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:15.596899+00:00 [info] <0.1093.0> accepting AMQP connection <0.1093.0> (172.18.0.7:34820 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:15.598751+00:00 [info] <0.1093.0> connection <0.1093.0> (172.18.0.7:34820 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:15.602122+00:00 [info] <0.1111.0> accepting AMQP connection <0.1111.0> (172.18.0.7:34822 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:15.603414+00:00 [info] <0.1111.0> connection <0.1111.0> (172.18.0.7:34822 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:15.982959+00:00 [notice] <0.1065.0> queue 'bridge_matcher_0' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:15.984653+00:00 [info] <0.1054.0> ra: started cluster %2F_bridge_matcher_0 with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:15.984653+00:00 [info] <0.1054.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:15.984653+00:00 [info] <0.1054.0> Leader: {'%2F_bridge_matcher_0',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:16.391980+00:00 [notice] <0.1085.0> queue 'bridge_matcher_2' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:16.392312+00:00 [info] <0.1077.0> ra: started cluster %2F_bridge_matcher_2 with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:16.392312+00:00 [info] <0.1077.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:16.392312+00:00 [info] <0.1077.0> Leader: {'%2F_bridge_matcher_2',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:16.396972+00:00 [info] <0.1138.0> accepting AMQP connection <0.1138.0> (172.18.0.8:42506 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:16.398485+00:00 [info] <0.1138.0> connection <0.1138.0> (172.18.0.8:42506 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:16.401446+00:00 [info] <0.1156.0> accepting AMQP connection <0.1156.0> (172.18.0.8:42518 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:16.402792+00:00 [info] <0.1156.0> connection <0.1156.0> (172.18.0.8:42518 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:16.994694+00:00 [info] <0.1183.0> accepting AMQP connection <0.1183.0> (172.18.0.9:40534 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:16.997672+00:00 [info] <0.1183.0> connection <0.1183.0> (172.18.0.9:40534 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:17.002225+00:00 [info] <0.1201.0> accepting AMQP connection <0.1201.0> (172.18.0.9:40546 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:17.004444+00:00 [info] <0.1201.0> connection <0.1201.0> (172.18.0.9:40546 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:17.093957+00:00 [info] <0.1219.0> accepting AMQP connection <0.1219.0> (172.18.0.10:53742 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:17.095547+00:00 [info] <0.1219.0> connection <0.1219.0> (172.18.0.10:53742 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:17.989279+00:00 [notice] <0.1234.0> queue 'group_queue' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:17.989526+00:00 [info] <0.1228.0> ra: started cluster %2F_group_queue with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:17.989526+00:00 [info] <0.1228.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:17.989526+00:00 [info] <0.1228.0> Leader: {'%2F_group_queue',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:18.125181+00:00 [info] <0.1240.0> accepting AMQP connection <0.1240.0> (172.18.0.11:55266 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.126734+00:00 [info] <0.1240.0> connection <0.1240.0> (172.18.0.11:55266 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:18.132258+00:00 [info] <0.1255.0> accepting AMQP connection <0.1255.0> (172.18.0.11:55278 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.135559+00:00 [info] <0.1255.0> connection <0.1255.0> (172.18.0.11:55278 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:18.139182+00:00 [info] <0.1274.0> accepting AMQP connection <0.1274.0> (172.18.0.11:55294 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.140340+00:00 [info] <0.1274.0> connection <0.1274.0> (172.18.0.11:55294 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:18.276174+00:00 [info] <0.1296.0> accepting AMQP connection <0.1296.0> (172.18.0.10:53748 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.277551+00:00 [info] <0.1296.0> connection <0.1296.0> (172.18.0.10:53748 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:18.283828+00:00 [info] <0.1314.0> accepting AMQP connection <0.1314.0> (172.18.0.10:53758 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.285713+00:00 [info] <0.1314.0> connection <0.1314.0> (172.18.0.10:53758 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:18.323402+00:00 [info] <0.1334.0> accepting AMQP connection <0.1334.0> (172.18.0.12:45770 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.324464+00:00 [info] <0.1334.0> connection <0.1334.0> (172.18.0.12:45770 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:18.326947+00:00 [info] <0.1348.0> accepting AMQP connection <0.1348.0> (172.18.0.12:45772 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.329948+00:00 [info] <0.1348.0> connection <0.1348.0> (172.18.0.12:45772 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:18.336982+00:00 [info] <0.1366.0> accepting AMQP connection <0.1366.0> (172.18.0.12:45778 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:18.338453+00:00 [info] <0.1366.0> connection <0.1366.0> (172.18.0.12:45778 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:20.034497+00:00 [info] <0.1436.0> accepting AMQP connection <0.1436.0> (172.18.0.13:52844 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:20.036047+00:00 [info] <0.1436.0> connection <0.1436.0> (172.18.0.13:52844 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:20.256146+00:00 [info] <0.1458.0> accepting AMQP connection <0.1458.0> (172.18.0.14:51120 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:20.257732+00:00 [info] <0.1458.0> connection <0.1458.0> (172.18.0.14:51120 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:20.443867+00:00 [info] <0.1474.0> accepting AMQP connection <0.1474.0> (172.18.0.14:51126 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:20.445324+00:00 [info] <0.1474.0> connection <0.1474.0> (172.18.0.14:51126 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:20.450772+00:00 [info] <0.1492.0> accepting AMQP connection <0.1492.0> (172.18.0.14:51142 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:20.452649+00:00 [info] <0.1492.0> connection <0.1492.0> (172.18.0.14:51142 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:20.457963+00:00 [info] <0.1510.0> accepting AMQP connection <0.1510.0> (172.18.0.14:51144 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:20.459219+00:00 [info] <0.1510.0> connection <0.1510.0> (172.18.0.14:51144 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:20.953498+00:00 [notice] <0.1450.0> queue 'date_filter_queue' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:20.953767+00:00 [info] <0.1445.0> ra: started cluster %2F_date_filter_queue with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:20.953767+00:00 [info] <0.1445.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:20.953767+00:00 [info] <0.1445.0> Leader: {'%2F_date_filter_queue',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:21.237327+00:00 [info] <0.1540.0> accepting AMQP connection <0.1540.0> (172.18.0.13:52854 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:21.238719+00:00 [info] <0.1540.0> connection <0.1540.0> (172.18.0.13:52854 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:21.241990+00:00 [info] <0.1558.0> accepting AMQP connection <0.1558.0> (172.18.0.13:52860 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:21.243111+00:00 [info] <0.1558.0> connection <0.1558.0> (172.18.0.13:52860 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:21.248297+00:00 [info] <0.1576.0> accepting AMQP connection <0.1576.0> (172.18.0.13:52862 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:21.250622+00:00 [info] <0.1576.0> connection <0.1576.0> (172.18.0.13:52862 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:21.944869+00:00 [info] <0.1606.0> accepting AMQP connection <0.1606.0> (172.18.0.15:60840 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:21.946623+00:00 [info] <0.1606.0> connection <0.1606.0> (172.18.0.15:60840 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:22.244261+00:00 [info] <0.1623.0> accepting AMQP connection <0.1623.0> (172.18.0.16:34394 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:22.245656+00:00 [info] <0.1623.0> connection <0.1623.0> (172.18.0.16:34394 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:22.398045+00:00 [info] <0.1638.0> accepting AMQP connection <0.1638.0> (172.18.0.16:34396 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:22.401056+00:00 [info] <0.1638.0> connection <0.1638.0> (172.18.0.16:34396 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:22.405904+00:00 [info] <0.1656.0> accepting AMQP connection <0.1656.0> (172.18.0.16:34412 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:22.406956+00:00 [info] <0.1656.0> connection <0.1656.0> (172.18.0.16:34412 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | [38;5;87m2026-05-31 02:14:22.828917+00:00 [notice] <0.1620.0> queue 'usd_filter_queue' in vhost '/': candidate -> leader in term: 1 machine version: 1[0m
+rabbitmq          | 2026-05-31 02:14:22.829080+00:00 [info] <0.1615.0> ra: started cluster %2F_usd_filter_queue with 1 servers[0m
+rabbitmq          | 2026-05-31 02:14:22.829080+00:00 [info] <0.1615.0> 0 servers failed to start: [][0m
+rabbitmq          | 2026-05-31 02:14:22.829080+00:00 [info] <0.1615.0> Leader: {'%2F_usd_filter_queue',rabbit@fbccb3e89ef7}[0m
+rabbitmq          | 2026-05-31 02:14:23.007732+00:00 [info] <0.1686.0> accepting AMQP connection <0.1686.0> (172.18.0.15:60842 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:23.009963+00:00 [info] <0.1686.0> connection <0.1686.0> (172.18.0.15:60842 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+rabbitmq          | 2026-05-31 02:14:23.017135+00:00 [info] <0.1704.0> accepting AMQP connection <0.1704.0> (172.18.0.15:60852 -> 172.18.0.2:5672)[0m
+rabbitmq          | 2026-05-31 02:14:23.019214+00:00 [info] <0.1704.0> connection <0.1704.0> (172.18.0.15:60852 -> 172.18.0.2:5672): user 'guest' authenticated and granted access to vhost '/'[0m
+client_0          | 2026/05/31 02:14:28 INFO transacciones enviadas: 500000
+gateway           | 2026/05/31 02:14:28 INFO Received EOF msg client="{Conn:0xc000040060 Handler:0xc00000e1e0}"
+gateway           | 2026/05/31 02:14:28 INFO Received END_OF_RECORDS message
+gateway           | 2026/05/31 02:14:28 INFO batches enviados: 5000
+usd_filter_1      | 2026/05/31 02:17:34 INFO Arrived EOF record message clientID=3275839440977831430
+usd_filter_1      | 2026/05/31 02:17:34 INFO Arrived control message msg="&{Body:{\"type\":0,\"client_id\":3275839440977831430}}"
+usd_filter_1      | 2026/05/31 02:17:34 INFO size transactions sent: qtyTx=92709
+usd_filter_0      | 2026/05/31 02:17:34 INFO Arrived control message msg="&{Body:{\"type\":0,\"client_id\":3275839440977831430}}"
+usd_filter_0      | 2026/05/31 02:17:34 INFO size transactions sent: qtyTx=91903
+date_filter_0     | 2026/05/31 02:17:34 INFO Arrived EOF record message clientID=3275839440977831430
+date_filter_1     | 2026/05/31 02:17:34 INFO Arrived EOF record message clientID=3275839440977831430
+date_filter_1     | 2026/05/31 02:17:34 INFO Arrived control message msg="&{Body:{\"type\":0,\"client_id\":3275839440977831430}}"
+date_filter_1     | 2026/05/31 02:17:34 INFO Received EOF from other instance, waiting for more...
+date_filter_1     | 2026/05/31 02:17:34 INFO Arrived control message msg="&{Body:{\"type\":0,\"client_id\":3275839440977831430}}"
+date_filter_1     | 2026/05/31 02:17:34 INFO size transactions sent topic=usd_early_period_transactions_topic qtyTx=50543
+date_filter_1     | 2026/05/31 02:17:34 INFO size transactions sent topic=usd_later_period_transactions_topic qtyTx=41749
+date_filter_0     | 2026/05/31 02:17:34 INFO Arrived control message msg="&{Body:{\"type\":0,\"client_id\":3275839440977831430}}"
+date_filter_0     | 2026/05/31 02:17:34 INFO Received EOF from other instance, waiting for more...
+date_filter_0     | 2026/05/31 02:17:34 INFO Arrived control message msg="&{Body:{\"type\":0,\"client_id\":3275839440977831430}}"
+date_filter_0     | 2026/05/31 02:17:34 INFO size transactions sent topic=usd_early_period_transactions_topic qtyTx=50254
+date_filter_0     | 2026/05/31 02:17:34 INFO size transactions sent topic=usd_later_period_transactions_topic qtyTx=42065
+date_filter_0     | 2026/05/31 02:17:34 INFO Sent EOF clientID=3275839440977831430
+date_filter_0     | 2026/05/31 02:17:34 INFO Cantidad envida topic 1 val=0
+date_filter_1     | 2026/05/31 02:17:34 INFO Sent EOF clientID=3275839440977831430
+date_filter_1     | 2026/05/31 02:17:34 INFO Cantidad envida topic 1 val=0
+group_0           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=date_filter
+group_0           | 2026/05/31 02:17:35 INFO Propagating EOF to other groups clientID=3275839440977831430 messageSizeBytes=73
+group_0           | 2026/05/31 02:17:35 INFO EOF propagated successfully clientID=3275839440977831430
+group_0           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=group_0
+group_0           | 2026/05/31 02:17:35 INFO Received EOF from another group clientID=3275839440977831430
+group_0           | 2026/05/31 02:17:35 INFO Waiting for more EOFs clientID=3275839440977831430 received=1 expected=2
+group_0           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=group_2
+group_2           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=date_filter
+group_2           | 2026/05/31 02:17:35 INFO Propagating EOF to other groups clientID=3275839440977831430 messageSizeBytes=73
+group_2           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=group_0
+group_2           | 2026/05/31 02:17:35 INFO Received EOF from another group clientID=3275839440977831430
+group_2           | 2026/05/31 02:17:35 INFO Waiting for more EOFs clientID=3275839440977831430 received=1 expected=2
+group_2           | 2026/05/31 02:17:35 INFO EOF propagated successfully clientID=3275839440977831430
+group_2           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=group_2
+group_2           | 2026/05/31 02:17:35 INFO Received EOF from another group clientID=3275839440977831430
+group_2           | 2026/05/31 02:17:35 INFO EOF threshold reached, sending to output clientID=3275839440977831430
+group_2           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_0 messageSizeBytes=73
+group_2           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_1 messageSizeBytes=73
+group_2           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_2 messageSizeBytes=73
+group_0           | 2026/05/31 02:17:35 INFO Received EOF from another group clientID=3275839440977831430
+group_0           | 2026/05/31 02:17:35 INFO EOF threshold reached, sending to output clientID=3275839440977831430
+group_0           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_0 messageSizeBytes=73
+group_0           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_1 messageSizeBytes=73
+group_1           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=group_0
+group_1           | 2026/05/31 02:17:35 INFO Received EOF from another group clientID=3275839440977831430
+group_0           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_2 messageSizeBytes=73
+group_1           | 2026/05/31 02:17:35 INFO Waiting for more EOFs clientID=3275839440977831430 received=1 expected=2
+group_1           | 2026/05/31 02:17:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=group_2
+group_1           | 2026/05/31 02:17:35 INFO Received EOF from another group clientID=3275839440977831430
+group_1           | 2026/05/31 02:17:35 INFO EOF threshold reached, sending to output clientID=3275839440977831430
+group_1           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_0 messageSizeBytes=73
+group_1           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_1 messageSizeBytes=73
+group_1           | 2026/05/31 02:17:35 INFO Sending EOF to next fase topic=bridge_matcher_2 messageSizeBytes=73
+bridge_matcher_0  | 2026/05/31 02:20:40 INFO serializando ReadyForEOR
+bridge_matcher_2  | 2026/05/31 02:20:40 INFO serializando ReadyForEOR
+bridge_matcher_1  | 2026/05/31 02:20:42 INFO serializando ReadyForEOR
+q4_join_2         | 2026/05/31 02:32:33 INFO Received msg type=EOF
+q4_join_2         | 2026/05/31 02:32:33 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_2
+q4_join_2         | 2026/05/31 02:32:33 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_2
+q4_join_2         | 2026/05/31 02:32:37 INFO Received msg type=EOF
+q4_join_2         | 2026/05/31 02:32:37 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_0
+q4_join_2         | 2026/05/31 02:32:37 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_0
+q4_join_0         | 2026/05/31 02:32:49 INFO Received msg type=EOF
+q4_join_0         | 2026/05/31 02:32:49 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_2
+q4_join_0         | 2026/05/31 02:32:49 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_2
+q4_join_0         | 2026/05/31 02:32:52 INFO Received msg type=EOF
+q4_join_0         | 2026/05/31 02:32:52 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_0
+q4_join_0         | 2026/05/31 02:32:52 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_0
+q4_join_1         | 2026/05/31 02:33:06 INFO Received msg type=EOF
+q4_join_1         | 2026/05/31 02:33:06 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_2
+q4_join_1         | 2026/05/31 02:33:06 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_2
+q4_join_1         | 2026/05/31 02:33:10 INFO Received msg type=EOF
+q4_join_1         | 2026/05/31 02:33:10 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_0
+q4_join_1         | 2026/05/31 02:33:10 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_0
+q4_join_2         | 2026/05/31 02:33:35 INFO Received msg type=EOF
+q4_join_2         | 2026/05/31 02:33:35 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_1
+q4_join_2         | 2026/05/31 02:33:35 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_1
+q4_join_2         | 2026/05/31 02:33:35 INFO Sending EOR message to output queue clientID=3275839440977831430
+q4_join_2         | 2026/05/31 02:33:35 INFO Cantidad de registros en el hash val=4617
+q4_join_2         | 2026/05/31 02:33:35 INFO Cleaned up client state clientID=3275839440977831430
+gateway           | 2026/05/31 02:33:35 INFO Response received from MOM query=3 clientID=3275839440977831430
+q4_join_0         | 2026/05/31 02:33:56 INFO Received msg type=EOF
+q4_join_0         | 2026/05/31 02:33:56 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_1
+q4_join_0         | 2026/05/31 02:33:56 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_1
+q4_join_0         | 2026/05/31 02:33:56 INFO Sending EOR message to output queue clientID=3275839440977831430
+q4_join_0         | 2026/05/31 02:33:56 INFO Cantidad de registros en el hash val=4667
+q4_join_0         | 2026/05/31 02:33:56 INFO Cleaned up client state clientID=3275839440977831430
+gateway           | 2026/05/31 02:33:56 INFO Response received from MOM query=3 clientID=3275839440977831430
+q4_join_1         | 2026/05/31 02:34:06 INFO Received msg type=EOF
+q4_join_1         | 2026/05/31 02:34:06 INFO Received EOF record message from  clientID=3275839440977831430 sender=bridge_matcher_1
+q4_join_1         | 2026/05/31 02:34:06 INFO EOR manejado client=3275839440977831430 worker=bridge_matcher_1
+q4_join_1         | 2026/05/31 02:34:06 INFO Sending EOR message to output queue clientID=3275839440977831430
+q4_join_1         | 2026/05/31 02:34:06 INFO Cantidad de registros en el hash val=7638
+q4_join_1         | 2026/05/31 02:34:06 INFO Cleaned up client state clientID=3275839440977831430
+gateway           | 2026/05/31 02:34:06 INFO Response received from MOM query=3 clientID=3275839440977831430
+gateway           | 2026/05/31 02:34:06 INFO Client received all result queries, removing from registry clientID=3275839440977831430
+client_0          | 2026/05/31 02:34:06 INFO End of records total recibido del Gateway. Finalizando cliente.
+[Kclient_0 exited with code 0
