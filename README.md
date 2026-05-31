@@ -31,6 +31,11 @@ El presente trabajo apunta al desarrollo de un sistema distribuido que pueda det
 
 Para levantar todo el sistema completo, se puede usar el script `generate_compose.py` para generar un archivo docker compose con la configuración deseada (`config.yaml`), y luego ejecutar `make up` para iniciarlo.
 
+```bash
+python3 generate_compose.py docker-compose.yaml
+```
+
+
 Para que el script y la topología de docker compose funcionen, se debe contar con la siguiente estructura de archivos y directorios:
 
 ```text
