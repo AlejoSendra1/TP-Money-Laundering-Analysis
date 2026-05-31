@@ -8,9 +8,9 @@ services:
     - usd_filter_0
     - usd_filter_1
     environment:
-    - BATCH_SIZE=10
-    - INPUT_FILE=/datasets/input_ale.csv
-    - OUTPUT_FILE=/output/output_ale_2.csv
+    - BATCH_SIZE=200
+    - INPUT_FILE=/datasets/LI-Small_Trans.csv
+    - OUTPUT_FILE=/output/output.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
@@ -76,6 +76,11 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    - EOF_EXPECTED_BY_QUERY_1=0
+    - EOF_EXPECTED_BY_QUERY_2=2 # Coincidir con la cantidad de q2 counters
+    - EOF_EXPECTED_BY_QUERY_3=0
+    - EOF_EXPECTED_BY_QUERY_4=0
+    - EOF_EXPECTED_BY_QUERY_5=0
   q2_join_0:
     build:
       context: ./src/

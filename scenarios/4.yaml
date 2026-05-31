@@ -48,9 +48,9 @@ services:
     - usd_filter_0
     - usd_filter_1
     environment:
-    - BATCH_SIZE=40
-    - INPUT_FILE=/datasets/input_ale.csv
-    - OUTPUT_FILE=/output/output_ale_4.csv
+    - BATCH_SIZE=200
+    - INPUT_FILE=/datasets/LI-Small_Trans.csv
+    - OUTPUT_FILE=/output/output.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
@@ -116,6 +116,11 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    - EOF_EXPECTED_BY_QUERY_1=0
+    - EOF_EXPECTED_BY_QUERY_2=0
+    - EOF_EXPECTED_BY_QUERY_3=0
+    - EOF_EXPECTED_BY_QUERY_4=1 # Coincidir con la cantidad de q4 join
+    - EOF_EXPECTED_BY_QUERY_5=0
   group_0:
     build:
       context: ./src/
