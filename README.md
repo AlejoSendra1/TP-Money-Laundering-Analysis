@@ -1,5 +1,5 @@
 # TP-Money-Laundering-Analysis
-Repositorio para el trabajo final de la materia "Sitemas distribuidos" de la Facultad de Ingenieria Universidad de Buenos Aires - Catedra Roca
+Repositorio para el trabajo final de la materia "Sistemas distribuidos" de la Facultad de Ingenieria Universidad de Buenos Aires - Catedra Roca
 
 # Descripción
 El presente trabajo apunta al desarrollo de un sistema distribuido que pueda detectar patrones básicos de lavado de activos guiado por 3 hitos:
@@ -27,8 +27,23 @@ El presente trabajo apunta al desarrollo de un sistema distribuido que pueda det
 
 `make test`: Inicia los contenedores del sistema, espera a que los clientes finalicen, compara los resultados con una ejecución serial y detiene los contenederes.
 
-`make switch`: Permite alternar rápidamente entre los archivos de docker compose de los distintos escenarios provistos.
+`make switch`: Permite alternar rápidamente entre los archivos de docker compose de los distintos flujos individualmente.
 
+Para levantar todo el sistema completo, se puede usar el script `generate_compose.py` para generar un archivo docker compose con la configuración deseada (`config.yaml`), y luego ejecutar `make up` para iniciarlo.
+
+Para que el script y la topología de docker compose funcionen, se debe contar con la siguiente estructura de archivos y directorios:
+
+```text
+.
+├── config.yaml                      # Archivo de configuracion de escala y clientes
+├── generate_compose.py              # Script
+├── datasets/                        # Directorio con los archivos de entrada (.csv)
+│   ├── input_0.csv
+│   └── input_1.csv
+├── output/                          # Directorio donde los clientes guardaran los resultados
+└── src/                             # Componentes del sistema
+    ├── ...                    
+```
 # Integrantes
 - Carbajal Robles Kevin Emir 
 - Rea Matias 
