@@ -45,14 +45,39 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
+	eofExpectedByQuery1, err := strconv.Atoi(os.Getenv("EOF_EXPECTED_BY_QUERY_1"))
+	if err != nil {
+		return gateway.GatewayConfig{}, errors.New("EOF_EXPECTED_BY_QUERY_1 environment variable is required and must be a number")
+	}
+	eofExpectedByQuery2, err := strconv.Atoi(os.Getenv("EOF_EXPECTED_BY_QUERY_2"))
+	if err != nil {
+		return gateway.GatewayConfig{}, errors.New("EOF_EXPECTED_BY_QUERY_2 environment variable is required and must be a number")
+	}
+	eofExpectedByQuery3, err := strconv.Atoi(os.Getenv("EOF_EXPECTED_BY_QUERY_3"))
+	if err != nil {
+		return gateway.GatewayConfig{}, errors.New("EOF_EXPECTED_BY_QUERY_3 environment variable is required and must be a number")
+	}
+	eofExpectedByQuery4, err := strconv.Atoi(os.Getenv("EOF_EXPECTED_BY_QUERY_4"))
+	if err != nil {
+		return gateway.GatewayConfig{}, errors.New("EOF_EXPECTED_BY_QUERY_4 environment variable is required and must be a number")
+	}
+	eofExpectedByQuery5, err := strconv.Atoi(os.Getenv("EOF_EXPECTED_BY_QUERY_5"))
+	if err != nil {
+		return gateway.GatewayConfig{}, errors.New("EOF_EXPECTED_BY_QUERY_5 environment variable is required and must be a number")
+	}
 	return gateway.GatewayConfig{
-		InputQueueName:     inputQueueName,
-		OutputExchangeName: outputExchangeName,
-		OutputTopic:        outputTopic,
-		ServerHost:         serverHost,
-		ServerPort:         serverPort,
-		MomHost:            momHost,
-		MomPort:            momPort,
+		InputQueueName:      inputQueueName,
+		OutputExchangeName:  outputExchangeName,
+		OutputTopic:         outputTopic,
+		ServerHost:          serverHost,
+		ServerPort:          serverPort,
+		MomHost:             momHost,
+		MomPort:             momPort,
+		EofExpectedByQuery1: eofExpectedByQuery1,
+		EofExpectedByQuery2: eofExpectedByQuery2,
+		EofExpectedByQuery3: eofExpectedByQuery3,
+		EofExpectedByQuery4: eofExpectedByQuery4,
+		EofExpectedByQuery5: eofExpectedByQuery5,
 	}, nil
 }
 
