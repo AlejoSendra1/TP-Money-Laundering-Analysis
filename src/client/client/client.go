@@ -206,6 +206,8 @@ func (client *Client) sendTransactionRecords() error {
 	scanner := bufio.NewScanner(file)
 	batch := []transaction.Transaction{}
 
+	scanner.Scan()
+
 	//slog.Info("procesando transacciones")
 	for scanner.Scan() {
 		columns := strings.Split(scanner.Text(), ",")
