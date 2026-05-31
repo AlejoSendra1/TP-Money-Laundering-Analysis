@@ -70,3 +70,10 @@ type PaymentFormatCount struct {
 	PaymentFormat string
 	Count         int
 }
+
+type TransactionAccounts struct {
+	FromBank    int
+	ToBank      int
+	FromAccount string
+	ToAccount   string
+}

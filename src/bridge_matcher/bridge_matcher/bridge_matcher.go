@@ -9,11 +9,11 @@ import (
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
-	"tp_distribuidos/common/transaction"
 )
 
 const FANOUT = ""
-const DestinationThreshold = 2
+const DestinationThreshold = 5
+const SuspiciousAccountsBatchSize = 100
 
 type BridgeMatcherConfig struct {
 	ID                    int
@@ -36,13 +36,11 @@ type BridgeMatcher struct {
 	config          BridgeMatcherConfig
 	//structs no pueden ser keys directamente so:
 	// 1er key: cliente , 2da key: cuenta_banco, 3er key: cuentaDest_bancoDest
-	Registers            map[int64]map[string]map[string]struct{}
+	Registers            map[int64]map[string]map[string]int
 	groupWorkersNotified map[int64][]string
 	bridgesReadyForEOR   map[int64][]int // tracks which peers sent ReadyForEOF
 	hasher               hash.Hash32
 }
-
-//TODO LIMIPIAR DATOS DE LOS CLIENTES
 
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
@@ -74,7 +72,7 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		inputQueue:           inputQueue,
 		outputExchange:       *outputExchange,
 		controlExchange:      controlExchange,
-		Registers:            make(map[int64]map[string]map[string]struct{}),
+		Registers:            make(map[int64]map[string]map[string]int),
 		groupWorkersNotified: make(map[int64][]string),
 		config:               config,
 		bridgesReadyForEOR:   make(map[int64][]int),
@@ -112,17 +110,7 @@ func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Mess
 		}
 
 	case inner.TransactionBatch:
-		//obtenemos las transacciones
-		//slog.Info("Received msg", "type", "tranasction batch")
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-
-		// hacemos lo q haya q hacer con las transa
-		if err := bridgeMatcher.handleTransactionBatchMessage(msg.ClientID, transactions); err != nil {
+		if err := bridgeMatcher.handleTransactionBatchMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
@@ -147,7 +135,7 @@ func (bridgeMatcher *BridgeMatcher) handleMessage(middlewareMsg *middleware.Mess
 }
 
 func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, sender string) error {
-	slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
+	//slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
 	// se considera que en este punto ya cominicó todo lo relevante
 	bridgeMatcher.updateClientEORCondition(clientID, sender)
 	if !bridgeMatcher.assertClientEORCondition(clientID) {
@@ -167,63 +155,85 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, sen
 	return nil
 }
 
-func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
+func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, data []interface{}) error {
+	records, err := inner.DeserializeAccountsMessage(data)
+	if err != nil {
+		return err
+	}
+
 	if bridgeMatcher.Registers[clientID] == nil {
-		bridgeMatcher.Registers[clientID] = make(map[string]map[string]struct{})
+		bridgeMatcher.Registers[clientID] = make(map[string]map[string]int)
 	}
 	clientRegisters := bridgeMatcher.Registers[clientID]
 
-	for _, transaction := range transactionRecords {
-		origin := makeKey(transaction.FromAccount, transaction.FromBank)
-		destiny := makeKey(transaction.ToAccount, transaction.ToBank)
+	for _, record := range records {
+		origin := makeKey(record.FromAccount, record.FromBank)
+		destiny := makeKey(record.ToAccount, record.ToBank)
+
 		// Inicializar mapas si no existen
 		if clientRegisters[origin] == nil {
-			clientRegisters[origin] = make(map[string]struct{})
+			clientRegisters[origin] = make(map[string]int)
 		}
 
 		// Agregar cuenta destino al set
 		//slog.Info("transaccion a guardar", "origen", origin, "destiny", destiny)
-		clientRegisters[origin][destiny] = struct{}{}
+		clientRegisters[origin][destiny] = 1
 	}
 
 	return nil
 }
 
 func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int64, data []interface{}) error {
-	origin, possibleBridges, err := inner.DeserializeSuspiciousMsgData(data)
+	if bridgeMatcher.Registers[clientID] == nil {
+		return nil
+	}
+
+	entries, err := inner.DeserializeSuspiciousAccountBatch(data)
 	if err != nil {
-		slog.Info("While serializing data message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing suspicious account batch", "err", err, "clientID", clientID)
 		return err
 	}
 
+	for _, entry := range entries {
+		if err := bridgeMatcher.processSuspiciousAccount(clientID, entry.Origin, entry.Bridges); err != nil {
+			slog.Error("While processing suspicious account", "err", err, "clientID", clientID)
+			return err
+		}
+	}
+	return nil
+}
+
+func (bridgeMatcher *BridgeMatcher) processSuspiciousAccount(clientID int64, origin string, possibleBridges []string) error {
 	// definimos el destino de todos los mensajes
 	bridgeMatcher.hasher.Reset()
 	bridgeMatcher.hasher.Write([]byte(origin))
 	workerIndex := int(bridgeMatcher.hasher.Sum32()) % bridgeMatcher.config.NextFaseWorkersAmount
 
 	topic := makeKey(bridgeMatcher.config.NextFaseWorkersPrefix, workerIndex)
-
 	if bridgeMatcher.Registers[clientID] == nil {
 		return nil
 	}
 
+	possibleBridgesAndSinks := make(map[string]map[string]int)
+
 	for _, possibleBridge := range possibleBridges {
-		// si no hay registros de ese cliente, corto, no tengo nada para mandar
+
 		// si NO hay registros de ese puente salto
 		if bridgeMatcher.Registers[clientID][possibleBridge] == nil {
 			continue
 		}
-		// en caso contrario mando los que tenga, ruteando por la cuenta que origino la alerta
-		possibleBridgeDestinations := bridgeMatcher.Registers[clientID][possibleBridge]
-
-		msg, err := inner.SerializesPossibleFraudDestinations(clientID, origin, possibleBridge, possibleBridgeDestinations)
-		if err != nil {
-			slog.Info("While serializing PossibleFraudDestinations message", "err", err, "clientID", clientID)
-			return err
-		}
-		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
+		// sino
+		// agrego el puente al listado
+		// y agrego las cuentas a las que le haya enviado al listado
+		possibleBridgesAndSinks[possibleBridge] = bridgeMatcher.Registers[clientID][possibleBridge]
 	}
 
+	msg, err := inner.SerializesPossibleFraudDestinations(clientID, origin, possibleBridgesAndSinks)
+	if err != nil {
+		slog.Info("While serializing PossibleFraudDestinations message", "err", err, "clientID", clientID)
+		return err
+	}
+	bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
 	return nil
 }
 
@@ -244,7 +254,7 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	if err != nil {
 		return err
 	}
-	slog.Info("Sending EOR", "Client", clientID)
+	//slog.Info("Sending EOR", "Client", clientID)
 	for i := range bridgeMatcher.config.NextFaseWorkersAmount {
 		topic := makeKey(bridgeMatcher.config.NextFaseWorkersPrefix, i)
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
@@ -255,15 +265,13 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	return nil
 }
 
-// Notifica a todos los pares/copias, y al join correspondiente, sobre una cuenta sospechosa
-func (bridgeMatcher *BridgeMatcher) notifAll(clientID int64, susAccount string, possibleBridges map[string]struct{}) error {
-	msg, err := inner.SerializeSuspiciousAccountInfo(clientID, susAccount, possibleBridges)
+// Notifica a todos los pares/copias sobre un batch de cuentas sospechosas
+func (bridgeMatcher *BridgeMatcher) notifAllBatch(clientID int64, batch []inner.SuspiciousAccountBatchEntry) error {
+	msg, err := inner.SerializeSuspiciousAccountBatch(clientID, batch)
 	if err != nil {
-		slog.Info("While serializing SuspiciousAccountInfo message", "err", err, "clientID", clientID)
+		slog.Error("While serializing SuspiciousAccountBatch message", "err", err, "clientID", clientID)
 		return err
 	}
-
-	// notificamos a los bridges
 	bridgeMatcher.controlExchange.Send(*msg)
 	return nil
 }
@@ -273,11 +281,29 @@ func (bm *BridgeMatcher) sendSuspiciousAccounts(clientID int64) error {
 	if !ok {
 		return nil
 	}
+
+	batch := make([]inner.SuspiciousAccountBatchEntry, 0, SuspiciousAccountsBatchSize)
 	for origin, destinos := range register {
-		if len(destinos) >= DestinationThreshold {
-			if err := bm.notifAll(clientID, origin, destinos); err != nil {
+		if len(destinos) < DestinationThreshold {
+			continue
+		}
+		bridges := make([]string, 0, len(destinos))
+		for dest := range destinos {
+			bridges = append(bridges, dest)
+		}
+		batch = append(batch, inner.SuspiciousAccountBatchEntry{Origin: origin, Bridges: bridges})
+
+		if len(batch) >= SuspiciousAccountsBatchSize {
+			if err := bm.notifAllBatch(clientID, batch); err != nil {
 				return err
 			}
+			batch = batch[:0]
+		}
+	}
+
+	if len(batch) > 0 {
+		if err := bm.notifAllBatch(clientID, batch); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -304,13 +330,13 @@ func (bridgeMatcher *BridgeMatcher) updateBridgeReadyCondition(clientID int64, w
 }
 
 func (bridgeMatcher *BridgeMatcher) assertClientEORCondition(clientID int64) bool {
-	slog.Info("Workers q notificaron", "lista", bridgeMatcher.groupWorkersNotified[clientID])
+	//slog.Info("Workers q notificaron", "lista", bridgeMatcher.groupWorkersNotified[clientID])
 	return len(bridgeMatcher.groupWorkersNotified[clientID]) == bridgeMatcher.config.PrevFaseWorkersAmount
 }
 
 func (bridgeMatcher *BridgeMatcher) assertAllBridgesReady(clientID int64) bool {
 	// WorkersAmount here is the number of bridge_matcher copies
-	slog.Info("bridges q notificaron", "lista", bridgeMatcher.bridgesReadyForEOR[clientID])
+	//slog.Info("bridges q notificaron", "lista", bridgeMatcher.bridgesReadyForEOR[clientID])
 	return len(bridgeMatcher.bridgesReadyForEOR[clientID]) == bridgeMatcher.config.WorkersAmount
 }
 
@@ -318,7 +344,7 @@ func (bridgeMatcher *BridgeMatcher) cleanupClient(clientID int64) {
 	delete(bridgeMatcher.Registers, clientID)
 	delete(bridgeMatcher.groupWorkersNotified, clientID)
 	delete(bridgeMatcher.bridgesReadyForEOR, clientID)
-	slog.Info("Cleaned up client state", "clientID", clientID)
+	//slog.Info("Cleaned up client state", "clientID", clientID)
 }
 
 func makeKey(account string, bank int) string {

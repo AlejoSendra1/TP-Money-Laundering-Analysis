@@ -388,7 +388,59 @@ func SerializeQuery1ResultMessage(clientId int64, queryResult []transaction.LowA
 // especifico de la Query 4 dsp ver como mover de aca ------
 // ----------------------------------------------------------
 
-func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]struct{}) (*middleware.Message, error) {
+func SerializeAccountsMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
+	data := []interface{}{}
+
+	for _, transaction := range transactionBatch {
+		datum := []interface{}{
+			transaction.FromBank,
+			transaction.ToBank,
+			transaction.FromAccount,
+			transaction.ToAccount,
+		}
+		data = append(data, datum)
+	}
+
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: TransactionBatch, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	message := middleware.Message{Body: string(body)}
+
+	return &message, nil
+}
+
+func DeserializeAccountsMessage(data []interface{}) ([]transaction.TransactionAccounts, error) { // fiaca implementar un type solo para la q4
+	transactions := make([]transaction.TransactionAccounts, 0, len(data))
+
+	for _, datum := range data {
+		fields, ok := datum.([]interface{})
+		if !ok {
+			return transactions, fmt.Errorf("In record: expected array, got %T", datum)
+		}
+
+		fromBank, ok2 := fields[0].(float64) // JSON numbers decode as float64
+		toBank, ok3 := fields[1].(float64)
+		fromAccount, ok4 := fields[2].(string)
+		toAccount, ok5 := fields[3].(string)
+
+		if !ok2 || !ok3 || !ok4 || !ok5 {
+			return transactions, fmt.Errorf("Parsing record: type mismatch in one or more fields: %T", datum)
+		}
+
+		transactions = append(transactions,
+			transaction.TransactionAccounts{
+				FromBank:    int(fromBank),
+				ToBank:      int(toBank),
+				FromAccount: fromAccount,
+				ToAccount:   toAccount,
+			})
+	}
+
+	return transactions, nil
+}
+
+func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleBridges map[string]int) (*middleware.Message, error) {
 	bridges := []interface{}{}
 	for key, _ := range possibleBridges {
 		bridges = append(bridges, key)
@@ -402,46 +454,73 @@ func SerializeSuspiciousAccountInfo(clientID int64, susAccount string, possibleB
 	if err != nil {
 		return nil, err
 	}
-	message := middleware.Message{Body: string(body)}
-
-	return &message, nil
+	return &middleware.Message{Body: string(body)}, nil
 }
 
-func DeserializeSuspiciousMsgData(data []interface{}) (string, []string, error) { // fiaca implementar un type solo para la q4
-	// la data deberia llegar como { fromAccount_Frombank , [ toAccount_toBank , toAccount_toBank , .... ] }
-	transactions := []string{}
+// SuspiciousAccountBatchEntry representa una cuenta sospechosa con sus posibles puentes.
+type SuspiciousAccountBatchEntry struct {
+	Origin  string
+	Bridges []string
+}
 
-	susAccount, ok := data[0].(string)
-	if !ok {
-		return "", transactions, fmt.Errorf("type mismatch on sus account origin")
+// SerializeSuspiciousAccountBatch serializa un batch de cuentas sospechosas en un único mensaje.
+// Formato: data = [ [origin, [bridge1, bridge2, ...]], ... ]
+func SerializeSuspiciousAccountBatch(clientID int64, batch []SuspiciousAccountBatchEntry) (*middleware.Message, error) {
+	data := make([]interface{}, 0, len(batch))
+	for _, entry := range batch {
+		data = append(data, []interface{}{entry.Origin, entry.Bridges})
 	}
 
-	// Type-assert data[1] to []interface{} before ranging
-	bridges, ok := data[1].([]interface{})
-	if !ok {
-		return "", transactions, fmt.Errorf("type mismatch on possible bridges list")
+	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: SuspiciousAccount, Data: data})
+	if err != nil {
+		return nil, err
 	}
+	return &middleware.Message{Body: string(body)}, nil
+}
 
-	for _, possibleBridge := range bridges {
-		possibleBridgeInfo, ok := possibleBridge.(string)
-		if !ok {
-			return "", transactions, fmt.Errorf("type mismatch on sus account possible bridge")
+// DeserializeSuspiciousAccountBatch deserializa un batch de cuentas sospechosas.
+func DeserializeSuspiciousAccountBatch(data []interface{}) ([]SuspiciousAccountBatchEntry, error) {
+	entries := make([]SuspiciousAccountBatchEntry, 0, len(data))
+	for _, item := range data {
+		pair, ok := item.([]interface{})
+		if !ok || len(pair) != 2 {
+			return nil, fmt.Errorf("invalid suspicious account batch entry: expected [origin, bridges], got %v", item)
 		}
-		transactions = append(transactions, possibleBridgeInfo)
+		origin, ok := pair[0].(string)
+		if !ok {
+			return nil, fmt.Errorf("type mismatch on origin in suspicious account batch")
+		}
+		bridgesRaw, ok := pair[1].([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("type mismatch on bridges list in suspicious account batch")
+		}
+		bridges := make([]string, 0, len(bridgesRaw))
+		for _, b := range bridgesRaw {
+			bs, ok := b.(string)
+			if !ok {
+				return nil, fmt.Errorf("type mismatch on bridge entry in suspicious account batch")
+			}
+			bridges = append(bridges, bs)
+		}
+		entries = append(entries, SuspiciousAccountBatchEntry{Origin: origin, Bridges: bridges})
 	}
-
-	return susAccount, transactions, nil
+	return entries, nil
 }
 
-func SerializesPossibleFraudDestinations(clientID int64, origin string, possibleBridge string, possibleFraudDestinations map[string]struct{}) (*middleware.Message, error) {
-	dest := []interface{}{}
-	for key, _ := range possibleFraudDestinations {
-		dest = append(dest, key)
-	}
+// envia los sospechosos con el formato:
+// [ sospechos , [ bridge_1 , bridge_1_sink_1 , bridge_1_sink_2] , [ bridge_2 , bridge_2_sink_1 , bridge_2_sink_2, ..] , ....]
+func SerializesPossibleFraudDestinations(clientID int64, origin string, possibleBridgeAndSinks map[string]map[string]int) (*middleware.Message, error) {
 	data := []interface{}{
-		origin,         // plain string at data[0]
-		possibleBridge, // plain string at data[1]
-		dest,           // slice of bridges at data[2]
+		origin,
+	}
+	for possibleBridge, possibleSinksCounts := range possibleBridgeAndSinks {
+		bridgeAndSinks := []interface{}{
+			possibleBridge,
+		}
+		for sink, _ := range possibleSinksCounts {
+			bridgeAndSinks = append(bridgeAndSinks, sink)
+		}
+		data = append(data, bridgeAndSinks)
 	}
 
 	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: PossibleFraudDestinations, Data: data})
@@ -453,35 +532,47 @@ func SerializesPossibleFraudDestinations(clientID int64, origin string, possible
 	return &message, nil
 }
 
-func DeserializePossibleFraudDestinations(data []interface{}) (string, string, []string, error) { // fiaca implementar un type solo para la q4
-	// la data deberia llegar como { fromAccount_Frombank , toAccount_toBank , [ toAccount_toBank2 , .... ] }
-	possibleFraudDestinations := []string{}
+func DeserializePossibleFraudDestinations(data []interface{}) (string, map[string][]string, error) {
+	// la data deberia llegar como
+	// [ sospechos , [ bridge_1 , bridge_1_sink_1 , bridge_1_sink_2] , [ bridge_2 , bridge_2_sink_1 , bridge_2_sink_2, ..] , ....]
+	possibleBridgesAndSinks := make(map[string][]string)
 
 	susAccount, ok := data[0].(string)
 	if !ok {
-		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on sus account origin")
+		return "", possibleBridgesAndSinks, fmt.Errorf("type mismatch on sus account origin")
 	}
 
-	bridge, ok := data[1].(string)
-	if !ok {
-		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on bridge")
-	}
-
-	// Type-assert data[2] to []interface{} before ranging
-	destinations, ok := data[2].([]interface{})
-	if !ok {
-		return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on possible fraud destinations list")
-	}
-
-	for _, possibleFraudDestination := range destinations {
-		possibleFraudDestinationInfo, ok := possibleFraudDestination.(string)
+	for i := 1; i < len(data); i++ {
+		// Convertimos a slice
+		bridgeData, ok := data[i].([]interface{})
 		if !ok {
-			return "", "", possibleFraudDestinations, fmt.Errorf("type mismatch on sus account possible bridge")
+			return "", nil, fmt.Errorf("el elemento en el índice %d no es un array", i)
 		}
-		possibleFraudDestinations = append(possibleFraudDestinations, possibleFraudDestinationInfo)
+
+		if len(bridgeData) == 0 {
+			continue // Array vacío, saltar
+		}
+
+		// El primer elemento de este sub-array es el puente
+		bridge, ok := bridgeData[0].(string)
+		if !ok {
+			return "", nil, fmt.Errorf("el nombre del puente no es un string")
+		}
+
+		// El resto son los sinks
+		var sinks []string
+		for j := 1; j < len(bridgeData); j++ {
+			sink, ok := bridgeData[j].(string)
+			if !ok {
+				return "", nil, fmt.Errorf("el sink no es un string")
+			}
+			sinks = append(sinks, sink)
+		}
+
+		possibleBridgesAndSinks[bridge] = sinks
 	}
 
-	return susAccount, bridge, possibleFraudDestinations, nil
+	return susAccount, possibleBridgesAndSinks, nil
 }
 
 func SerializeQ4SinkAndSource(clientID int64, sourceAccount string, sinkAccount string) (*middleware.Message, error) {

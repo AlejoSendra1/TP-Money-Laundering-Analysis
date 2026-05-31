@@ -147,7 +147,6 @@ func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack f
 func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
 
 	// se debe propagar entre todos los group workers y estos a todos los bridges analizers
-	slog.Info("Received EOF from input or control", "clientID", clientID, "mustPropagate", mustPropagate)
 
 	senderName := fmt.Sprintf("%s_%d", "group", groupWorker.config.ID)
 
@@ -170,13 +169,9 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 		return nil
 	}
 
-	// mustPropagate == false: EOF viene del controlExchange de otro grupo, contar.
-	//No necesito tomar el lock, ya esta tomado
 	slog.Info("Received EOF from another group", "clientID", clientID)
 	groupWorker.eofCounter[clientID] += 1
 	currentEOFCount := groupWorker.eofCounter[clientID]
-
-	slog.Info("EOF counter incremented", "clientID", clientID, "current", currentEOFCount, "expected", groupWorker.config.DateFilterAmount)
 
 	if currentEOFCount < groupWorker.config.DateFilterAmount {
 		slog.Info("Waiting for more EOFs", "clientID", clientID, "received", currentEOFCount, "expected", groupWorker.config.DateFilterAmount)
@@ -207,12 +202,17 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 		groupWorker.eofCounter[clientID] = 0
 	}
 	groupWorker.controlMutex.Unlock()
+
 	// transacciones para cada worker de la proxima fase
 	//slog.Info("Received Tansaction batch from ", "clientID", clientID)
 	workerByBatches := make(map[int][]transaction.Transaction)
 
 	hash := fnv.New32a()
 	for _, transaction := range transactionRecords {
+		if transaction.FromAccount == transaction.ToAccount && transaction.FromBank == transaction.ToBank {
+			continue
+		}
+
 		hash.Reset()
 		hash.Write([]byte(transaction.FromAccount))
 		workerIndex := int(hash.Sum32()) % groupWorker.config.NextFaseWorkersAmount
@@ -237,7 +237,8 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transact
 
 func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []transaction.Transaction, topic string) error {
 	//slog.Info("Sending Tansactions from ", "clientID", clientID, " to topic: ", topic)
-	message, err := inner.SerializeMessage(clientID, transactionRecords)
+
+	message, err := inner.SerializeAccountsMessage(clientID, transactionRecords)
 	if err != nil {
 		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err

@@ -39,6 +39,8 @@ type DateFilter struct {
 	qtyTx           map[int64]map[string]int
 	config          DateFilterConfig
 	mu              sync.Mutex
+	// debug
+	counter int
 }
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
@@ -224,6 +226,8 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 		delete(dateFilter.qtyTx[clientID], topic)
 	}
 	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	slog.Info("Cantidad envida topic 1", "val", dateFilter.counter)
+
 	delete(dateFilter.eofCounter, clientID)
 
 	ack()
