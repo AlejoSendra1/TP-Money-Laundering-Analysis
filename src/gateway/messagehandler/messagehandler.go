@@ -23,9 +23,16 @@ func NewMessageHandler(eofExpectedByQuery map[transaction.QueryID]int) MessageHa
 	n := rand.Int64()
 	slog.Info("UserId created", "value", n)
 
+	eorCountByQuery := make(map[transaction.QueryID]int)
+	eorCountByQuery[transaction.Query1] = 0
+	eorCountByQuery[transaction.Query2] = 0
+	eorCountByQuery[transaction.Query3] = 0
+	eorCountByQuery[transaction.Query4] = 0
+	eorCountByQuery[transaction.Query5] = 0
+
 	return MessageHandler{
 		UserId:             n,
-		eorCountByQuery:    make(map[transaction.QueryID]int),
+		eorCountByQuery:    eorCountByQuery,
 		eorExpectedByQuery: eofExpectedByQuery,
 	}
 }

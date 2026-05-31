@@ -204,9 +204,6 @@ func (client *Client) sendTransactionRecords() error {
 	}
 
 	scanner := bufio.NewScanner(file)
-	if scanner.Scan() {
-
-	}
 	batch := []transaction.Transaction{}
 
 	//slog.Info("procesando transacciones")
@@ -229,6 +226,7 @@ func (client *Client) sendTransactionRecords() error {
 		}
 	}
 
+	client.transactionsSentCounter += int64(len(batch))
 	if err := client.sendBatch(&batch); err != nil {
 		return err
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 2
+const DestinationThreshold = 5
 
 type JoinConfig struct {
 	ID                    int
@@ -88,7 +88,7 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 			return
 		}
 	case inner.PossibleFraudDestinations:
-		slog.Info("Possible fraud recibido", "client", msg.ClientID, "data", msg.Data)
+
 		if err := join.handlePossibleFraudDestinationsMessage(msg.ClientID, msg.Data); err != nil {
 			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
 			nack()
@@ -107,14 +107,15 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 	if !join.assertClientEORCondition(clientID) {
 		return nil
 	}
-	slog.Info("Sending EOR", "clientID", clientID, "sender", sender)
+
 	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query4) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 
-	slog.Info("Sending EOR message to output queue", "clientID", clientID, "messageSizeBytes", len(msg.Body))
+	slog.Info("Sending EOR message to output queue", "clientID", clientID)
+
 	if err := join.outputQueue.Send(*msg); err != nil {
 		return err
 	}
@@ -124,14 +125,16 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 }
 
 func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []interface{}) error {
-	source, bridge, possibleSinks, err := inner.DeserializePossibleFraudDestinations(data)
+	source, possibleBridgesAndSinks, err := inner.DeserializePossibleFraudDestinations(data)
 	if err != nil {
 		slog.Info("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 
 	// Actualizar y Verificar si se alcanzó el umbral
-	join.updateOriginAccountCondition(clientID, source, bridge, possibleSinks)
+	for possibleBridge, sinks := range possibleBridgesAndSinks {
+		join.updateOriginAccountCondition(clientID, source, possibleBridge, sinks)
+	}
 	return nil
 }
 
@@ -146,6 +149,10 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 
 	// por cada destino actualizamos su listado de puentes con los sinks dados
 	for _, possibleSink := range possibleSinks {
+		if source == possibleSink {
+			continue
+		}
+
 		if join.sourceSinkRegisters[clientID][source][possibleSink] == nil {
 			join.sourceSinkRegisters[clientID][source][possibleSink] = make([]string, 0, 10)
 		}
@@ -154,7 +161,6 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 		}
 		if len(join.sourceSinkRegisters[clientID][source][possibleSink]) == DestinationThreshold {
 			msg, _ := inner.SerializeQ4SinkAndSource(clientID, source, possibleSink)
-			slog.Info("Sending Q4 result to output queue", "clientID", clientID, "source", source, "sink", possibleSink, "body", msg.Body)
 			join.outputQueue.Send(*msg)
 		}
 	}
