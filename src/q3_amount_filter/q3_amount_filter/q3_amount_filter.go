@@ -165,7 +165,7 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormat
 		q3AmountFilter.eofCounterTs[clientID] = 0
 	}
 	for _, rec := range paymentFormatAverageRecords {
-		q3AmountFilter.averages[clientID][rec.PaymentFormat] = rec.Average
+		q3AmountFilter.averages[clientID][rec.PaymentFormat] = rec.Average / 100.0
 	}
 	q3AmountFilter.mu.Unlock()
 }
@@ -290,7 +290,7 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 			slog.Info("Average not found for payment format, skipping transaction", "clientID", clientID, "paymentFormat", tx.PaymentFormat)
 			continue
 		}
-		if tx.Amount < (avg / 100.0) {
+		if tx.Amount < avg {
 			transactions = append(transactions, transaction.ThresholdFilteredTransfer{
 				FromBank:      tx.FromBank,
 				FromAccount:   tx.FromAccount,
