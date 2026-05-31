@@ -12,7 +12,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 2
+const DestinationThreshold = 5
 const SuspiciousAccountsBatchSize = 100
 
 type BridgeMatcherConfig struct {
@@ -215,6 +215,7 @@ func (bridgeMatcher *BridgeMatcher) processSuspiciousAccount(clientID int64, ori
 	}
 
 	possibleBridgesAndSinks := make(map[string]map[string]int)
+
 	for _, possibleBridge := range possibleBridges {
 
 		// si NO hay registros de ese puente salto

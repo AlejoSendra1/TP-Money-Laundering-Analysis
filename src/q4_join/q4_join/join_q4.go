@@ -11,7 +11,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 2
+const DestinationThreshold = 5
 
 type JoinConfig struct {
 	ID                    int
@@ -115,7 +115,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 	}
 
 	slog.Info("Sending EOR message to output queue", "clientID", clientID)
-	join.loggearCantidadDeRegistrosEnHash()
+
 	if err := join.outputQueue.Send(*msg); err != nil {
 		return err
 	}
@@ -185,16 +185,4 @@ func (join *Join) cleanupClient(clientID int64) {
 	delete(join.sourceSinkRegisters, clientID)
 	delete(join.bridgeWorkersNotified, clientID)
 	slog.Info("Cleaned up client state", "clientID", clientID)
-}
-
-func (join *Join) loggearCantidadDeRegistrosEnHash() {
-	counter := 0
-	for _, registrosOrigenesDudosos := range join.sourceSinkRegisters {
-		for _, hashDeSinks := range registrosOrigenesDudosos {
-			for _, puentes := range hashDeSinks {
-				counter += len(puentes)
-			}
-		}
-	}
-	slog.Info("Cantidad de registros en el hash", "val", counter)
 }

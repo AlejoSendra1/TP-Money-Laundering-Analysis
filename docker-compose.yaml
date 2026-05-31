@@ -69,7 +69,7 @@ services:
     - usd_filter_1
     environment:
     - BATCH_SIZE=100
-    - INPUT_FILE=/datasets/input_0.csv
+    - INPUT_FILE=/datasets/input_LI_corto.csv
     - OUTPUT_FILE=/output/output.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
