@@ -33,8 +33,8 @@ var queryHeaders = map[string][]string{
 		"amount_paid",
 	},
 	"q4": {
-		"bank",
-		"account",
+		"Bank",
+		"Account",
 	},
 	"q5": {
 		"type",
@@ -267,7 +267,7 @@ func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 	c.q4mutex.Lock()
 	pair1 := [2]string{part0, part1}
 	if _, seen := c.q4Written[pair1]; !seen {
-		if err := w.Write([]string{part0, part1}); err != nil {
+		if err := w.Write([]string{part1, part0}); err != nil {
 			return fmt.Errorf("writing q4 row 1: %w", err)
 		}
 		c.q4Written[pair1] = struct{}{}
@@ -275,7 +275,7 @@ func (c *CSVWriter) WriteQ4Result(data []interface{}) error {
 
 	pair2 := [2]string{part2, part3}
 	if _, seen := c.q4Written[pair2]; !seen {
-		if err := w.Write([]string{part2, part3}); err != nil {
+		if err := w.Write([]string{part3, part2}); err != nil {
 			return fmt.Errorf("writing q4 row 2: %w", err)
 		}
 		c.q4Written[pair2] = struct{}{}
