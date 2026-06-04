@@ -8,7 +8,7 @@ import (
 
 type MessageHandlerMap map[inner.MsgType]func(clientID int64, data []interface{}) error
 
-func handleMessage(
+func HandleMessage(
 	middlewareMsg *middleware.Message,
 	ack func(),
 	nack func(),
