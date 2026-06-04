@@ -1,4 +1,4 @@
-package csvwriter
+package client
 
 import (
 	"encoding/csv"

@@ -16,12 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	"tp_distribuidos/common/csvwriter"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/external/safeio"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/csvwriter"
 )
 
 const (
