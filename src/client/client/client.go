@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"tp_distribuidos/client/transactionsfilereader"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/external/safeio"
 	"tp_distribuidos/common/messageprotocol/inner"
