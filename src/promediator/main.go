@@ -52,7 +52,7 @@ func loadConfig() (promediator.PromediatorConfig, error) {
 		InputExchangeName:  inputExchangeName,
 		OutputExchangeName: outputExchangeName,
 		OutputTopic:        outputTopic,
-		SumAmount:          sumAmount,
+		SumAmount:          uint8(sumAmount),
 		PromediatorPrefix:  promediatorPrefix,
 	}, nil
 }

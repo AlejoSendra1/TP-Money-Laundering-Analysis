@@ -73,9 +73,9 @@ func loadConfig() (sum.SumConfig, error) {
 		ControlExchangeName:  controlExchangeName,
 		ControlExchangeTopic: controlExchangeTopic,
 		OutputExchangeName:   outputExchangeName,
-		PromediatorAmount:    promediatorAmount,
+		PromediatorAmount:    uint8(promediatorAmount),
 		PromedietorPrefix:    promedietorPrefix,
-		DateFilterAmount:     DateFilterAmount,
+		DateFilterAmount:     uint8(DateFilterAmount),
 	}, nil
 }
 

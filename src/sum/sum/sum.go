@@ -20,7 +20,7 @@ type SumConfig struct {
 	ControlExchangeName  string
 	ControlExchangeTopic string
 	OutputExchangeName   string
-	PromediatorAmount    int
+	PromediatorAmount    uint8
 	PromedietorPrefix    string
 	DateFilterAmount     uint8
 }
@@ -216,6 +216,6 @@ func (sum *Sum) sendToOutputExchange(keys []string, paymentFormatAverageRecords 
 func (sum *Sum) getKeyForExchange(clientID int64, paymentFormat string) string {
 	hash := fnv.New32a()
 	hash.Write([]byte(fmt.Sprintf("%d-%s", clientID, paymentFormat)))
-	idx := int(hash.Sum32()) % sum.config.PromediatorAmount
+	idx := uint8(hash.Sum32()) % sum.config.PromediatorAmount
 	return fmt.Sprintf("%s_%d", sum.config.PromedietorPrefix, idx)
 }

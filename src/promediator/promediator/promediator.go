@@ -15,7 +15,7 @@ type PromediatorConfig struct {
 	InputExchangeName  string
 	OutputExchangeName string
 	OutputTopic        string
-	SumAmount          int
+	SumAmount          uint8
 	PromediatorPrefix  string
 }
 
@@ -23,7 +23,7 @@ type Promediator struct {
 	inputExchange    middleware.Middleware
 	outputExchange   middleware.Middleware
 	paymentFormatAvg map[int64]map[string]transaction.PaymentFormatAverage
-	eofCounter       map[int64]int
+	eofCounter       map[int64]uint8
 	config           PromediatorConfig
 }
 
@@ -45,7 +45,7 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		inputExchange:    inputExchange,
 		outputExchange:   outputExchange,
 		paymentFormatAvg: make(map[int64]map[string]transaction.PaymentFormatAverage),
-		eofCounter:       make(map[int64]int),
+		eofCounter:       make(map[int64]uint8),
 		config:           config,
 	}, nil
 }
@@ -82,88 +82,63 @@ func (promediator *Promediator) handleMessage(msg *middleware.Message, ack func(
 }
 
 func (promediator *Promediator) handleEndOfRecordMessage(clientID int64) error {
+	// Verifico si ya recibi todos los EOFs que faltaban
 	slog.Info("Received End Of Records message", "clientID", clientID)
 	promediator.eofCounter[clientID]++
 	if promediator.eofCounter[clientID] != promediator.config.SumAmount {
+		slog.Debug("Waiting for remaining EOFs")
 		return nil
 	}
 
+	// Envio los promedios por cliente a q3 amount filter
 	slog.Info("All EOFs received, calculating average and sending", "clientID", clientID)
 	averages := promediator.getPaymentFormats(clientID)
 	if averages != nil {
-		for _, average := range averages {
-			avg := transaction.PaymentFormatAverage{
-				PaymentFormat: average.PaymentFormat,
-				Average:       average.Average / float64(average.Count),
-				Count:         average.Count}
-			msg, err := inner.SerializePaymentFormatAverageMessage(clientID, []transaction.PaymentFormatAverage{avg})
-			if err != nil {
+		for _, avg := range averages {
+			avg.Average /= float64(avg.Count)
+			if err := promediator.sendToOutputExchange([]transaction.PaymentFormatAverage{avg}, clientID); err != nil {
+				slog.Error("While sending average message to output exchange", "clientID", clientID)
 				return err
 			}
-			if err := promediator.outputExchange.Send(*msg); err != nil {
-				slog.Error("While sending payment format average to output exchange", "err", err, "clientID", clientID, "paymentFormat", average.PaymentFormat)
-				return err
-			}
-			slog.Info("Send average", "clientID", clientID, "avg", avg)
+			slog.Info("Sent average to q3 amount filter", "clientID", clientID, "paymentFormat", avg.PaymentFormat, "average", avg.Average)
 		}
 	} else {
 		slog.Info("Dont send anything", "clientID", clientID)
 	}
 
-	eofMessage, err := inner.SerializePaymentFormatAverageMessage(clientID, []transaction.PaymentFormatAverage{})
-	if err != nil {
+	// Envio el EOF
+	if err := promediator.sendToOutputExchange([]transaction.PaymentFormatAverage{}, clientID); err != nil {
+		slog.Error("While sending EOF message to output exchange", "clientID", clientID)
 		return err
 	}
-	if err = promediator.outputExchange.Send(*eofMessage); err != nil {
-		return err
-	}
-	slog.Info("Sent eof message to q3 amount filter", "clientID", clientID)
+	slog.Info("Sent EOF message to q3 amount filter", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
 	return nil
 }
 
 func (promediator *Promediator) handleDataMessage(paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) error {
-	transactionsByPaymentFormat := make(map[string][]transaction.PaymentFormatAverage)
-	for _, tr := range paymentFormatAverageRecords {
-		if _, ok := transactionsByPaymentFormat[tr.PaymentFormat]; !ok {
-			transactionsByPaymentFormat[tr.PaymentFormat] = make([]transaction.PaymentFormatAverage, 0)
-		}
-		t := transaction.PaymentFormatAverage{PaymentFormat: tr.PaymentFormat, Average: tr.Average, Count: tr.Count}
-		transactionsByPaymentFormat[tr.PaymentFormat] = append(transactionsByPaymentFormat[tr.PaymentFormat], t)
-	}
 	if _, exist := promediator.paymentFormatAvg[clientID]; !exist {
 		slog.Info("Client new arrived", "clientID", clientID)
 		promediator.paymentFormatAvg[clientID] = make(map[string]transaction.PaymentFormatAverage)
 	}
-	// Acumulo amount y count para cada formato de pago del cliente
-	for paymentFormat, transactions := range transactionsByPaymentFormat {
-		if paymentFormatAverage, exist := promediator.paymentFormatAvg[clientID][paymentFormat]; !exist {
-			aux := transaction.PaymentFormatAverage{PaymentFormat: paymentFormat, Average: 0, Count: 0}
-			promediator.paymentFormatAvg[clientID][paymentFormat] = promediator.addPaymentFormatAverage(aux, transactions)
-		} else {
-			promediator.paymentFormatAvg[clientID][paymentFormat] = promediator.addPaymentFormatAverage(paymentFormatAverage, transactions)
-		}
+
+	for _, tr := range paymentFormatAverageRecords {
+		current := promediator.paymentFormatAvg[clientID][tr.PaymentFormat]
+		current.PaymentFormat = tr.PaymentFormat
+		current.Average += tr.Average
+		current.Count += tr.Count
+		promediator.paymentFormatAvg[clientID][tr.PaymentFormat] = current
 	}
 	return nil
 }
 
-func (promediator *Promediator) addPaymentFormatAverage(paymentFormatAverage transaction.PaymentFormatAverage, transactions []transaction.PaymentFormatAverage) transaction.PaymentFormatAverage {
-	for _, t := range transactions {
-		paymentFormatAverage.Average += t.Average
-		paymentFormatAverage.Count += t.Count
-	}
-	return paymentFormatAverage
-}
-
-func (promediator *Promediator) sendToOutputExchange(keys []string, paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) error {
+func (promediator *Promediator) sendToOutputExchange(paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) error {
 	message, err := inner.SerializePaymentFormatAverageMessage(clientID, paymentFormatAverageRecords)
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	if err := promediator.outputExchange.SendWithKeys(keys, *message); err != nil {
-		slog.Info("While sending EOF message", "err", err, "clientID", clientID)
+	if err := promediator.outputExchange.Send(*message); err != nil {
 		return err
 	}
 	return nil
