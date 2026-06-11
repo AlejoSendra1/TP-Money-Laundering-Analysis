@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -11,29 +10,20 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"tp_distribuidos/client/transactionsfilereader"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/external/safeio"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/transaction"
 	"tp_distribuidos/csvwriter"
+	"tp_distribuidos/transactionsfilereader"
 )
 
-const (
-	TIMESTAMP_COLUMN      = 0
-	FROM_BANK_COLUMN      = 1
-	FROM_ACCOUNT_COLUMN   = 2
-	TO_BANK_COLUMN        = 3
-	TO_ACCOUNT_COLUMN     = 4
-	AMOUNT_COLUMN         = 7
-	CURRENCY_COLUMN       = 8
-	PAYMENT_FORMAT_COLUMN = 9
-)
 const connectionAttempts = 3
 const connectionAttemptsDelayMs = 300
 
@@ -45,11 +35,11 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	transactionsSentCounter int64 // for Info
-	conn                    net.Conn
-	running                 atomic.Bool
-	config                  ClientConfig
-	writer                  csvwriter.CSVWriter
+	conn    net.Conn
+	running atomic.Bool
+	config  ClientConfig
+	writer  csvwriter.CSVWriter
+	//stateSaver StateSaver
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -64,10 +54,9 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}
 
 	client := &Client{
-		transactionsSentCounter: 0,
-		conn:                    conn,
-		config:                  config,
-		writer:                  *writer,
+		conn:   conn,
+		config: config,
+		writer: *writer,
 	}
 	client.running.Store(true)
 	return client, nil
@@ -142,60 +131,18 @@ func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
 	return nil
 }
 
-func parseTransaction(columns []string) (*transaction.Transaction, error) {
-	timestamp, err := time.Parse("2006/01/02 15:04", columns[TIMESTAMP_COLUMN])
-	if err != nil {
-		return nil, fmt.Errorf("invalid timestamp %q: %w", columns[TIMESTAMP_COLUMN], err)
-	}
-
-	fromBank, err := strconv.Atoi(columns[FROM_BANK_COLUMN])
-	if err != nil {
-		return nil, fmt.Errorf("invalid from_bank %q: %w", columns[FROM_BANK_COLUMN], err)
-	}
-
-	toBank, err := strconv.Atoi(columns[TO_BANK_COLUMN])
-	if err != nil {
-		return nil, fmt.Errorf("invalid to_bank %q: %w", columns[TO_BANK_COLUMN], err)
-	}
-
-	amountReceived, err := strconv.ParseFloat(columns[AMOUNT_COLUMN], 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid amount_received %q: %w", columns[AMOUNT_COLUMN], err)
-	}
-
-	return &transaction.Transaction{
-		Timestamp:     timestamp,
-		FromBank:      fromBank,
-		ToBank:        toBank,
-		FromAccount:   columns[FROM_ACCOUNT_COLUMN],
-		ToAccount:     columns[TO_ACCOUNT_COLUMN],
-		Amount:        amountReceived,
-		Currency:      columns[CURRENCY_COLUMN],
-		PaymentFormat: columns[PAYMENT_FORMAT_COLUMN],
-	}, nil
-}
-
-func (client *Client) sendBatch(batch *[]transaction.Transaction) error {
-	if len(*batch) == 0 {
+func (client *Client) sendBatch(batch []transaction.Transaction) error {
+	if len(batch) == 0 {
 		return nil
 	}
 
 	if err := external.WriteTransactionBatch(client.conn, batch); err != nil { // implementar esta func
 		return err
 	}
-
-	*batch = (*batch)[:0]
 	return nil
 }
 
 func (client *Client) sendTransactionRecords() error {
-	file, err := os.Open(client.config.InputFile)
-	if err != nil {
-		slog.Info("Error while runninging input file", "err", err)
-		return err
-	}
-	defer file.Close()
-
 	batchSizeAsString := os.Getenv("BATCH_SIZE")
 	batchSize, err := strconv.Atoi(batchSizeAsString)
 	if err != nil {
@@ -203,37 +150,30 @@ func (client *Client) sendTransactionRecords() error {
 		return err
 	}
 
-	scanner := bufio.NewScanner(file)
-	batch := []transaction.Transaction{}
-
-	scanner.Scan()
+	transactionsReader, err := transactionsfilereader.NewTransactionsFileReader(client.config.InputFile, batchSize)
+	defer transactionsReader.Close()
+	if err != nil {
+		slog.Info("Error opening transactions file for reading", "err", err)
+		return err
+	}
 
 	//slog.Info("procesando transacciones")
-	for scanner.Scan() {
-		columns := strings.Split(scanner.Text(), ",")
+	records, err := transactionsReader.GetTransactionRecords()
+	if err != nil {
+		return err
+	}
 
-		tx, err := parseTransaction(columns)
-		if err != nil {
-			slog.Info("Error while parsing transaction record", "err", err)
+	for len(records) != 0 {
+		if err := client.sendBatch(records); err != nil {
+			slog.Info("Error while sending transaction batch", "err", err)
 			return err
 		}
 
-		batch = append(batch, *tx)
-		if len(batch) == batchSize {
-			client.transactionsSentCounter += int64(len(batch))
-			if err := client.sendBatch(&batch); err != nil {
-				slog.Info("Error while sending transaction batch", "err", err)
-				return err
-			}
+		records, err = transactionsReader.GetTransactionRecords()
+		if err != nil {
+			return err
 		}
 	}
-
-	client.transactionsSentCounter += int64(len(batch))
-	if err := client.sendBatch(&batch); err != nil {
-		return err
-	}
-	str := fmt.Sprint("transacciones enviadas: ", client.transactionsSentCounter)
-	slog.Info(str)
 
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
 		return err
