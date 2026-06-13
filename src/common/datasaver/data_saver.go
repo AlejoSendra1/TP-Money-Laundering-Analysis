@@ -124,7 +124,7 @@ func (ds *DataSaver) writeFile(data []byte) (err error) {
 
 // / ----------------------------------------- FUNCIONES DE CARGA ------------------------------------------
 // funciones utilizadas para recuperar el estado del nodo postiormente a su recuperacion
-func (ds *DataSaver) GetRestaurationCheckpoint(target *any) error {
+func (ds *DataSaver) GetRestaurationCheckpoint(target any) error {
 	checkpointFile, err := os.OpenFile(ds.checkpointFileName, os.O_RDONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -140,11 +140,11 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target *any) error {
 	}
 
 	// Unmarshal the bytes back into the struct pointer
-	return json.Unmarshal(scanner.Bytes(), *target)
+	return json.Unmarshal(scanner.Bytes(), target)
 }
 
 // lee cada batch y lo parsea in place en la variable indicada por parametro
-func (ds *DataSaver) GetDataFromLogs(target *any) (bool, error) {
+func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 	if ds.logsReader == nil {
 		ds.logsReader = bufio.NewScanner(ds.logsFile)
 	}
@@ -157,7 +157,7 @@ func (ds *DataSaver) GetDataFromLogs(target *any) (bool, error) {
 	}
 
 	// Unmarshal the bytes back into the struct pointer
-	err := json.Unmarshal(ds.logsReader.Bytes(), *target)
+	err := json.Unmarshal(ds.logsReader.Bytes(), target)
 	if err != nil {
 		return false, fmt.Errorf("failed to unmarshal line data: %w", err)
 	}

@@ -1,38 +1,4 @@
 services:
-  q1_amount_filter_0:
-    build:
-      context: ./src/
-      dockerfile: q1_amount_filter/Dockerfile
-    container_name: q1_amount_filter_0
-    depends_on:
-    - gateway
-    environment:
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - INPUT_QUEUE=amount_filter_q1_queue
-    - INPUT_EXCHANGE_NAME=usd_exchange
-    - INPUT_TOPIC=usd_transactions_topic
-    - OUTPUT_QUEUE=results_queue
-    - CONTROL_EXCHANGE_NAME=q1_amount_filter_control_exchange
-    - CONTROL_TOPIC=q1_amount_filter_control_topic
-    - USD_FILTER_AMOUNT=2
-  q1_amount_filter_1:
-    build:
-      context: ./src/
-      dockerfile: q1_amount_filter/Dockerfile
-    container_name: q1_amount_filter_1
-    depends_on:
-      - gateway
-    environment:
-      - MOM_HOST=rabbitmq
-      - MOM_PORT=5672
-      - INPUT_QUEUE=amount_filter_q1_queue
-      - INPUT_EXCHANGE_NAME=usd_exchange
-      - INPUT_TOPIC=usd_transactions_topic
-      - OUTPUT_QUEUE=results_queue
-      - CONTROL_EXCHANGE_NAME=q1_amount_filter_control_exchange
-      - CONTROL_TOPIC=q1_amount_filter_control_topic
-      - USD_FILTER_AMOUNT=2
   client_0:
     build:
       context: ./src/
@@ -51,6 +17,49 @@ services:
     volumes:
     - ./datasets:/datasets
     - ./output:/output
+  q2_counter_0:
+    build:
+      context: ./src/
+      dockerfile: counter_q2/Dockerfile
+    container_name: q2_counter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
+    - USD_FILTER_AMOUNT=2
+    #- CRASH_AFTER_LOG=1000
+  q2_counter_1:
+    build:
+      context: ./src/
+      dockerfile: counter_q2/Dockerfile
+    container_name: q2_counter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
+    - USD_FILTER_AMOUNT=2
   gateway:
     build:
       context: ./src/
@@ -68,11 +77,45 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-    - EOF_EXPECTED_BY_QUERY_1=2 # Coincidir con la cantidad de q1 amount filters
-    - EOF_EXPECTED_BY_QUERY_2=0
+    - EOF_EXPECTED_BY_QUERY_1=0
+    - EOF_EXPECTED_BY_QUERY_2=2 # Coincidir con la cantidad de q2 counters
     - EOF_EXPECTED_BY_QUERY_3=0
     - EOF_EXPECTED_BY_QUERY_4=0
     - EOF_EXPECTED_BY_QUERY_5=0
+  q2_join_0:
+    build:
+      context: ./src/
+      dockerfile: join_q2/Dockerfile
+    container_name: q2_join_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
+    - BATCH_SIZE=100
+  q2_join_1:
+    build:
+      context: ./src/
+      dockerfile: join_q2/Dockerfile
+    container_name: q2_join_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
+    - BATCH_SIZE=100
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -95,15 +138,15 @@ services:
       dockerfile: usd_filter/Dockerfile
     container_name: usd_filter_0
     depends_on:
-    - q1_amount_filter_0
-    - q1_amount_filter_1
+    - q2_counter_0
+    - q2_counter_1
     environment:
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - OUTPUT_EXCHANGE_NAME=usd_exchange
+    - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
     - OUTPUT_TOPIC=usd_transactions_topic
     - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
     - CONTROL_TOPIC=usd_filter_control_topic
@@ -113,15 +156,15 @@ services:
       dockerfile: usd_filter/Dockerfile
     container_name: usd_filter_1
     depends_on:
-      - q1_amount_filter_0
-      - q1_amount_filter_1
+      - q2_counter_0
+      - q2_counter_1
     environment:
       - INPUT_QUEUE=usd_filter_queue
       - INPUT_EXCHANGE_NAME=transactions_exchange
       - INPUT_TOPIC=transactions_topic
       - MOM_HOST=rabbitmq
       - MOM_PORT=5672
-      - OUTPUT_EXCHANGE_NAME=usd_exchange
+      - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
       - OUTPUT_TOPIC=usd_transactions_topic
       - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
       - CONTROL_TOPIC=usd_filter_control_topic

@@ -35,3 +35,26 @@ func HandleMessage(
 
 	ack()
 }
+
+func HandleMessageV2(
+	middlewareMsg *middleware.Message,
+	handlers MessageHandlerMap,
+) error {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err)
+		return err
+	}
+
+	handler, ok := handlers[msg.MsgType]
+	if !ok {
+		slog.Error("Unexpected msg type received", "msgType", msg.MsgType, "clientID", msg.ClientID)
+		return err
+	}
+	if err := handler(msg.ClientID, msg.Data); err != nil {
+		slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
+		return err
+	}
+
+	return nil
+}

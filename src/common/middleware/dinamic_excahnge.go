@@ -17,7 +17,7 @@ func NewDinamicExchangeMiddleware(exchange string, connectionSettings ConnSettin
 	err = em.ch.ExchangeDeclare(
 		exchange, // name
 		"topic",  // type
-		false,    // durability
+		true,     // durability
 		false,    // auto-deleted
 		false,    // internal
 		false,    // no-wait
@@ -31,7 +31,7 @@ func NewDinamicExchangeMiddleware(exchange string, connectionSettings ConnSettin
 
 	q, err := em.ch.QueueDeclare(
 		"",    // name
-		false, // durability
+		true,  // durability
 		false, // delete when unused
 		true,  // exclusive
 		false, // no-wait

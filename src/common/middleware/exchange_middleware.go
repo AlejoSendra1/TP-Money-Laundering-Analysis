@@ -25,7 +25,7 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings Co
 	err = em.ch.ExchangeDeclare(
 		exchange, // name
 		"topic",  // type
-		false,    // durability
+		true,     // durability
 		false,    // auto-deleted
 		false,    // internal
 		false,    // no-wait
@@ -39,7 +39,7 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings Co
 
 	q, err := em.ch.QueueDeclare(
 		"",    // name
-		false, // durability
+		true,  // durability
 		false, // delete when unused
 		true,  // exclusive
 		false, // no-wait
