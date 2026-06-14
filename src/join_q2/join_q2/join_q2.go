@@ -47,7 +47,7 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 
 	// Input exchange: this instance only receives messages sharded to its ID
 	inputKey := fmt.Sprintf("%s_%d", config.InputPrefix, config.ID)
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputPrefix, []string{inputKey}, connSettings)
+	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputPrefix, []string{inputKey}, connSettings, inputKey)
 	if err != nil {
 		return nil, fmt.Errorf("creating input exchange: %w", err)
 	}
