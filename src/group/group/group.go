@@ -48,9 +48,9 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 	}
 
 	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
-
+	myKeyControl := fmt.Sprintf("%s_%d", config.WorkerPrefix, config.ID)
 	// input - control (particularmente EOF del cliente)
-	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings) // control
+	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings, myKeyControl) // control
 	if err != nil {
 		return nil, err
 	}
