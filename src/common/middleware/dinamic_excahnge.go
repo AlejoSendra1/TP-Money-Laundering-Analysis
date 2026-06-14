@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// No hace falta que tenga una nombre la queue, porque el exchange solo se usa para enviar, no consumir
 func NewDinamicExchangeMiddleware(exchange string, connectionSettings ConnSettings) (*ExchangeMiddleware, error) {
 	em := new(ExchangeMiddleware)
 	base, err := newBaseMiddleware(connectionSettings)
@@ -17,7 +18,7 @@ func NewDinamicExchangeMiddleware(exchange string, connectionSettings ConnSettin
 	err = em.ch.ExchangeDeclare(
 		exchange, // name
 		"topic",  // type
-		false,    // durability
+		true,     // durability
 		false,    // auto-deleted
 		false,    // internal
 		false,    // no-wait

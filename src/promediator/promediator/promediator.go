@@ -29,13 +29,13 @@ type Promediator struct {
 
 func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
-
-	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputExchangeName, []string{fmt.Sprintf("%s_%d", config.PromediatorPrefix, config.Id)}, connSettings)
+	myKey := fmt.Sprintf("%s_%d", config.PromediatorPrefix, config.Id)
+	inputExchange, err := middleware.CreateExchangeMiddleware(config.InputExchangeName, []string{myKey}, connSettings, myKey)
 	if err != nil {
 		return nil, err
 	}
 
-	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings, "") // No consumo, solo envio
 	if err != nil {
 		inputExchange.Close()
 		return nil, err

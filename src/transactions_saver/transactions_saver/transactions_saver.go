@@ -60,13 +60,15 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		inputQueue.Close()
 		return nil, err
 	}
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	myKeyControl := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings, myKeyControl)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()
 		return nil, err
 	}
-	notificationExchange, err := middleware.CreateExchangeMiddleware(config.NotificationExchangeName, []string{config.NotificationTopic}, connSettings)
+	myKeyNotification := fmt.Sprintf("%s_%d", config.NotificationExchangeName, config.Id)
+	notificationExchange, err := middleware.CreateExchangeMiddleware(config.NotificationExchangeName, []string{config.NotificationTopic}, connSettings, myKeyNotification)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()

@@ -66,7 +66,7 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 			continue
 		}
 		key := fmt.Sprintf("%s_%d", config.FilterPaymentControl, i)
-		exchange, err := middleware.CreateExchangeMiddleware(config.FilterPaymentControl, []string{key}, connSettings)
+		exchange, err := middleware.CreateExchangeMiddleware(config.FilterPaymentControl, []string{key}, connSettings, "")
 		if err != nil {
 			inputQueue.Close()
 			outputQueue.Close()
@@ -79,7 +79,7 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 	}
 
 	myControlKey := fmt.Sprintf("%s_%d", config.FilterPaymentControl, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.FilterPaymentControl, []string{myControlKey}, connSettings)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.FilterPaymentControl, []string{myControlKey}, connSettings, myControlKey)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()

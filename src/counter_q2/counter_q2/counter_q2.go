@@ -71,7 +71,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 	outputExchanges := make([]middleware.Middleware, config.JoinAmount)
 	for i := 0; i < config.JoinAmount; i++ {
 		key := fmt.Sprintf("%s_%d", config.OutputPrefix, i)
-		ex, err := middleware.CreateExchangeMiddleware(config.OutputPrefix, []string{key}, connSettings)
+		ex, err := middleware.CreateExchangeMiddleware(config.OutputPrefix, []string{key}, connSettings, "") // No consume, solo envia
 		if err != nil {
 			inputQueue.Close()
 			for j := 0; j < i; j++ {
@@ -89,7 +89,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 			continue
 		}
 		key := fmt.Sprintf("%s_%d", config.ControlExchange, i)
-		ex, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{key}, connSettings)
+		ex, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{key}, connSettings, "") // No consume, solo envia
 		if err != nil {
 			inputQueue.Close()
 			for _, o := range outputExchanges {
@@ -105,7 +105,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 
 	// Own control input exchange (exclusive queue, receives peer notifications)
 	myKey := fmt.Sprintf("%s_%d", config.ControlExchange, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{myKey}, connSettings)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{myKey}, connSettings, myKey) // Nombre de queue igual a key, es unico
 	if err != nil {
 		inputQueue.Close()
 		for _, o := range outputExchanges {

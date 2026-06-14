@@ -9,6 +9,11 @@ import (
 )
 
 func loadConfig() (q3_amount_filter.Q3AmountFilterConfig, error) {
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return q3_amount_filter.Q3AmountFilterConfig{}, errors.New("ID environment variable is required and must be a number")
+	}
+
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return q3_amount_filter.Q3AmountFilterConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
@@ -70,6 +75,7 @@ func loadConfig() (q3_amount_filter.Q3AmountFilterConfig, error) {
 	}
 
 	return q3_amount_filter.Q3AmountFilterConfig{
+		Id:                       id,
 		MomHost:                  momHost,
 		MomPort:                  momPort,
 		InputPromediatorExchange: inputPromediatorExchange,

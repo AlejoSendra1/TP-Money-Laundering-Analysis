@@ -79,7 +79,7 @@ func (qm *QueueMiddleware) BindToTopics(exchangeName string, topic string) error
 	err := qm.baseMiddleware.ch.ExchangeDeclare(
 		exchangeName, // name
 		"topic",      // type
-		false,        // durability
+		true,         // durability
 		false,        // auto-deleted
 		false,        // internal
 		false,        // no-wait

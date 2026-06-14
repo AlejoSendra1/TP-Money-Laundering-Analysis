@@ -1,6 +1,7 @@
 package q1_amount_filter
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/messageprotocol/inner"
@@ -10,6 +11,7 @@ import (
 )
 
 type Q1AmountFilterConfig struct {
+	Id                int
 	MomHost           string
 	MomPort           int
 	InputQueue        string
@@ -46,8 +48,8 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		inputQueue.Close()
 		return nil, err
 	}
-
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{config.ControlTopic}, connSettings)
+	controlQueueName := fmt.Sprintf("%s_%d", config.ControlExchange, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{config.ControlTopic}, connSettings, controlQueueName)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()

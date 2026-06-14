@@ -1,0 +1,8 @@
+chaos_monkey:
+  # Segundos que se espera antes de elegir al siguiente contenedor
+  attack_interval: 20
+  
+  # Contenedores que se ignoran
+  excluded_containers:
+    - "rabbitmq"
+    - "gateway"
