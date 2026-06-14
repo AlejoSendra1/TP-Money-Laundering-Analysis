@@ -4,6 +4,6 @@ func CreateQueueMiddleware(queueName string, connectionSettings ConnSettings) (M
 	return NewQueueMiddleware(queueName, connectionSettings)
 }
 
-func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings) (Middleware, error) {
-	return NewExchangeMiddleware(exchange, keys, connectionSettings)
+func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings, queueName string) (Middleware, error) {
+	return NewExchangeMiddleware(exchange, keys, connectionSettings, queueName)
 }
