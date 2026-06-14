@@ -38,7 +38,7 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings Co
 	}
 	// Si se usa el exchange para enviar, no es necesario que sera durable
 	durable := true
-	if queueName != "" {
+	if queueName == "" {
 		durable = false
 	}
 	q, err := em.ch.QueueDeclare(
