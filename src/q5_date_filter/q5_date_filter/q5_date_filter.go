@@ -64,7 +64,7 @@ func NewQ5DateFilter(config Q5DateFilterConfig) (*Q5DateFilter, error) {
 			continue
 		}
 		key := fmt.Sprintf("%s_%d", config.ControlExchangeName, i)
-		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings)
+		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings, "") // No consumo, solo envio
 		if err != nil {
 			inputQueue.Close()
 			outputQueue.Close()
@@ -78,7 +78,7 @@ func NewQ5DateFilter(config Q5DateFilterConfig) (*Q5DateFilter, error) {
 
 	// Control input
 	myControlKey := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings, myControlKey)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()
