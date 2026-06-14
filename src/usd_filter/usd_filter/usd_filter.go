@@ -1,6 +1,7 @@
 package usd_filter
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/messageprotocol/inner/control"
@@ -13,6 +14,7 @@ import (
 const USDCurrencyName = "US Dollar"
 
 type USDFilterConfig struct {
+	Id                  int
 	MomHost             string
 	MomPort             int
 	InputQueue          string
@@ -44,12 +46,13 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputQueue.Close()
 		return nil, err
 	}
-	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings, "")
 	if err != nil {
 		inputQueue.Close()
 		return nil, err
 	}
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	controlQueueName := fmt.Sprintf("%s_%d", config.ControlTopic, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings, controlQueueName)
 	if err != nil {
 		inputQueue.Close()
 		outputExchange.Close()

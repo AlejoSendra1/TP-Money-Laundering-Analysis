@@ -9,6 +9,11 @@ import (
 )
 
 func loadConfig() (usd_filter.USDFilterConfig, error) {
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return usd_filter.USDFilterConfig{}, errors.New("ID environment variable is required and must be a number")
+	}
+
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return usd_filter.USDFilterConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
@@ -55,6 +60,7 @@ func loadConfig() (usd_filter.USDFilterConfig, error) {
 	}
 
 	return usd_filter.USDFilterConfig{
+		Id:                  id,
 		MomHost:             momHost,
 		MomPort:             momPort,
 		InputQueue:          inputQueue,

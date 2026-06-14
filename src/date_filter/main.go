@@ -9,6 +9,11 @@ import (
 )
 
 func loadConfig() (date_filter.DateFilterConfig, error) {
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return date_filter.DateFilterConfig{}, errors.New("ID environment variable is required and must be a number")
+	}
+
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return date_filter.DateFilterConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
@@ -63,6 +68,7 @@ func loadConfig() (date_filter.DateFilterConfig, error) {
 	}
 
 	return date_filter.DateFilterConfig{
+		Id:                  id,
 		MomHost:             momHost,
 		MomPort:             momPort,
 		InputQueue:          inputQueue,
