@@ -12,6 +12,7 @@ import (
 )
 
 type SumConfig struct {
+	Id                   int
 	MomHost              string
 	MomPort              int
 	InputQueue           string
@@ -52,14 +53,15 @@ func NewSum(config SumConfig) (*Sum, error) {
 		key := fmt.Sprintf("%s_%d", config.PromedietorPrefix, i)
 		keysOutput = append(keysOutput, key)
 	}
-	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, keysOutput, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, keysOutput, connSettings, "") // No consumo, solo envio
 
 	if err != nil {
 		inputQueue.Close()
 		return nil, err
 	}
 
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlExchangeTopic}, connSettings)
+	controlQueue := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlExchangeTopic}, connSettings, controlQueue)
 	if err != nil {
 		inputQueue.Close()
 		outputExchange.Close()

@@ -70,8 +70,8 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		return nil, err
 	}
 
-	controlQueue := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.Id)
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings, controlQueue)
+	myKeyControl := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings, myKeyControl)
 	if err != nil {
 		inputQueue.Close()
 		outputExchangeTopic1.Close()
