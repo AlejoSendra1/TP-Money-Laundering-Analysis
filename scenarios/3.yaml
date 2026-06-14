@@ -26,6 +26,7 @@ services:
     - sum_0
     - sum_1
     environment:
+    - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=date_filter_queue
@@ -46,6 +47,7 @@ services:
     - sum_0
     - sum_1
     environment:
+    - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=date_filter_queue
@@ -104,6 +106,7 @@ services:
     - promediator_0
     - promediator_1
     environment:
+    - ID=0
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_QUEUE=sum_queue
@@ -124,6 +127,7 @@ services:
     - promediator_0
     - promediator_1
     environment:
+    - ID=1
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_QUEUE=sum_queue
@@ -144,6 +148,7 @@ services:
     - date_filter_0
     - date_filter_1
     environment:
+    - ID=0
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
@@ -162,6 +167,7 @@ services:
     - date_filter_0
     - date_filter_1
     environment:
+    - ID=1
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
@@ -263,6 +269,7 @@ services:
     depends_on:
       - gateway
     environment:
+      - ID=0
       - MOM_PORT=5672
       - MOM_HOST=rabbitmq
       - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
@@ -283,6 +290,7 @@ services:
     depends_on:
       - gateway
     environment:
+      - ID=1
       - MOM_PORT=5672
       - MOM_HOST=rabbitmq
       - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
