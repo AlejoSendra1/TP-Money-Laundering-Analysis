@@ -256,7 +256,7 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 	str := fmt.Sprint("batches enviados: ", gateway.batchCounter)
 	slog.Info(str)
 
-	message, err := client.Handler.SerializeEOFMessage()
+	message, err := client.Handler.SerializeEORMessage()
 	if err != nil {
 		slog.Info("While serializing END_OF_RECORDS message", "err", err)
 		return err

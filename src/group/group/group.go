@@ -122,7 +122,7 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, data []interf
 
 	if mustPropagate {
 		// EOF viene del date_filter, reenviar por controlExchange sin propagación
-		msg, err := inner.SerializeEOF(clientID, false, senderName)
+		msg, err := inner.SerializeEOR(clientID, false, senderName)
 		if err != nil {
 			slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 			return err
@@ -149,7 +149,7 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, data []interf
 	}
 
 	slog.Info("EOF threshold reached, sending to output", "clientID", clientID)
-	msg, err := inner.SerializeEOF(clientID, false, senderName)
+	msg, err := inner.SerializeEOR(clientID, false, senderName)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err

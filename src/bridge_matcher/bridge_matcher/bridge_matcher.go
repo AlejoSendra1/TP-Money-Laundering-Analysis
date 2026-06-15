@@ -219,7 +219,7 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	}
 
 	// all peers are done sending suspects, safe to EOF downstream
-	msg, err := inner.SerializeEOF(clientID, false,
+	msg, err := inner.SerializeEOR(clientID, false,
 		makeKey("bridge_matcher", bridgeMatcher.config.ID))
 	if err != nil {
 		return err

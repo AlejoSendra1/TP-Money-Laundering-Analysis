@@ -9,6 +9,10 @@ import (
 
 type CrashPoint string
 
+// para usar agregar cualquiera de las consatantes dadas al docker compose
+// con un numero como valor
+// el numero indica la cantidad de veces que el programa debe pasar por ahi para producirce el crasheo
+
 const (
 	CrashAfterLog        CrashPoint = "CRASH_AFTER_LOG"
 	CrashAfterCheckpoint CrashPoint = "CRASH_AFTER_CHECKPOINT"

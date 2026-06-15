@@ -208,7 +208,7 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 		return
 	}
 
-	msgEOF, err := inner.SerializeEOF(clientID, true, "date_filter") // TO DO agregar otra var de entorno y para group tmb
+	msgEOF, err := inner.SerializeEOR(clientID, true, "date_filter") // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		nack()

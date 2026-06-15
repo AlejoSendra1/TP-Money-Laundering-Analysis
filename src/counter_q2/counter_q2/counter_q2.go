@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 
@@ -44,7 +45,7 @@ type bankEntry struct {
 // struct usado para el guardado de checkpoints y recuperacion de datos
 type CheckpointData struct {
 	TopByClient map[int64]map[int]bankEntry `json:"topByClient"`
-	EofCounter  map[int64]int               `json:"eofCounter"`
+	EofCounter  map[int64][]string          `json:"eofCounter"`
 }
 
 // CounterQ2 keeps the maximum-amount transaction per bank per client,
@@ -55,7 +56,7 @@ type CounterQ2 struct {
 	outputExchanges []middleware.Middleware
 	controlOutputs  []middleware.Middleware // one per peer
 	controlInput    middleware.Middleware
-	eofCounter      map[int64]int // client_id -> count of EOFs received from peers (to know when to flush)
+	eofCounter      map[int64][]string
 	mutex           sync.Mutex
 	topByClient     map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
 	// for data saving and restoration
@@ -173,7 +174,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		controlOutputs:  controlOutputs,
 		controlInput:    controlInput,
 		topByClient:     make(map[int64]map[int]bankEntry),
-		eofCounter:      make(map[int64]int),
+		eofCounter:      make(map[int64][]string),
 		dataSaver:       dataSaver,
 		logCounter:      0,
 	}
@@ -274,7 +275,7 @@ func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{})
 	slog.Info("EOF received, notifying peers and flushing", "client_id", clientID)
 
 	// habria q hacer q el coso guarde por sender en lugar de contar
-	_, _, err := inner.DeserializeEOR(data)
+	_, sender, err := inner.DeserializeEOR(data) // no hace falta el bool dado que se utiliza otro canal para propagar
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
 		return err
@@ -285,7 +286,7 @@ func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{})
 		return err
 	}
 
-	if err := c.flushClient(clientID); err != nil {
+	if err := c.flushClient(clientID, sender); err != nil {
 		slog.Error("Flushing client", "err", err, "client_id", clientID)
 		return err
 	}
@@ -306,7 +307,7 @@ func (counter *CounterQ2) processBatch(clientID int64, data []interface{}) error
 	if !ok {
 		banks = make(map[int]bankEntry)
 		counter.topByClient[clientID] = banks
-		counter.eofCounter[clientID] = 0
+		counter.eofCounter[clientID] = make([]string, 0, 5)
 	}
 	for _, tx := range transactions {
 		prev, exists := banks[tx.FromBank]
@@ -320,16 +321,23 @@ func (counter *CounterQ2) processBatch(clientID int64, data []interface{}) error
 }
 
 // handleControlMessage processes EOF notifications from peer pods.
-func (counter *CounterQ2) handleControlMessage(msg middleware.Message, ack, nack func()) {
-	clientID, _, _, err := inner.DeserializeMaxBankTransactionMessage(&msg)
+func (counter *CounterQ2) handleControlMessage(middlewareMsg middleware.Message, ack, nack func()) {
+	msg, err := inner.DeserializeMessage(&middlewareMsg)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err)
+		nack()
+		return
+	}
+	_, sender, err := inner.DeserializeEOR(msg.Data)
 	if err != nil {
 		slog.Error("Deserializing control message", "err", err)
 		nack()
 		return
 	}
-	slog.Info("Control EOF received from peer, flushing", "client_id", clientID)
-	if err := counter.flushClient(clientID); err != nil {
-		slog.Error("Flushing client from control", "err", err, "client_id", clientID)
+	slog.Info("Control EOF received from peer, flushing", "client_id", msg.ClientID)
+
+	if err := counter.flushClient(msg.ClientID, sender); err != nil {
+		slog.Error("Flushing client from control", "err", err, "client_id", msg.ClientID)
 		nack()
 		return
 	}
@@ -338,7 +346,9 @@ func (counter *CounterQ2) handleControlMessage(msg middleware.Message, ack, nack
 
 // sendControlEOF notifies all peer pods that this pod received an EOF for clientID.
 func (counter *CounterQ2) sendControlEOF(clientID int64) error {
-	msg, err := inner.SerializeMaxBankTransactionMessage(clientID, []transaction.MaxBankTransaction{})
+	//msg, err := inner.SerializeMaxBankTransactionMessage(clientID, []transaction.MaxBankTransaction{})
+	myName := fmt.Sprintf("q2_counter_%d", counter.config.ID) // se podria agregar la var de entorno pero bueno
+	msg, err := inner.SerializeEOR(clientID, false, myName)
 	if err != nil {
 		return err
 	}
@@ -351,10 +361,15 @@ func (counter *CounterQ2) sendControlEOF(clientID int64) error {
 }
 
 // flushClient pops partial state for clientID and sends it to the correct joiner(s).
-func (counter *CounterQ2) flushClient(clientID int64) error {
+func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
 	counter.mutex.Lock()
-	counter.eofCounter[clientID] += 1
-	if counter.eofCounter[clientID] != counter.config.USDFilterAmount {
+
+	if slices.Contains(counter.eofCounter[clientID], sender) {
+		return nil
+	}
+	counter.eofCounter[clientID] = append(counter.eofCounter[clientID], sender)
+
+	if len(counter.eofCounter[clientID]) != counter.config.USDFilterAmount {
 		slog.Info("Waiting for more EOFs from usd filter")
 		counter.mutex.Unlock()
 		return nil
@@ -368,7 +383,7 @@ func (counter *CounterQ2) flushClient(clientID int64) error {
 	if err := counter.sendData(clientID, banks); err != nil {
 		return err
 	}
-	datasaver.Crash(datasaver.CrashAfterSendData)
+	datasaver.Crash(datasaver.CrashAfterSendData) // para testear caida
 	slog.Info("ENVIANDO EOF")
 	return counter.sendEOF(clientID)
 }
