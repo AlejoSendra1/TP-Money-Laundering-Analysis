@@ -11,6 +11,7 @@ import (
 )
 
 type Q3AmountFilterConfig struct {
+	Id                       int
 	MomHost                  string
 	MomPort                  int
 	InputPromediatorExchange string
@@ -42,7 +43,8 @@ type Q3AmountFilter struct {
 func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 	connSettings := middleware.ConnSettings{Hostname: config.MomHost, Port: config.MomPort}
 
-	inputPromediator, err := middleware.CreateExchangeMiddleware(config.InputPromediatorExchange, []string{config.InputPromediatorTopic}, connSettings)
+	myKeyInputPromediator := fmt.Sprintf("%s_%d", config.InputPromediatorExchange, config.Id)
+	inputPromediator, err := middleware.CreateExchangeMiddleware(config.InputPromediatorExchange, []string{config.InputPromediatorTopic}, connSettings, myKeyInputPromediator)
 	if err != nil {
 		return nil, err
 	}
@@ -59,8 +61,8 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		inputTransactionSaver.Close()
 		return nil, err
 	}
-
-	notificationExchange, err := middleware.CreateExchangeMiddleware(config.NotificationExchange, []string{config.NotificationTopic}, connSettings)
+	myKeyNotification := fmt.Sprintf("%s_%d", config.NotificationTopic, config.Id)
+	notificationExchange, err := middleware.CreateExchangeMiddleware(config.NotificationExchange, []string{config.NotificationTopic}, connSettings, myKeyNotification)
 	if err != nil {
 		inputPromediator.Close()
 		inputTransactionSaver.Close()
@@ -68,7 +70,8 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		return nil, err
 	}
 
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{config.ControlTopic}, connSettings)
+	myKeyControl := fmt.Sprintf("%s_%d", config.ControlExchange, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{config.ControlTopic}, connSettings, myKeyControl)
 	if err != nil {
 		inputPromediator.Close()
 		inputTransactionSaver.Close()

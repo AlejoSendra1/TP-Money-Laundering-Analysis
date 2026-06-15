@@ -60,7 +60,7 @@ func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 			continue
 		}
 		key := fmt.Sprintf("%s_%d", config.ControlExchangeName, i)
-		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings)
+		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings, "")
 		if err != nil {
 			inputQueue.Close()
 			outputQueue.Close()
@@ -74,7 +74,7 @@ func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 
 	// Control input exchange — recibe notificaciones EOF de los peers
 	myControlKey := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings, myControlKey)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()

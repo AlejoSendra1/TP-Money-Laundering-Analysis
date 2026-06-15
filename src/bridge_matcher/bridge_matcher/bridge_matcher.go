@@ -57,7 +57,7 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 
 	// input - control
 	// (Se envian los sospechosos y sus posibles puentes para que la instancia receptora envie aquellas transacciones realizadas por los puentes)
-	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings) // control
+	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings, "") // control
 	if err != nil {
 		return nil, err
 	}

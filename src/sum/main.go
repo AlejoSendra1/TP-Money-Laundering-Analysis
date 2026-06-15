@@ -14,6 +14,11 @@ func loadConfig() (sum.SumConfig, error) {
 		return sum.SumConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
 	}
 
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return sum.SumConfig{}, errors.New("ID environment variable is required and must be a number")
+	}
+
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
 		return sum.SumConfig{}, errors.New("MOM_HOST environment variable is required")
@@ -65,6 +70,7 @@ func loadConfig() (sum.SumConfig, error) {
 	}
 
 	return sum.SumConfig{
+		Id:                   id,
 		MomHost:              momHost,
 		MomPort:              momPort,
 		InputQueue:           inputQueue,
@@ -73,9 +79,9 @@ func loadConfig() (sum.SumConfig, error) {
 		ControlExchangeName:  controlExchangeName,
 		ControlExchangeTopic: controlExchangeTopic,
 		OutputExchangeName:   outputExchangeName,
-		PromediatorAmount:    promediatorAmount,
+		PromediatorAmount:    uint8(promediatorAmount),
 		PromedietorPrefix:    promedietorPrefix,
-		DateFilterAmount:     DateFilterAmount,
+		DateFilterAmount:     uint8(DateFilterAmount),
 	}, nil
 }
 

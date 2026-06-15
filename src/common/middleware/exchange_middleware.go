@@ -12,7 +12,7 @@ type ExchangeMiddleware struct {
 	queueName string
 }
 
-func NewExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings) (Middleware, error) {
+func NewExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings, queueName string) (Middleware, error) {
 	em := new(ExchangeMiddleware)
 	base, err := newBaseMiddleware(connectionSettings)
 	if err != nil {
@@ -36,14 +36,18 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings Co
 		em.close()
 		return nil, err
 	}
-
+	// Si se usa el exchange para enviar, no es necesario que sera durable
+	durable := true
+	if queueName == "" {
+		durable = false
+	}
 	q, err := em.ch.QueueDeclare(
-		"",    // name
-		true,  // durability
-		false, // delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,   // arguments
+		queueName, // name
+		durable,   // durability
+		false,     // delete when unused
+		true,      // exclusive
+		false,     // no-wait
+		nil,       // arguments
 	)
 	if err != nil {
 		em.close()

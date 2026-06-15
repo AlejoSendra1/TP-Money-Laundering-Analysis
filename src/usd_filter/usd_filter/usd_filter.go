@@ -1,6 +1,7 @@
 package usd_filter
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/messageprotocol/inner/control"
@@ -13,6 +14,7 @@ import (
 const USDCurrencyName = "US Dollar"
 
 type USDFilterConfig struct {
+	Id                  int
 	MomHost             string
 	MomPort             int
 	InputQueue          string
@@ -44,12 +46,13 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputQueue.Close()
 		return nil, err
 	}
-	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic}, connSettings, "")
 	if err != nil {
 		inputQueue.Close()
 		return nil, err
 	}
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	controlQueueName := fmt.Sprintf("%s_%d", config.ControlTopic, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings, controlQueueName)
 	if err != nil {
 		inputQueue.Close()
 		outputExchange.Close()
@@ -156,7 +159,8 @@ func (usdFilter *USDFilter) handleControlMessage(msg *middleware.Message, ack fu
 		nack()
 		return
 	}
-	msgEof, err := inner.SerializeEOR(controlMessage.ClientID, true, "usd_filter") // TO DO agregar otra var de entorno y para group tmb
+	myName := fmt.Sprintf("q2_counter_%d", usdFilter.config.Id) // se podria agregar la var de entorno pero bueno
+	msgEof, err := inner.SerializeEOR(controlMessage.ClientID, true, myName)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", controlMessage.ClientID)
 		nack()

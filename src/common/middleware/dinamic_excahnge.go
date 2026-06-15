@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// No hace falta que tenga una nombre la queue, porque el exchange solo se usa para enviar, no consumir
 func NewDinamicExchangeMiddleware(exchange string, connectionSettings ConnSettings) (*ExchangeMiddleware, error) {
 	em := new(ExchangeMiddleware)
 	base, err := newBaseMiddleware(connectionSettings)

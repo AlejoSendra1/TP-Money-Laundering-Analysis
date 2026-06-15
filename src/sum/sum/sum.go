@@ -12,6 +12,7 @@ import (
 )
 
 type SumConfig struct {
+	Id                   int
 	MomHost              string
 	MomPort              int
 	InputQueue           string
@@ -20,19 +21,18 @@ type SumConfig struct {
 	ControlExchangeName  string
 	ControlExchangeTopic string
 	OutputExchangeName   string
-	PromediatorAmount    int
+	PromediatorAmount    uint8
 	PromedietorPrefix    string
-	DateFilterAmount     int
+	DateFilterAmount     uint8
 }
 
 type Sum struct {
-	inputQueue         middleware.Middleware
-	outputExchange     middleware.Middleware
-	controlExchange    middleware.Middleware
-	clientTransactions map[int64]map[string]transaction.PaymentFormatAverage
-	eofCounter         map[int64]int
-	config             SumConfig
-	mu                 sync.Mutex
+	inputQueue      middleware.Middleware
+	outputExchange  middleware.Middleware
+	controlExchange middleware.Middleware
+	eofCounter      map[int64]uint8
+	config          SumConfig
+	mu              sync.Mutex
 }
 
 func NewSum(config SumConfig) (*Sum, error) {
@@ -53,26 +53,26 @@ func NewSum(config SumConfig) (*Sum, error) {
 		key := fmt.Sprintf("%s_%d", config.PromedietorPrefix, i)
 		keysOutput = append(keysOutput, key)
 	}
-	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, keysOutput, connSettings)
+	outputExchange, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, keysOutput, connSettings, "") // No consumo, solo envio
 
 	if err != nil {
 		inputQueue.Close()
 		return nil, err
 	}
 
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlExchangeTopic}, connSettings)
+	controlQueue := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlExchangeTopic}, connSettings, controlQueue)
 	if err != nil {
 		inputQueue.Close()
 		outputExchange.Close()
 		return nil, err
 	}
 	return &Sum{
-		inputQueue:         inputQueue,
-		outputExchange:     outputExchange,
-		controlExchange:    controlExchange,
-		clientTransactions: make(map[int64]map[string]transaction.PaymentFormatAverage),
-		config:             config,
-		eofCounter:         make(map[int64]int),
+		inputQueue:      inputQueue,
+		outputExchange:  outputExchange,
+		controlExchange: controlExchange,
+		config:          config,
+		eofCounter:      make(map[int64]uint8),
 	}, nil
 }
 
@@ -136,100 +136,81 @@ func (sum *Sum) handleEndOfRecordMessage(clientID int64) error {
 }
 
 func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
-	transactionsByPaymentFormat := make(map[string][]transaction.PaymentFormatAverage)
+	averageByPaymentFormat := make(map[string]transaction.PaymentFormatAverage)
 	for _, tr := range transactionRecords {
-		if _, ok := transactionsByPaymentFormat[tr.PaymentFormat]; !ok {
-			transactionsByPaymentFormat[tr.PaymentFormat] = make([]transaction.PaymentFormatAverage, 0)
-		}
-		t := transaction.PaymentFormatAverage{PaymentFormat: tr.PaymentFormat, Average: tr.Amount, Count: 1}
-		transactionsByPaymentFormat[tr.PaymentFormat] = append(transactionsByPaymentFormat[tr.PaymentFormat], t)
+		avg := averageByPaymentFormat[tr.PaymentFormat]
+		avg.PaymentFormat = tr.PaymentFormat
+		avg.Average += tr.Amount // Aca se va acumulando el monto total para que promediator calcule el avg
+		avg.Count++
+		averageByPaymentFormat[tr.PaymentFormat] = avg
 	}
+
+	// Verifico si es un nuevo cliente o no
 	sum.mu.Lock()
-	defer sum.mu.Unlock()
-	if _, exist := sum.clientTransactions[clientID]; !exist {
+	if _, exist := sum.eofCounter[clientID]; !exist {
 		slog.Info("Client new arrived", "clientID", clientID)
 		sum.eofCounter[clientID] = 0
-		sum.clientTransactions[clientID] = make(map[string]transaction.PaymentFormatAverage)
 	}
-	// Acumulo amount y count para cada formato de pago del cliente
-	for paymentFormat, transactions := range transactionsByPaymentFormat {
-		if paymentFormatAverage, exist := sum.clientTransactions[clientID][paymentFormat]; !exist {
-			aux := transaction.PaymentFormatAverage{PaymentFormat: paymentFormat, Average: 0, Count: 0}
-			sum.clientTransactions[clientID][paymentFormat] = sum.addPaymentFormatAverage(aux, transactions)
-		} else {
-			sum.clientTransactions[clientID][paymentFormat] = sum.addPaymentFormatAverage(paymentFormatAverage, transactions)
+	sum.mu.Unlock()
+
+	// Envio al promediator
+	for paymentFormat, avg := range averageByPaymentFormat {
+		key := sum.getKeyForExchange(clientID, paymentFormat)
+
+		if err := sum.sendToOutputExchange(
+			[]string{key},
+			[]transaction.PaymentFormatAverage{avg},
+			clientID,
+		); err != nil {
+			slog.Error("While sending payment format average to output exchange", "err", err, "clientID", clientID, "paymentFormat", paymentFormat)
+			return err
 		}
 	}
 	return nil
 }
 
 func (sum *Sum) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+	// Verifico si ya tengo todos los EOFs esperados
 	controlMessage, err := control.DeserializeControlMessage(msg)
 	if err != nil {
 		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
-	// Send data
 	sum.mu.Lock()
 	sum.eofCounter[controlMessage.ClientID] += 1
 	if sum.eofCounter[controlMessage.ClientID] != sum.config.DateFilterAmount {
-		slog.Info("Received EOF from other instance, waiting for more...")
-		sum.mu.Unlock()
+		slog.Debug("Waiting for remaining EOFs")
 		ack()
+		sum.mu.Unlock()
 		return
 	}
-	averages := sum.getPaymentFormats(controlMessage.ClientID)
-	sum.mu.Unlock()
-	if averages != nil {
-		for _, average := range averages {
-			key := sum.getKeyForExchange(controlMessage.ClientID, average.PaymentFormat)
-			if err := sum.sendToOutputExchange([]string{key}, []transaction.PaymentFormatAverage{average}, controlMessage.ClientID); err != nil {
-				slog.Error("While sending payment format average to output exchange", "err", err, "clientID", controlMessage.ClientID, "paymentFormat", average.PaymentFormat)
-				nack()
-				return
-			}
-		}
-	}
-	sum.mu.Lock()
-	delete(sum.clientTransactions, controlMessage.ClientID)
 	delete(sum.eofCounter, controlMessage.ClientID)
 	sum.mu.Unlock()
 
-	// Send EOF
-	eofMessage, err := inner.SerializePaymentFormatAverageMessage(controlMessage.ClientID, []transaction.PaymentFormatAverage{})
-	if err != nil {
-		slog.Error("While serializing EOF message", "err", err, "clientID", controlMessage.ClientID)
+	// Envio el EOF
+	if err = sum.sendToOutputExchange([]string{}, []transaction.PaymentFormatAverage{}, controlMessage.ClientID); err != nil {
+		slog.Error("While sending EOF message", "err", err)
 		nack()
 		return
 	}
-	if err := sum.outputExchange.Send(*eofMessage); err != nil {
-		slog.Error("While sending EOF message", "err", err, "clientID", controlMessage.ClientID)
-		nack()
-		return
-	}
-	slog.Info("Sent EOF...", "clientID", controlMessage.ClientID)
-
+	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
 	ack()
-}
-
-func (sum *Sum) addPaymentFormatAverage(paymentFormatAverage transaction.PaymentFormatAverage, transactions []transaction.PaymentFormatAverage) transaction.PaymentFormatAverage {
-	for _, t := range transactions {
-		paymentFormatAverage.Average += t.Average
-		paymentFormatAverage.Count += t.Count
-	}
-	return paymentFormatAverage
 }
 
 func (sum *Sum) sendToOutputExchange(keys []string, paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) error {
 	message, err := inner.SerializePaymentFormatAverageMessage(clientID, paymentFormatAverageRecords)
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	if err := sum.outputExchange.SendWithKeys(keys, *message); err != nil {
-		slog.Info("While sending EOF message", "err", err, "clientID", clientID)
-		return err
+	var sendErr error
+	if len(keys) != 0 {
+		sendErr = sum.outputExchange.SendWithKeys(keys, *message)
+	} else {
+		sendErr = sum.outputExchange.Send(*message)
+	}
+	if sendErr != nil {
+		return sendErr
 	}
 	return nil
 }
@@ -237,18 +218,6 @@ func (sum *Sum) sendToOutputExchange(keys []string, paymentFormatAverageRecords 
 func (sum *Sum) getKeyForExchange(clientID int64, paymentFormat string) string {
 	hash := fnv.New32a()
 	hash.Write([]byte(fmt.Sprintf("%d-%s", clientID, paymentFormat)))
-	idx := int(hash.Sum32()) % sum.config.PromediatorAmount
+	idx := uint8(hash.Sum32()) % sum.config.PromediatorAmount
 	return fmt.Sprintf("%s_%d", sum.config.PromedietorPrefix, idx)
-}
-
-func (sum *Sum) getPaymentFormats(clientID int64) []transaction.PaymentFormatAverage {
-	paymentFormats, ok := sum.clientTransactions[clientID]
-	if !ok {
-		return nil
-	}
-	result := make([]transaction.PaymentFormatAverage, 0, len(paymentFormats))
-	for _, avg := range paymentFormats {
-		result = append(result, avg)
-	}
-	return result
 }

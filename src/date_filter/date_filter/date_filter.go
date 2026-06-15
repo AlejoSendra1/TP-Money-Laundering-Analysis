@@ -1,6 +1,7 @@
 package date_filter
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/messageprotocol/inner/control"
@@ -18,6 +19,7 @@ const DateMinLaterPeriod = "2022-09-06"
 const DateMaxLaterPeriod = "2022-09-15"
 
 type DateFilterConfig struct {
+	Id                  int
 	MomHost             string
 	MomPort             int
 	InputQueue          string
@@ -55,20 +57,21 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		inputQueue.Close()
 		return nil, err
 	}
-	outputExchangeTopic1, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic1}, connSettings)
+	outputExchangeTopic1, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic1}, connSettings, "")
 	if err != nil {
 		inputQueue.Close()
 		return nil, err
 	}
 
-	outputExchangeTopic2, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic2}, connSettings)
+	outputExchangeTopic2, err := middleware.CreateExchangeMiddleware(config.OutputExchangeName, []string{config.OutputTopic2}, connSettings, "")
 	if err != nil {
 		inputQueue.Close()
 		outputExchangeTopic1.Close()
 		return nil, err
 	}
 
-	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings)
+	myKeyControl := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.Id)
+	controlExchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{config.ControlTopic}, connSettings, myKeyControl)
 	if err != nil {
 		inputQueue.Close()
 		outputExchangeTopic1.Close()

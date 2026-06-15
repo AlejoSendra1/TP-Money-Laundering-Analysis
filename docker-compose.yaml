@@ -38,7 +38,7 @@ services:
     - COUNTER_Q2_CONTROL=counter_q2_control
     - BATCH_SIZE=100
     - USD_FILTER_AMOUNT=2
-    - CRASH_AFTER_SEND_DATA=10
+    - CRASH_AFTER_LOG=300
     volumes:
     - ./persistence:/persistence 
   q2_counter_1:
@@ -145,6 +145,7 @@ services:
     - q2_counter_0
     - q2_counter_1
     environment:
+    - ID=0
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
@@ -160,15 +161,16 @@ services:
       dockerfile: usd_filter/Dockerfile
     container_name: usd_filter_1
     depends_on:
-      - q2_counter_0
-      - q2_counter_1
+    - q2_counter_0
+    - q2_counter_1
     environment:
-      - INPUT_QUEUE=usd_filter_queue
-      - INPUT_EXCHANGE_NAME=transactions_exchange
-      - INPUT_TOPIC=transactions_topic
-      - MOM_HOST=rabbitmq
-      - MOM_PORT=5672
-      - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
-      - OUTPUT_TOPIC=usd_transactions_topic
-      - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
-      - CONTROL_TOPIC=usd_filter_control_topic
+    - ID=1
+    - INPUT_QUEUE=usd_filter_queue
+    - INPUT_EXCHANGE_NAME=transactions_exchange
+    - INPUT_TOPIC=transactions_topic
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic

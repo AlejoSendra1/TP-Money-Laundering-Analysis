@@ -132,7 +132,7 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 			continue
 		}
 		key := fmt.Sprintf("%s_%d", config.ControlExchangeName, i)
-		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings)
+		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings, "")
 		if err != nil {
 			inputQueue.Close()
 			for _, q := range outputQueues {
@@ -148,7 +148,7 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 
 	// Control input exchange — recibe notificaciones EOF de los peers
 	myControlKey := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings, myControlKey)
 	if err != nil {
 		inputQueue.Close()
 		for _, q := range outputQueues {

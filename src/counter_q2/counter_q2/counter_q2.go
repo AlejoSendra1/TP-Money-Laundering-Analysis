@@ -88,7 +88,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 	outputExchanges := make([]middleware.Middleware, config.JoinAmount)
 	for i := 0; i < config.JoinAmount; i++ {
 		key := fmt.Sprintf("%s_%d", config.OutputPrefix, i)
-		ex, err := middleware.CreateExchangeMiddleware(config.OutputPrefix, []string{key}, connSettings)
+		ex, err := middleware.CreateExchangeMiddleware(config.OutputPrefix, []string{key}, connSettings, "") // No consume, solo envia
 		if err != nil {
 			inputQueue.Close()
 			for j := 0; j < i; j++ {
@@ -106,7 +106,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 			continue
 		}
 		key := fmt.Sprintf("%s_%d", config.ControlExchange, i)
-		ex, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{key}, connSettings)
+		ex, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{key}, connSettings, "") // No consume, solo envia
 		if err != nil {
 			inputQueue.Close()
 			for _, o := range outputExchanges {
@@ -122,7 +122,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 
 	// Own control input exchange (exclusive queue, receives peer notifications)
 	myKey := fmt.Sprintf("%s_%d", config.ControlExchange, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{myKey}, connSettings)
+	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchange, []string{myKey}, connSettings, myKey) // Nombre de queue igual a key, es unico
 	if err != nil {
 		inputQueue.Close()
 		for _, o := range outputExchanges {
@@ -281,7 +281,7 @@ func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{})
 		return err
 	}
 
-	if err := c.sendControlEOF(clientID); err != nil {
+	if err := c.sendControlEOF(clientID, sender); err != nil {
 		slog.Error("Sending control EOF", "err", err, "client_id", clientID)
 		return err
 	}
@@ -345,10 +345,9 @@ func (counter *CounterQ2) handleControlMessage(middlewareMsg middleware.Message,
 }
 
 // sendControlEOF notifies all peer pods that this pod received an EOF for clientID.
-func (counter *CounterQ2) sendControlEOF(clientID int64) error {
+func (counter *CounterQ2) sendControlEOF(clientID int64, sender string) error {
 	//msg, err := inner.SerializeMaxBankTransactionMessage(clientID, []transaction.MaxBankTransaction{})
-	myName := fmt.Sprintf("q2_counter_%d", counter.config.ID) // se podria agregar la var de entorno pero bueno
-	msg, err := inner.SerializeEOR(clientID, false, myName)
+	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		return err
 	}
@@ -362,11 +361,15 @@ func (counter *CounterQ2) sendControlEOF(clientID int64) error {
 
 // flushClient pops partial state for clientID and sends it to the correct joiner(s).
 func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
+	slog.Info("tomando lock")
 	counter.mutex.Lock()
+	slog.Info("lock tomado")
 
 	if slices.Contains(counter.eofCounter[clientID], sender) {
+		slog.Info("Sender de EOR repetido")
 		return nil
 	}
+
 	counter.eofCounter[clientID] = append(counter.eofCounter[clientID], sender)
 
 	if len(counter.eofCounter[clientID]) != counter.config.USDFilterAmount {
