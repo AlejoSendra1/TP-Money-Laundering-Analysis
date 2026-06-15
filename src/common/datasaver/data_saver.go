@@ -18,7 +18,7 @@ type DataSaver struct {
 func NewDataSaver(filename string) (*DataSaver, error) {
 	// Open the file in Append mode (create it if it doesn't exist)
 	// 0644 gives read/write permissions to the owner
-	logsFile, err := os.OpenFile(filename+"_"+"logs", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	logsFile, err := os.OpenFile(filename+"_"+"logs"+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return &DataSaver{}, fmt.Errorf("failed to open file: %w", err)
 	}
@@ -26,7 +26,7 @@ func NewDataSaver(filename string) (*DataSaver, error) {
 	writer := bufio.NewWriter(logsFile)
 
 	return &DataSaver{
-		checkpointFileName: filename + "_" + "checkpoint",
+		checkpointFileName: filename + "_" + "checkpoint" + ".txt",
 		logsFile:           logsFile,
 		logsWriter:         writer,
 		logsReader:         nil,
@@ -124,10 +124,16 @@ func (ds *DataSaver) writeFile(data []byte) (err error) {
 
 // / ----------------------------------------- FUNCIONES DE CARGA ------------------------------------------
 // funciones utilizadas para recuperar el estado del nodo postiormente a su recuperacion
-func (ds *DataSaver) GetRestaurationCheckpoint(target any) error {
+func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
+	_, err := os.Stat(ds.checkpointFileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+	}
 	checkpointFile, err := os.OpenFile(ds.checkpointFileName, os.O_RDONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
+		return false, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer checkpointFile.Close()
 
@@ -136,11 +142,12 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) error {
 	scanner.Scan()
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading file: %w", err)
+		return true, fmt.Errorf("error reading file: %w", err)
 	}
 
 	// Unmarshal the bytes back into the struct pointer
-	return json.Unmarshal(scanner.Bytes(), target)
+	err = json.Unmarshal(scanner.Bytes(), target)
+	return true, err
 }
 
 // lee cada batch y lo parsea in place en la variable indicada por parametro
@@ -156,14 +163,15 @@ func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 		return false, fmt.Errorf("error reading file: %w", err)
 	}
 
+	if !thereIsMore {
+		ds.logsReader = nil
+		return false, nil
+	}
+
 	// Unmarshal the bytes back into the struct pointer
 	err := json.Unmarshal(ds.logsReader.Bytes(), target)
 	if err != nil {
 		return false, fmt.Errorf("failed to unmarshal line data: %w", err)
-	}
-
-	if !thereIsMore {
-		ds.logsReader = nil
 	}
 
 	return thereIsMore, nil

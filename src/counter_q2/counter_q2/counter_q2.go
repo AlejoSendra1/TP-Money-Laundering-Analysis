@@ -19,6 +19,8 @@ import (
 
 const LOGS_BEFORE_CHECKPOINT = 250
 
+//docker compose run q2_counter_0 -e RESTAURATE="TRUE"
+
 type CounterQ2Config struct {
 	ID              int
 	MomHost         string
@@ -41,8 +43,8 @@ type bankEntry struct {
 
 // struct usado para el guardado de checkpoints y recuperacion de datos
 type CheckpointData struct {
-	topByClient map[int64]map[int]bankEntry
-	eofCounter  map[int64]int
+	TopByClient map[int64]map[int]bankEntry `json:"topByClient"`
+	EofCounter  map[int64]int               `json:"eofCounter"`
 }
 
 // CounterQ2 keeps the maximum-amount transaction per bank per client,
@@ -131,13 +133,40 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		return nil, fmt.Errorf("creating control input exchange: %w", err)
 	}
 
+	// para q siempre se use la misma queue ---------------------- se deberia refactorisar el control
+	controlQueueName := fmt.Sprintf("%s_control_%d", config.ControlExchange, config.ID)
+	controlInput, err = middleware.CreateQueueMiddleware(controlQueueName, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		for _, o := range outputExchanges {
+			o.Close()
+		}
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		return nil, fmt.Errorf("creating control input queue: %w", err)
+	}
+
+	if err := controlInput.BindToTopics(config.ControlExchange, myKey); err != nil {
+		inputQueue.Close()
+		controlInput.Close()
+		for _, o := range outputExchanges {
+			o.Close()
+		}
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		return nil, fmt.Errorf("binding control input queue: %w", err)
+	}
+
 	// para persistir la info ante posibles caidas
-	dataSaver, err := datasaver.NewDataSaver("counter_q2") //agregar string a los docker files
+	//AGREGAR var de entorno
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q2_counter_%d", config.ID)) //agregar string a los docker files
 	if err != nil {
 		return nil, err
 	}
 
-	return &CounterQ2{
+	counter := &CounterQ2{
 		config:          config,
 		inputQueue:      inputQueue,
 		outputExchanges: outputExchanges,
@@ -147,33 +176,43 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		eofCounter:      make(map[int64]int),
 		dataSaver:       dataSaver,
 		logCounter:      0,
-	}, nil
+	}
+	counter.handleFunctions = worker.MessageHandlerMap{
+		inner.EndOfRecords:     counter.handleEndOfRecordMessage,
+		inner.TransactionBatch: counter.processBatch,
+	}
+
+	return counter, nil
 }
 
 // Restaurate restaura el estado del nodo al estado en el que se encontraba previo a su caida
 func (c *CounterQ2) Restaurate() error {
 	// primero restauramos el checkpoint
-	var tops map[int64]map[int]bankEntry
-	if err := c.dataSaver.GetRestaurationCheckpoint(&tops); err != nil { // habria q modificar por retrys
+	var checkpoint CheckpointData
+
+	thereIsCheckpoint, err := c.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil { // habria q modificar por retrys
 		return err
 	}
-	c.topByClient = tops
-
-	thereIsLogs := true
+	if thereIsCheckpoint {
+		c.topByClient = checkpoint.TopByClient
+		c.eofCounter = checkpoint.EofCounter
+	}
 
 	var savedDataVar middleware.Message
-	var err error
+	var thereIsLogs bool
 
-	for thereIsLogs {
+	for {
 		thereIsLogs, err = c.dataSaver.GetDataFromLogs(&savedDataVar)
 		if err != nil { // habria q modificar para retrys
 			return err
 		}
-		// gracias a que no hace envios hasta finalizar, no hay problema
-		if err := worker.HandleMessageV2(&savedDataVar, worker.MessageHandlerMap{
-			inner.EndOfRecords:              c.handleEndOfRecordMessage,
-			inner.PossibleFraudDestinations: c.processBatch,
-		}); err != nil {
+		if !thereIsLogs {
+			break
+		}
+		// gracias a que hay idempotencia y no se hacen envios hasta finalizar, no hay problema
+		slog.Info("cargando msg del log")
+		if err := worker.HandleMessageV2(&savedDataVar, c.handleFunctions); err != nil {
 			return err
 		}
 	}
@@ -210,10 +249,7 @@ func (counter *CounterQ2) Run() {
 // handleMessage processes messages from the shared input queue.
 // And periodicaly stores checkpoints to keep the backup to date
 func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), nack func()) {
-	if err := worker.HandleMessageV2(&middlewareMsg, worker.MessageHandlerMap{
-		inner.EndOfRecords:     c.handleEndOfRecordMessage,
-		inner.TransactionBatch: c.processBatch,
-	}); err != nil {
+	if err := worker.HandleMessageV2(&middlewareMsg, c.handleFunctions); err != nil {
 		nack()
 	}
 
@@ -224,9 +260,10 @@ func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), 
 	c.logCounter++
 	if c.logCounter >= LOGS_BEFORE_CHECKPOINT {
 		slog.Info("Guardando checkpoint")
+		c.logCounter = 0
 		c.dataSaver.SaveCheckpoint(CheckpointData{
-			topByClient: c.topByClient,
-			eofCounter:  c.eofCounter,
+			TopByClient: c.topByClient,
+			EofCounter:  c.eofCounter,
 		})
 	}
 
@@ -296,6 +333,7 @@ func (counter *CounterQ2) handleControlMessage(msg middleware.Message, ack, nack
 		nack()
 		return
 	}
+	ack()
 }
 
 // sendControlEOF notifies all peer pods that this pod received an EOF for clientID.
@@ -321,6 +359,7 @@ func (counter *CounterQ2) flushClient(clientID int64) error {
 		counter.mutex.Unlock()
 		return nil
 	}
+	slog.Info("SE PUEDE ENVIAR EOF")
 	banks := counter.topByClient[clientID]
 	delete(counter.topByClient, clientID)
 	delete(counter.eofCounter, clientID)
@@ -330,6 +369,7 @@ func (counter *CounterQ2) flushClient(clientID int64) error {
 		return err
 	}
 	datasaver.Crash(datasaver.CrashAfterSendData)
+	slog.Info("ENVIANDO EOF")
 	return counter.sendEOF(clientID)
 }
 

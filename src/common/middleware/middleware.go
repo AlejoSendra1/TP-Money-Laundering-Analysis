@@ -9,7 +9,7 @@ var (
 )
 
 type Message struct {
-	Body string
+	Body string `json:"body"`
 }
 
 type ConnSettings struct {
