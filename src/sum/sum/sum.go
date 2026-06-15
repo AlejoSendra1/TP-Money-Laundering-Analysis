@@ -94,33 +94,30 @@ func (sum *Sum) handleMessage(middlewareMsg *middleware.Message, ack func(), nac
 		return
 	}
 
+	var processErr error // Variable para atrapar los errores del switch
 	switch msg.MsgType {
 	case inner.EndOfRecords:
 		_, sender, err := inner.DeserializeEOR(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		if err := sum.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
+		if err == nil {
+			processErr = sum.handleEndOfRecordMessage(msg.ClientID, sender)
+		} else {
+			processErr = err
 		}
 	case inner.TransactionBatch:
 		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		if err := sum.handleDataMessage(transactions, msg.ClientID); err != nil {
-			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
+		if err == nil {
+			processErr = sum.handleDataMessage(transactions, msg.ClientID)
+		} else {
+			processErr = err
 		}
 	default:
-		slog.Warn("No function could handle this mesage", "err", err, "clientID", msg.ClientID)
+		processErr = fmt.Errorf("no function could handle this message type")
+	}
+
+	if processErr != nil {
+		slog.Error("Failed to process message", "err", processErr, "clientID", msg.ClientID)
+		nack()
+		return
 	}
 	ack()
 }
@@ -140,12 +137,9 @@ func (sum *Sum) handleEndOfRecordMessage(clientID int64, sender string) error {
 }
 
 func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
-	averageByPaymentFormat := make(map[string][]transaction.Transaction)
+	transactionsByPaymentFormat := make(map[string][]transaction.Transaction)
 	for _, tr := range transactionRecords {
-		if _, ok := averageByPaymentFormat[tr.PaymentFormat]; !ok {
-			averageByPaymentFormat[tr.PaymentFormat] = []transaction.Transaction{}
-		}
-		averageByPaymentFormat[tr.PaymentFormat] = append(averageByPaymentFormat[tr.PaymentFormat], tr)
+		transactionsByPaymentFormat[tr.PaymentFormat] = append(transactionsByPaymentFormat[tr.PaymentFormat], tr)
 	}
 
 	// Verifico si es un nuevo cliente o no
@@ -157,17 +151,19 @@ func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, 
 	sum.mu.Unlock()
 
 	// Envio al promediator
-	for paymentFormat, avg := range averageByPaymentFormat {
+	for paymentFormat, transactions := range transactionsByPaymentFormat {
 		key := sum.getKeyForExchange(clientID, paymentFormat)
-		batch_utils.SortBatch(avg, func(a, b transaction.Transaction) bool {
+		batch_utils.SortBatch(transactions, func(a, b transaction.Transaction) bool {
 			return a.Amount < b.Amount
 		})
-		if err := sum.sendToOutputExchange(
-			[]string{key},
-			avg,
-			clientID,
-		); err != nil {
-			slog.Error("While sending payment format average to output exchange", "err", err, "clientID", clientID, "paymentFormat", paymentFormat)
+
+		message, err := inner.SerializeMessage(clientID, transactions)
+		if err != nil {
+			slog.Error("While serializing transactions message", "err", err, "clientID", clientID)
+			return err
+		}
+		if err := sum.sendToOutputExchange([]string{key}, message); err != nil {
+			slog.Error("While sending transactions message to output exchange", "err", err, "clientID", clientID, "paymentFormat", paymentFormat)
 			return err
 		}
 	}
@@ -204,7 +200,7 @@ func (sum *Sum) handleControlMessage(middlewareMsg *middleware.Message, ack func
 		slog.Info("While serializing EOF message", "err", err, "clientID", msg.ClientID)
 		return
 	}
-	if err := sum.outputExchange.Send(*msgToSend); err != nil {
+	if err := sum.sendToOutputExchange([]string{}, msgToSend); err != nil {
 		slog.Info("While sending EOF message to promediator", "err", err, "clientID", msg.ClientID)
 		return
 	}
@@ -212,21 +208,11 @@ func (sum *Sum) handleControlMessage(middlewareMsg *middleware.Message, ack func
 	ack()
 }
 
-func (sum *Sum) sendToOutputExchange(keys []string, paymentFormatAverageRecords []transaction.Transaction, clientID int64) error {
-	message, err := inner.SerializeMessage(clientID, paymentFormatAverageRecords)
-	if err != nil {
-		return err
+func (sum *Sum) sendToOutputExchange(keys []string, message *middleware.Message) error {
+	if len(keys) > 0 {
+		return sum.outputExchange.SendWithKeys(keys, *message)
 	}
-	var sendErr error
-	if len(keys) != 0 {
-		sendErr = sum.outputExchange.SendWithKeys(keys, *message)
-	} else {
-		sendErr = sum.outputExchange.Send(*message)
-	}
-	if sendErr != nil {
-		return sendErr
-	}
-	return nil
+	return sum.outputExchange.Send(*message)
 }
 
 func (sum *Sum) getKeyForExchange(clientID int64, paymentFormat string) string {
