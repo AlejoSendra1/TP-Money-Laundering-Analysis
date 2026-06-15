@@ -159,7 +159,7 @@ func (usdFilter *USDFilter) handleControlMessage(msg *middleware.Message, ack fu
 		nack()
 		return
 	}
-	msgEof, err := inner.SerializeEOF(controlMessage.ClientID, true, "usd_filter") // TO DO agregar otra var de entorno y para group tmb
+	msgEof, err := inner.SerializeEOF(controlMessage.ClientID, true, fmt.Sprintf("%d", usdFilter.config.Id)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", controlMessage.ClientID)
 		nack()
