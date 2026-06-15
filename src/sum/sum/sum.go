@@ -5,8 +5,8 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"sync"
+	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/messageprotocol/inner"
-	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -30,7 +30,7 @@ type Sum struct {
 	inputQueue      middleware.Middleware
 	outputExchange  middleware.Middleware
 	controlExchange middleware.Middleware
-	eofCounter      map[int64]uint8
+	eofCounter      map[int64]batch_utils.Set[string]
 	config          SumConfig
 	mu              sync.Mutex
 }
@@ -72,7 +72,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 		outputExchange:  outputExchange,
 		controlExchange: controlExchange,
 		config:          config,
-		eofCounter:      make(map[int64]uint8),
+		eofCounter:      make(map[int64]batch_utils.Set[string]),
 	}, nil
 }
 
@@ -96,14 +96,17 @@ func (sum *Sum) handleMessage(middlewareMsg *middleware.Message, ack func(), nac
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		if err := sum.handleEndOfRecordMessage(msg.ClientID); err != nil {
+		_, sender, err := inner.DeserializeEOR(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		if err := sum.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
-		ack()
-		return
-
 	case inner.TransactionBatch:
 		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
 		if err != nil {
@@ -116,50 +119,52 @@ func (sum *Sum) handleMessage(middlewareMsg *middleware.Message, ack func(), nac
 			nack()
 			return
 		}
-		ack()
+	default:
+		slog.Warn("No function could handle this mesage", "err", err, "clientID", msg.ClientID)
 	}
+	ack()
 }
 
-func (sum *Sum) handleEndOfRecordMessage(clientID int64) error {
+func (sum *Sum) handleEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Received End Of Records message", "clientID", clientID)
-	controlEOFMessage := control.ControlMessage{Type: control.TypeEOF, ClientID: clientID}
-	message, err := control.SerializeControlMessage(controlEOFMessage)
+	msg, err := inner.SerializeEOF(clientID, false, sender)
 	if err != nil {
-		slog.Info("While serializing control message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	if err := sum.controlExchange.Send(*message); err != nil {
-		slog.Info("While sending control message", "err", err, "clientID", clientID)
+	if err := sum.controlExchange.Send(*msg); err != nil {
+		slog.Info("While sending EOF message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
 }
 
 func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
-	averageByPaymentFormat := make(map[string]transaction.PaymentFormatAverage)
+	averageByPaymentFormat := make(map[string][]transaction.Transaction)
 	for _, tr := range transactionRecords {
-		avg := averageByPaymentFormat[tr.PaymentFormat]
-		avg.PaymentFormat = tr.PaymentFormat
-		avg.Average += tr.Amount // Aca se va acumulando el monto total para que promediator calcule el avg
-		avg.Count++
-		averageByPaymentFormat[tr.PaymentFormat] = avg
+		if _, ok := averageByPaymentFormat[tr.PaymentFormat]; !ok {
+			averageByPaymentFormat[tr.PaymentFormat] = []transaction.Transaction{}
+		}
+		averageByPaymentFormat[tr.PaymentFormat] = append(averageByPaymentFormat[tr.PaymentFormat], tr)
 	}
 
 	// Verifico si es un nuevo cliente o no
 	sum.mu.Lock()
 	if _, exist := sum.eofCounter[clientID]; !exist {
 		slog.Info("Client new arrived", "clientID", clientID)
-		sum.eofCounter[clientID] = 0
+		sum.eofCounter[clientID] = batch_utils.NewSet[string]()
 	}
 	sum.mu.Unlock()
 
 	// Envio al promediator
 	for paymentFormat, avg := range averageByPaymentFormat {
 		key := sum.getKeyForExchange(clientID, paymentFormat)
-
+		batch_utils.SortBatch(avg, func(a, b transaction.Transaction) bool {
+			return a.Amount < b.Amount
+		})
 		if err := sum.sendToOutputExchange(
 			[]string{key},
-			[]transaction.PaymentFormatAverage{avg},
+			avg,
 			clientID,
 		); err != nil {
 			slog.Error("While sending payment format average to output exchange", "err", err, "clientID", clientID, "paymentFormat", paymentFormat)
@@ -169,37 +174,46 @@ func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, 
 	return nil
 }
 
-func (sum *Sum) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
-	// Verifico si ya tengo todos los EOFs esperados
-	controlMessage, err := control.DeserializeControlMessage(msg)
+func (sum *Sum) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
+	_, sender, err := inner.DeserializeEOR(msg.Data)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err, "clientID", msg.ClientID)
+		nack()
+		return
+	}
+
 	sum.mu.Lock()
-	sum.eofCounter[controlMessage.ClientID] += 1
-	if sum.eofCounter[controlMessage.ClientID] != sum.config.DateFilterAmount {
+	sum.eofCounter[msg.ClientID].Add(sender)
+	if uint8(sum.eofCounter[msg.ClientID].Size()) != sum.config.DateFilterAmount {
 		slog.Debug("Waiting for remaining EOFs")
 		ack()
 		sum.mu.Unlock()
 		return
 	}
-	delete(sum.eofCounter, controlMessage.ClientID)
+	delete(sum.eofCounter, msg.ClientID)
 	sum.mu.Unlock()
 
-	// Envio el EOF
-	if err = sum.sendToOutputExchange([]string{}, []transaction.PaymentFormatAverage{}, controlMessage.ClientID); err != nil {
-		slog.Error("While sending EOF message", "err", err)
-		nack()
+	msgToSend, err := inner.SerializeEOF(msg.ClientID, false, fmt.Sprintf("%d", sum.config.Id))
+	if err != nil {
+		slog.Info("While serializing EOF message", "err", err, "clientID", msg.ClientID)
 		return
 	}
-	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	if err := sum.outputExchange.Send(*msgToSend); err != nil {
+		slog.Info("While sending EOF message to promediator", "err", err, "clientID", msg.ClientID)
+		return
+	}
+	slog.Info("Sent EOF", "clientID", msg.ClientID)
 	ack()
 }
 
-func (sum *Sum) sendToOutputExchange(keys []string, paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) error {
-	message, err := inner.SerializePaymentFormatAverageMessage(clientID, paymentFormatAverageRecords)
+func (sum *Sum) sendToOutputExchange(keys []string, paymentFormatAverageRecords []transaction.Transaction, clientID int64) error {
+	message, err := inner.SerializeMessage(clientID, paymentFormatAverageRecords)
 	if err != nil {
 		return err
 	}
