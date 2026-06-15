@@ -1,19 +1,19 @@
 package batch_utils
 
 type BatchDeduplicator struct {
-	seen  map[BatchID]struct{}
+	seen  Set[BatchID]
 	queue *queue
 }
 
 func NewBatchDeduplicator(maxSize int) *BatchDeduplicator {
 	return &BatchDeduplicator{
-		seen:  make(map[BatchID]struct{}),
+		seen:  NewSet[BatchID](),
 		queue: newQueue(maxSize),
 	}
 }
 
 func (d *BatchDeduplicator) IsDuplicate(id BatchID) bool {
-	if _, exists := d.seen[id]; exists {
+	if d.seen.Contains(id) {
 		return true
 	}
 	d.discardOldestIfFull()
@@ -29,11 +29,11 @@ func (d *BatchDeduplicator) Load(id BatchID) {
 func (d *BatchDeduplicator) discardOldestIfFull() {
 	if d.queue.isFull() {
 		oldest := d.queue.pop()
-		delete(d.seen, oldest)
+		d.seen.Remove(oldest)
 	}
 }
 
 func (d *BatchDeduplicator) add(id BatchID) {
 	d.queue.push(id)
-	d.seen[id] = struct{}{}
+	d.seen.Add(id)
 }
