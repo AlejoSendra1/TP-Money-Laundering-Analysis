@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/messageprotocol/inner"
-	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -32,8 +32,8 @@ type Q3AmountFilter struct {
 	outputQueue          middleware.Middleware
 	notificationExchange middleware.Middleware
 	controlExchange      middleware.Middleware
-	eofCounterAvg        map[int64]int
-	eofCounterTs         map[int64]int
+	eofCounterAvg        map[int64]batch_utils.Set[string]
+	eofCounterTs         map[int64]batch_utils.Set[string]
 	averages             map[int64]map[string]float64
 	qtyTx                map[int64]int
 	config               Q3AmountFilterConfig
@@ -88,8 +88,8 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		controlExchange:      controlExchange,
 		averages:             make(map[int64]map[string]float64),
 		qtyTx:                make(map[int64]int), // Para debug
-		eofCounterAvg:        make(map[int64]int),
-		eofCounterTs:         make(map[int64]int),
+		eofCounterAvg:        make(map[int64]batch_utils.Set[string]),
+		eofCounterTs:         make(map[int64]batch_utils.Set[string]),
 		config:               config,
 	}, nil
 }
@@ -108,49 +108,64 @@ func (q3AmountFilter *Q3AmountFilter) Run() {
 	})
 }
 
-func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(msg *middleware.Message, ack func(), nack func()) {
-	clientID, paymentFormatAverageRecords, isEof, err := inner.DeserializePaymentFormatAverageMessage(msg)
+func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Info("While deserializing message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err)
 		nack()
 		return
 	}
-
-	if isEof {
-		if err := q3AmountFilter.handlePromediatorEndOfRecordMessage(clientID); err != nil {
-			slog.Info("While handling end of record message", "err", err, "clientID", clientID)
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		slog.Info("Received msg", "type", "EOF")
+		_, sender, err := inner.DeserializeEOR(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
-		ack()
-		return
+		if err := q3AmountFilter.handlePromediatorEndOfRecordMessage(msg.ClientID, sender); err != nil {
+			slog.Info("While handling end of record message", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+	case inner.PaymentFormatAverage:
+		clientID, paymentFormatAverageRecords, _, err := inner.DeserializePaymentFormatAverageMessage(middlewareMsg)
+		if err != nil {
+			slog.Info("While deserializing message", "err", err, "clientID", clientID)
+			nack()
+			return
+		}
+		q3AmountFilter.handlePromediatorDataMessage(paymentFormatAverageRecords, clientID)
+	default:
+		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
 	}
-
-	q3AmountFilter.handlePromediatorDataMessage(paymentFormatAverageRecords, clientID)
 	ack()
 }
 
-func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(clientID int64) error {
+func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Averages EOF arrived from promediator", "clientID", clientID)
 	needNotify := false
 	q3AmountFilter.mu.Lock()
-	q3AmountFilter.eofCounterAvg[clientID] += 1
-	if q3AmountFilter.eofCounterAvg[clientID] == q3AmountFilter.config.PromediatorAmount {
+	q3AmountFilter.eofCounterAvg[clientID].Add(sender)
+	if q3AmountFilter.eofCounterAvg[clientID].Size() == q3AmountFilter.config.PromediatorAmount {
 		needNotify = true
 	}
 	q3AmountFilter.mu.Unlock()
 
 	if needNotify {
-		msg, err := inner.SerializePaymentFormatAverageMessage(clientID, []transaction.PaymentFormatAverage{})
+		// Envio el EOF
+		msgToSend, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%d", q3AmountFilter.config.Id))
 		if err != nil {
-			slog.Error("While serializing notification message", "err", err)
+			slog.Info("While serializing notification message", "err", err, "clientID", clientID)
 			return err
 		}
-		if err = q3AmountFilter.notificationExchange.Send(*msg); err != nil {
-			slog.Error("While sending notification message", "err", err)
+		if err := q3AmountFilter.notificationExchange.Send(*msgToSend); err != nil {
+			slog.Info("While sending notification message", "err", err, "clientID", clientID)
 			return err
 		}
 		slog.Info("Sent notification to transaction saver", "clientID", clientID)
+		delete(q3AmountFilter.eofCounterAvg, clientID)
 	} else {
 		slog.Info("Waiting for more promediator EOFs", "clientID", clientID)
 	}
@@ -164,8 +179,8 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormat
 		slog.Info("New average arrived from promediator", "clientID", clientID)
 		q3AmountFilter.averages[clientID] = make(map[string]float64)
 		q3AmountFilter.qtyTx[clientID] = 0
-		q3AmountFilter.eofCounterAvg[clientID] = 0
-		q3AmountFilter.eofCounterTs[clientID] = 0
+		q3AmountFilter.eofCounterAvg[clientID] = batch_utils.NewSet[string]()
+		q3AmountFilter.eofCounterTs[clientID] = batch_utils.NewSet[string]()
 	}
 	for _, rec := range paymentFormatAverageRecords {
 		q3AmountFilter.averages[clientID][rec.PaymentFormat] = rec.Average / 100.0
@@ -173,22 +188,26 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormat
 	q3AmountFilter.mu.Unlock()
 }
 
-func (q3AmountFilter *Q3AmountFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
-	controlMessage, err := control.DeserializeControlMessage(msg)
+func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Info("While deserializing control message", "err", err)
+		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
-
-	slog.Info("Receive EOF from other instance")
-	clientID := controlMessage.ClientID
+	_, sender, err := inner.DeserializeEOR(msg.Data)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err, "clientID", msg.ClientID)
+		nack()
+		return
+	}
+	clientID := msg.ClientID
 
 	shouldSendEOF := false
 	var qty int
 	q3AmountFilter.mu.Lock()
-	q3AmountFilter.eofCounterTs[clientID] += 1
-	if q3AmountFilter.eofCounterTs[clientID] == q3AmountFilter.config.TransactionsSaverAmount {
+	q3AmountFilter.eofCounterTs[clientID].Add(sender)
+	if q3AmountFilter.eofCounterTs[clientID].Size() == q3AmountFilter.config.TransactionsSaverAmount {
 		shouldSendEOF = true
 		qty = q3AmountFilter.qtyTx[clientID]
 	}
@@ -215,42 +234,54 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(msg *middleware.Messa
 	}
 }
 
-func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(msg *middleware.Message, ack func(), nack func()) {
-	clientID, transactionRecords, isEof, err := inner.DeserializeThresholdFilteredTransferMessage(msg)
+func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Info("While deserializing transaction saver message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err, "middlewareMsg", middlewareMsg)
 		nack()
 		return
 	}
 
-	if isEof {
-		if err := q3AmountFilter.handleTransactionSaverEndOfRecordMessage(clientID); err != nil {
-			slog.Info("While handling transaction saver EOF", "err", err, "clientID", clientID)
+	switch msg.MsgType {
+	case inner.EndOfRecords:
+		_, sender, err := inner.DeserializeEOR(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
-		ack()
-		return
-	}
-
-	if err = q3AmountFilter.handleTransactionSaverDataMessage(transactionRecords, clientID); err != nil {
-		slog.Error("While handling data message", "err", err, "clientID", clientID)
-		nack()
-		return
+		if err := q3AmountFilter.handleTransactionSaverEndOfRecordMessage(msg.ClientID, sender); err != nil {
+			slog.Info("While handling transaction saver EOF", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+	case inner.ThresholdFilteredTransfer:
+		clientID, transactionRecords, _, err := inner.DeserializeThresholdFilteredTransferMessage(middlewareMsg)
+		if err != nil {
+			slog.Info("While deserializing transaction saver message", "err", err, "clientID", clientID)
+			nack()
+			return
+		}
+		if err = q3AmountFilter.handleTransactionSaverDataMessage(transactionRecords, clientID); err != nil {
+			slog.Error("While handling data message", "err", err, "clientID", clientID)
+			nack()
+			return
+		}
+	default:
+		slog.Warn("No function could handle this mesage", "err", err, "clientID", msg.ClientID)
 	}
 	ack()
 }
 
-func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverEndOfRecordMessage(clientID int64) error {
-	slog.Info("Received Transaction Saver EOF", "clientID", clientID)
-	controlEOFMessage := control.ControlMessage{Type: control.TypeEOF, ClientID: clientID}
-	message, err := control.SerializeControlMessage(controlEOFMessage)
+func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverEndOfRecordMessage(clientID int64, sender string) error {
+	slog.Info("Received End Of Records message", "clientID", clientID)
+	msg, err := inner.SerializeEOF(clientID, false, sender)
 	if err != nil {
-		slog.Debug("While serializing control message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	if err := q3AmountFilter.controlExchange.Send(*message); err != nil {
-		slog.Debug("While sending control message", "err", err, "clientID", clientID)
+	if err := q3AmountFilter.controlExchange.Send(*msg); err != nil {
+		slog.Info("While sending EOF message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
