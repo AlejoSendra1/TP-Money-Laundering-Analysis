@@ -2,6 +2,9 @@
 *.csv
 */*.csv
 
+# ignoramos carpetas cache en cualquier parte del proyecto
+**/cache/
+
 results.txt
 docker-compose.yaml
 
