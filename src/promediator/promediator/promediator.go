@@ -144,6 +144,7 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 	slog.Info("Sent EOF message to q3 amount filter", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
+	promediator.deduplicator.RemoveClient(int(clientID))
 	return nil
 }
 
@@ -169,10 +170,7 @@ func (promediator *Promediator) sendToOutputExchange(paymentFormatAverageRecords
 	if err != nil {
 		return err
 	}
-	if err := promediator.outputExchange.Send(*message); err != nil {
-		return err
-	}
-	return nil
+	return promediator.outputExchange.Send(*message)
 }
 
 func (promediator *Promediator) getPaymentFormats(clientID int64) []transaction.PaymentFormatAverage {
