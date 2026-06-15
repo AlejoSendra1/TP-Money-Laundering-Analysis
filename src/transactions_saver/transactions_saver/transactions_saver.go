@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/messageprotocol/inner"
-	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 )
@@ -35,7 +35,7 @@ type TransactionsSaver struct {
 	controlExchange      middleware.Middleware
 	config               TransactionsSaverConfig
 	clientStates         map[int64]*ClientState // Ahora mapea al nuevo tipo State
-	eofCounter           map[int64]int
+	eofCounter           map[int64]batch_utils.Set[string]
 	mu                   sync.Mutex // Protege clientStates y eofCounter
 }
 
@@ -82,7 +82,7 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		controlExchange:      controlExchange,
 		config:               config,
 		clientStates:         make(map[int64]*ClientState),
-		eofCounter:           make(map[int64]int),
+		eofCounter:           make(map[int64]batch_utils.Set[string]),
 	}, nil
 }
 
@@ -110,13 +110,17 @@ func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middlew
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		if err := transactionsSaver.handleEndOfRecordMessage(msg.ClientID); err != nil {
+		_, sender, err := inner.DeserializeEOR(msg.Data)
+		if err != nil {
+			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
+			nack()
+			return
+		}
+		if err := transactionsSaver.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
 		}
-		ack()
-		return
 	case inner.TransactionBatch:
 		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
 		if err != nil {
@@ -129,43 +133,44 @@ func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middlew
 			nack()
 			return
 		}
-		ack()
 	default:
 		slog.Warn("No function could handle this mesage", "err", err, "clientID", msg.ClientID)
 	}
+	ack()
 }
-func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID int64) error {
-	controlEOFMessage := control.ControlMessage{Type: control.TypeEOF, ClientID: clientID}
-	message, err := control.SerializeControlMessage(controlEOFMessage)
+func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID int64, sender string) error {
+	slog.Info("Received End Of Records message", "clientID", clientID)
+	msg, err := inner.SerializeEOF(clientID, false, sender)
 	if err != nil {
-		slog.Debug("While serializing control message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	if err := transactionsSaver.controlExchange.Send(*message); err != nil {
-		slog.Debug("While sending control message", "err", err, "clientID", clientID)
+	if err := transactionsSaver.controlExchange.Send(*msg); err != nil {
+		slog.Info("While sending EOF message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
 }
 
-func (transactionsSaver *TransactionsSaver) handleNotificationMessage(msg *middleware.Message, ack, nack func()) {
-	clientID, _, isEof, err := inner.DeserializePaymentFormatAverageMessage(msg)
+func (transactionsSaver *TransactionsSaver) handleNotificationMessage(middlewareMsg *middleware.Message, ack, nack func()) {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
-		slog.Error("While deserializing notification message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err)
 		nack()
 		return
 	}
-	if !isEof {
-		slog.Info("Only received average notification message, not average data", "clientID", clientID)
-		ack()
+	_, sender, err := inner.DeserializeEOR(msg.Data)
+	if err != nil {
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
+		nack()
 		return
 	}
 
-	slog.Info("Received averages notification message", "clientID", clientID)
-	clientState := transactionsSaver.getOrCreateClientState(clientID)
-	if !clientState.ShouldStartFlush(transactionsSaver.config.Q3AmountFilterAmount) {
+	slog.Info("Received notification message", "clientID", msg.ClientID)
+	clientState := transactionsSaver.getOrCreateClientState(msg.ClientID)
+	if !clientState.ShouldStartFlush(transactionsSaver.config.Q3AmountFilterAmount, sender) {
 		slog.Info("Dont flush disk because still waiting for more averages notification",
-			"clientID", clientID,
+			"clientID", msg.ClientID,
 			"receivedNotifications", clientState.notificationEOFs,
 			"expectedNotifications", transactionsSaver.config.Q3AmountFilterAmount,
 		)
@@ -173,13 +178,13 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessage(msg *middl
 		return
 	}
 
-	if err = clientState.Storage.FlushTransactions(clientID, transactionsSaver.sendToOutput); err != nil {
-		slog.Error("While flushing transactions for client", "err", err, "clientID", clientID)
+	if err = clientState.Storage.FlushTransactions(msg.ClientID, transactionsSaver.sendToOutput); err != nil {
+		slog.Error("While flushing transactions for client", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
 	if clientState.MarkFlushAndCheckFinish() {
-		if err = transactionsSaver.finishClient(clientID); err != nil {
+		if err = transactionsSaver.finishClient(msg.ClientID); err != nil {
 			nack() // Manejar bien este caso...
 			return
 		}
@@ -189,22 +194,26 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessage(msg *middl
 	ack()
 }
 
-func (transactionsSaver *TransactionsSaver) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
-	controlMessage, err := control.DeserializeControlMessage(msg)
+func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
-	clientID := controlMessage.ClientID
-	slog.Info("Received EOF message", "clientID", clientID)
+	_, sender, err := inner.DeserializeEOR(msg.Data)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err, "clientID", msg.ClientID)
+		nack()
+		return
+	}
 
 	transactionsSaver.mu.Lock()
-	transactionsSaver.eofCounter[clientID]++
-	if transactionsSaver.eofCounter[clientID] != transactionsSaver.config.DateFilterAmount {
+	transactionsSaver.eofCounter[msg.ClientID].Add(sender)
+	if transactionsSaver.eofCounter[msg.ClientID].Size() != transactionsSaver.config.DateFilterAmount {
 		slog.Info("Dont send EOF because still waiting for more EOFs",
-			"clientID", clientID,
-			"receivedEOFCount", transactionsSaver.eofCounter[clientID],
+			"clientID", msg.ClientID,
+			"receivedEOFCount", transactionsSaver.eofCounter[msg.ClientID],
 			"expectedEOFCount", transactionsSaver.config.DateFilterAmount)
 		transactionsSaver.mu.Unlock()
 		ack()
@@ -212,9 +221,9 @@ func (transactionsSaver *TransactionsSaver) handleControlMessage(msg *middleware
 	}
 	transactionsSaver.mu.Unlock()
 
-	clientState := transactionsSaver.getOrCreateClientState(clientID)
+	clientState := transactionsSaver.getOrCreateClientState(msg.ClientID)
 	if clientState.MarkEOFAndCheckFinish() {
-		if err = transactionsSaver.finishClient(clientID); err != nil {
+		if err = transactionsSaver.finishClient(msg.ClientID); err != nil {
 			nack() // Manejar bien este caso...
 			return
 		}
@@ -243,7 +252,13 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 }
 
 func (transactionsSaver *TransactionsSaver) sentEOF(clientID int64) error {
-	if err := transactionsSaver.sendToOutput(clientID, []transaction.ThresholdFilteredTransfer{}); err != nil {
+	msgToSend, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%s_%d", transactionsSaver.config.Id))
+	if err != nil {
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		return err
+	}
+	if err := transactionsSaver.outputQueue.Send(*msgToSend); err != nil {
+		slog.Info("While sending EOF message to promediator", "err", err, "clientID", clientID)
 		return err
 	}
 	slog.Info("Client processing completed - EOF sent", "clientID", clientID)
@@ -271,7 +286,7 @@ func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int6
 		return state
 	}
 	slog.Info("Client new arrived", "clientID", clientID)
-	transactionsSaver.eofCounter[clientID] = 0
+	transactionsSaver.eofCounter[clientID] = batch_utils.NewSet[string]()
 	fileName := fmt.Sprintf("client_%d_instance_%d.jsonl", clientID, transactionsSaver.config.Id)
 	clientState := NewClientState(transactionsSaver.config.StorageDir, fileName)
 	transactionsSaver.clientStates[clientID] = clientState
