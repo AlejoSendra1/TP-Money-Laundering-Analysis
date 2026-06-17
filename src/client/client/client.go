@@ -26,6 +26,9 @@ import (
 const connectionAttempts = 3
 const connectionAttemptsDelayMs = 300
 
+// agregar a vars de entorno
+const LOGS_UNTIL_CHECKPOINT = 200
+
 type ClientConfig struct {
 	ServerHost string
 	ServerPort string
@@ -157,19 +160,18 @@ func (client *Client) sendTransactionRecords() error {
 	}
 
 	//slog.Info("procesando transacciones")
-	records, err := transactionsReader.GetTransactionRecords()
-	if err != nil {
-		return err
-	}
 
-	for len(records) != 0 {
-		if err := client.sendBatch(records); err != nil {
-			slog.Info("Error while sending transaction batch", "err", err)
+	for {
+		records, err := transactionsReader.GetTransactionRecords()
+		if err != nil {
 			return err
 		}
 
-		records, err = transactionsReader.GetTransactionRecords()
-		if err != nil {
+		if len(records) == 0 {
+			break
+		}
+		if err := client.sendBatch(records); err != nil {
+			slog.Info("Error while sending transaction batch", "err", err)
 			return err
 		}
 	}

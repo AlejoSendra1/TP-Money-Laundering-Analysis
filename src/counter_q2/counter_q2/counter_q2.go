@@ -18,7 +18,7 @@ import (
 	"tp_distribuidos/common/worker"
 )
 
-const LOGS_BEFORE_CHECKPOINT = 250
+const LOGS_UNTIL_CHECKPOINT = 250
 
 //docker compose run q2_counter_0 -e RESTAURATE="TRUE"
 
@@ -62,7 +62,6 @@ type CounterQ2 struct {
 	// for data saving and restoration
 	handleFunctions worker.MessageHandlerMap
 	dataSaver       *datasaver.DataSaver
-	logCounter      int
 }
 
 func getJoinerIndex(bank string, joinAmount int) int {
@@ -162,7 +161,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 
 	// para persistir la info ante posibles caidas
 	//se podria agregar el nombre de del archivo de restauracion como var de entorno
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q2_counter_%d", config.ID))
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q2_counter_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +175,6 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		topByClient:     make(map[int64]map[int]bankEntry),
 		eofCounter:      make(map[int64][]string),
 		dataSaver:       dataSaver,
-		logCounter:      0,
 	}
 	counter.handleFunctions = worker.MessageHandlerMap{
 		inner.EndOfRecords:     counter.handleEndOfRecordMessage,
@@ -247,6 +245,15 @@ func (counter *CounterQ2) Run() {
 	counter.close()
 }
 
+func (c *CounterQ2) GetCheckpointData() any {
+	return CheckpointData{
+		TopByClient: c.topByClient,
+		EofCounter:  c.eofCounter,
+	}
+	// agregar log counter asi evitamos que se acumulen mas logs que los indicados
+	// dado q en caso de caida y vuelta se podrian acumular mas logs q los indicados < (guardados + limite)
+}
+
 // handleMessage processes messages from the shared input queue.
 // And periodicaly stores checkpoints to keep the backup to date
 func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), nack func()) {
@@ -255,19 +262,8 @@ func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), 
 		return
 	}
 
-	c.dataSaver.Log(middlewareMsg)           // persistencia de datos
 	datasaver.Crash(datasaver.CrashAfterLog) // para testing
-
-	// gestion del checkpoint
-	c.logCounter++
-	if c.logCounter >= LOGS_BEFORE_CHECKPOINT {
-		slog.Info("Guardando checkpoint")
-		c.logCounter = 0
-		c.dataSaver.SaveCheckpoint(CheckpointData{
-			TopByClient: c.topByClient,
-			EofCounter:  c.eofCounter,
-		})
-	}
+	c.dataSaver.Save(middlewareMsg, c)       // persistencia de datos
 
 	ack()
 }

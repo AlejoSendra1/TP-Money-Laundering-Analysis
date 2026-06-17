@@ -38,7 +38,7 @@ services:
     - COUNTER_Q2_CONTROL=counter_q2_control
     - BATCH_SIZE=100
     - USD_FILTER_AMOUNT=2
-    - CRASH_AFTER_LOG=100
+    - CRASH_AFTER_LOG=300
     volumes:
     - ./persistence:/persistence 
   q2_counter_1:

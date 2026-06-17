@@ -6,6 +6,13 @@ import (
 	"tp_distribuidos/common/middleware"
 )
 
+// interface
+type Worker interface {
+	GetCheckpointData() any
+}
+
+// utils
+
 type MessageHandlerMap map[inner.MsgType]func(clientID int64, data []interface{}) error
 
 func HandleMessage(

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"tp_distribuidos/common/worker"
 )
 
 const RESTORATION_FILE_SUFIX = "_restoration_point" + ".txt"
@@ -17,6 +18,8 @@ type DataSaver struct {
 	file                *os.File
 	writer              *bufio.Writer
 	reader              *bufio.Scanner
+	logsUntilCheckpoint int
+	logCounter          int
 }
 
 type RecordType string
@@ -31,7 +34,7 @@ type FileRecord struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-func NewDataSaver(filename string) (*DataSaver, error) {
+func NewDataSaver(filename string, logsUntilCheckpoint int) (*DataSaver, error) {
 	// Open the file in Append mode (create it if it doesn't exist)
 	// 0644  gives read/write permissions to the owner
 	filename = filename + RESTORATION_FILE_SUFIX
@@ -47,6 +50,8 @@ func NewDataSaver(filename string) (*DataSaver, error) {
 		file:                restorationFile,
 		writer:              writer,
 		reader:              nil,
+		logsUntilCheckpoint: logsUntilCheckpoint,
+		logCounter:          0,
 	}, nil
 }
 
@@ -103,6 +108,20 @@ func (ds *DataSaver) SaveCheckpoint(checkpoint any) error {
 	}
 
 	return ds.writeFile(data)
+}
+
+// Para que el worker no se preocupe de realizar el checkpoint
+// este se hara cuando el saver detecte cumplimiento de su condicion de creacion
+func (ds *DataSaver) Save(content any, w worker.Worker) {
+	ds.Log(content)      // persistencia de datos
+	Crash(CrashAfterLog) // para testing
+	// gestion del checkpoint
+	ds.logCounter++
+	if ds.logCounter >= ds.logsUntilCheckpoint {
+		slog.Info("Guardando checkpoint")
+		ds.logCounter = 0
+		ds.SaveCheckpoint(w.GetCheckpointData())
+	}
 }
 
 // escritura atomica
