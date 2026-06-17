@@ -161,8 +161,8 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 	}
 
 	// para persistir la info ante posibles caidas
-	//AGREGAR var de entorno
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q2_counter_%d", config.ID)) //agregar string a los docker files
+	//se podria agregar el nombre de del archivo de restauracion como var de entorno
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q2_counter_%d", config.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -192,10 +192,11 @@ func (c *CounterQ2) Restaurate() error {
 	var checkpoint CheckpointData
 
 	thereIsCheckpoint, err := c.dataSaver.GetRestaurationCheckpoint(&checkpoint)
-	if err != nil { // habria q modificar por retrys
+	if err != nil { // habria q agregar retrys?
 		return err
 	}
-	if thereIsCheckpoint {
+	if thereIsCheckpoint == true {
+		slog.Info("cargando en base a checkpoint")
 		c.topByClient = checkpoint.TopByClient
 		c.eofCounter = checkpoint.EofCounter
 	}
@@ -212,7 +213,6 @@ func (c *CounterQ2) Restaurate() error {
 			break
 		}
 		// gracias a que hay idempotencia y no se hacen envios hasta finalizar, no hay problema
-		slog.Info("cargando msg del log")
 		if err := worker.HandleMessageV2(&savedDataVar, c.handleFunctions); err != nil {
 			return err
 		}
@@ -252,6 +252,7 @@ func (counter *CounterQ2) Run() {
 func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), nack func()) {
 	if err := worker.HandleMessageV2(&middlewareMsg, c.handleFunctions); err != nil {
 		nack()
+		return
 	}
 
 	c.dataSaver.Log(middlewareMsg)           // persistencia de datos
