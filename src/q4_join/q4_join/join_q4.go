@@ -108,7 +108,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error 
 		return nil
 	}
 
-	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query4) // TO DO agregar otra var de entorno y para group tmb
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query4, fmt.Sprintf("%d", join.config.ID)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err

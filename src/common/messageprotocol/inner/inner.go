@@ -855,9 +855,10 @@ func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryRe
 	return &message, nil
 }
 
-func SerializeQueryEOR(clientID int64, queryID transaction.QueryID) (*middleware.Message, error) {
+func SerializeQueryEOR(clientID int64, queryID transaction.QueryID, sender string) (*middleware.Message, error) {
 	data := []interface{}{
 		int(queryID),
+		sender,
 	}
 
 	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: EndOfRecords, Data: data})

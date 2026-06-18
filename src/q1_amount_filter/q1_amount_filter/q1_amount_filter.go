@@ -168,7 +168,7 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 		ack()
 		return
 	}
-	msgEof, err := inner.SerializeQueryEOR(clientID, transaction.Query1) // TO DO agregar otra var de entorno y para group tmb
+	msgEof, err := inner.SerializeQueryEOR(clientID, transaction.Query1, fmt.Sprintf("%d", q1AmountFilter.config.Id)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
 		nack()

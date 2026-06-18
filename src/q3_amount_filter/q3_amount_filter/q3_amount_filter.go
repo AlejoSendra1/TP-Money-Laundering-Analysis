@@ -215,7 +215,7 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middle
 
 	if shouldSendEOF {
 		// para avisar q no hay mas nada
-		msg, err := inner.SerializeQueryEOR(clientID, transaction.Query3)
+		msg, err := inner.SerializeQueryEOR(clientID, transaction.Query3, fmt.Sprintf("%d", q3AmountFilter.config.Id))
 		if err != nil {
 			slog.Error("serializing EOF", "error", err)
 			nack()

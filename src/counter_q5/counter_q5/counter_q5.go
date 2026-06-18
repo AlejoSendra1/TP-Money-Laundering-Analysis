@@ -228,7 +228,7 @@ func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error 
 }
 
 func (counter *CounterQ5) sendEOF(clientID int64) error {
-	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query5)
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query5, fmt.Sprintf("%d", counter.config.ID))
 	if err != nil {
 		return fmt.Errorf("serializing EOR: %w", err)
 	}
