@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"tp_distribuidos/common/messageprotocol/inner/control"
-
+	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -37,7 +36,7 @@ type DateFilter struct {
 	inputQueue      middleware.Middleware
 	outputExchanges map[string]middleware.Middleware
 	controlExchange middleware.Middleware
-	eofCounter      map[int64]int
+	eofCounter      map[int64]batch_utils.Set[string]
 	qtyTx           map[int64]map[string]int
 	config          DateFilterConfig
 	mu              sync.Mutex
@@ -87,7 +86,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		inputQueue:      inputQueue,
 		outputExchanges: outputExchanges,
 		controlExchange: controlExchange,
-		eofCounter:      make(map[int64]int),
+		eofCounter:      make(map[int64]batch_utils.Set[string]),
 		qtyTx:           make(map[int64]map[string]int),
 		config:          config,
 	}, nil
@@ -115,7 +114,8 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 
 	switch msg.MsgType {
 	case inner.EndOfRecords:
-		if err := dateFilter.handleEndOfRecordMessage(msg.ClientID); err != nil {
+		_, sender, err := inner.DeserializeEOR(msg.Data)
+		if err = dateFilter.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
 			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
 			nack()
 			return
@@ -142,15 +142,15 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 	}
 }
 
-func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Arrived EOF record message", "clientID", clientID)
-	ctrlMsg, err := control.SerializeControlMessage(control.ControlMessage{Type: control.TypeEOF, ClientID: clientID})
+func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64, sender string) error {
+	slog.Info("Received End Of Records message", "clientID", clientID)
+	msg, err := inner.SerializeEOF(clientID, false, sender)
 	if err != nil {
-		slog.Error("While serializing control message", "err", err)
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
-	if err = dateFilter.controlExchange.Send(*ctrlMsg); err != nil {
-		slog.Error("While sending control message", "err", err, "clientID", clientID)
+	if err := dateFilter.controlExchange.Send(*msg); err != nil {
+		slog.Info("While sending EOF message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -159,7 +159,7 @@ func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64) error {
 func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
 	if _, ok := dateFilter.eofCounter[clientID]; !ok {
 		slog.Info("New client arrived", "clientID", clientID)
-		dateFilter.eofCounter[clientID] = 0
+		dateFilter.eofCounter[clientID] = batch_utils.NewSet[string]()
 		dateFilter.qtyTx[clientID] = make(map[string]int)
 		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic1] = 0
 		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic2] = 0
@@ -191,27 +191,33 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 	return nil
 }
 
-func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
+func (dateFilter *DateFilter) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	dateFilter.mu.Lock()
 	defer dateFilter.mu.Unlock()
 
-	slog.Info("Arrived control message", "msg", msg)
-	controlMessage, err := control.DeserializeControlMessage(msg)
+	slog.Info("Arrived control message", "msg", middlewareMsg)
+	msg, err := inner.DeserializeMessage(middlewareMsg)
 	if err != nil {
 		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
+	_, sender, err := inner.DeserializeEOR(msg.Data)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err, "clientID", msg.ClientID)
+		nack()
+		return
+	}
 
-	clientID := controlMessage.ClientID
-	dateFilter.eofCounter[clientID] += 1
-	if dateFilter.eofCounter[clientID] != dateFilter.config.USDFilterAmount {
+	clientID := msg.ClientID
+	dateFilter.eofCounter[clientID].Add(sender)
+	if dateFilter.eofCounter[clientID].Size() != dateFilter.config.USDFilterAmount {
 		slog.Info("Received EOF from other instance, waiting for more...")
 		ack()
 		return
 	}
 
-	msgEOF, err := inner.SerializeEOF(clientID, true, "date_filter") // TO DO agregar otra var de entorno y para group tmb
+	msgEOF, err := inner.SerializeEOF(clientID, true, fmt.Sprintf("%d", dateFilter.config.Id)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		nack()
@@ -228,11 +234,10 @@ func (dateFilter *DateFilter) handleControlMessage(msg *middleware.Message, ack 
 		}
 		delete(dateFilter.qtyTx[clientID], topic)
 	}
-	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	slog.Info("Sent EOF", "clientID", clientID)
 	slog.Info("Cantidad envida topic 1", "val", dateFilter.counter)
 
 	delete(dateFilter.eofCounter, clientID)
-
 	ack()
 }
 

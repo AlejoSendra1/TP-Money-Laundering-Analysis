@@ -3,6 +3,7 @@ package transactions_saver
 import (
 	"log/slog"
 	"sync"
+	"tp_distribuidos/common/batch_utils"
 )
 
 type Stage int
@@ -16,7 +17,7 @@ const (
 type ClientState struct {
 	mu               sync.Mutex // Protege el estado del cliente
 	stage            Stage
-	notificationEOFs int
+	notificationEOFs batch_utils.Set[string]
 	receivedFlowEOF  bool
 	qtyTx            int      // Para debug
 	Storage          *Storage // Abstraccion del archivo
@@ -24,8 +25,9 @@ type ClientState struct {
 
 func NewClientState(filePath string, name string) *ClientState {
 	return &ClientState{
-		stage:   StageBufferingData,
-		Storage: NewStorage(filePath, name),
+		notificationEOFs: batch_utils.NewSet[string](),
+		stage:            StageBufferingData,
+		Storage:          NewStorage(filePath, name),
 	}
 }
 
@@ -44,13 +46,13 @@ func (clientState *ClientState) ShouldBuffData(count int) bool {
 }
 
 // Verifica si llegaron todas las notificaciones
-func (clientState *ClientState) ShouldStartFlush(maxAmount int) (shouldFlush bool) {
+func (clientState *ClientState) ShouldStartFlush(maxAmount int, sender string) (shouldFlush bool) {
 	clientState.mu.Lock()
 	defer clientState.mu.Unlock()
 
-	clientState.notificationEOFs++
+	clientState.notificationEOFs.Add(sender)
 	// Si todavia faltan notificaciones de los promedios, no hacemos nada
-	if clientState.notificationEOFs != maxAmount {
+	if clientState.notificationEOFs.Size() != maxAmount {
 		return false
 	}
 

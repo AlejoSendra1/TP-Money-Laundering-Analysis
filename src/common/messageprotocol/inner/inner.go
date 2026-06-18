@@ -26,6 +26,8 @@ const (
 	SuspiciousAccount
 	PossibleFraudDestinations
 	ReadyForEOR
+	PaymentFormatAverage
+	ThresholdFilteredTransfer
 )
 
 type MessageClient struct {
@@ -172,7 +174,7 @@ func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages 
 		serializedRecords = append(serializedRecords, datum)
 	}
 
-	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords, MsgType: PaymentFormatAverage})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment format averages: %w", err)
 	}
@@ -217,7 +219,7 @@ func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers
 		serializedRecords = append(serializedRecords, datum)
 	}
 
-	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: serializedRecords, MsgType: ThresholdFilteredTransfer})
 	if err != nil {
 		return nil, fmt.Errorf("serializing bank peak transfer: %w", err)
 	}
