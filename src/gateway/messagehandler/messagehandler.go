@@ -41,8 +41,8 @@ func (messageHandler *MessageHandler) SerializeDataMessage(transactionBatch []tr
 	return inner.SerializeMessage(messageHandler.UserId, transactionBatch)
 }
 
-func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message, error) {
-	return inner.SerializeEOF(messageHandler.UserId, true, "gateway")
+func (messageHandler *MessageHandler) SerializeEORMessage() (*middleware.Message, error) {
+	return inner.SerializeEOR(messageHandler.UserId, true, "gateway")
 }
 
 func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClient) (bool, error) {

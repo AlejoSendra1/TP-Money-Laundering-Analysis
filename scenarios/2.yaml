@@ -38,6 +38,8 @@ services:
     - COUNTER_Q2_CONTROL=counter_q2_control
     - BATCH_SIZE=100
     - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   q2_counter_1:
     build:
       context: ./src/
@@ -59,6 +61,8 @@ services:
     - COUNTER_Q2_CONTROL=counter_q2_control
     - BATCH_SIZE=100
     - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   gateway:
     build:
       context: ./src/

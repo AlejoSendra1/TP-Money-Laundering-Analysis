@@ -56,9 +56,9 @@ func ReadMsgType(reader io.Reader) (MsgType, error) { // no modif
 	return msgType, nil
 }
 
-func WriteTransactionBatch(writer io.Writer, transactionBatch *[]transaction.Transaction) error { // no modif
+func WriteTransactionBatch(writer io.Writer, transactionBatch []transaction.Transaction) error { // no modif
 	msg := serializer.SerializeUint32(uint32(TransactionBatch))
-	serial, err := serializer.SerializeTransactions(*transactionBatch)
+	serial, err := serializer.SerializeTransactions(transactionBatch)
 	if err != nil {
 		return err
 	}

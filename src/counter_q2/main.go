@@ -9,6 +9,9 @@ import (
 	counter_q2 "tp_distribuidos/counter_q2"
 )
 
+// para levantar al caido
+// docker run -e RESTORE_ON_START=true <container_name>
+
 func loadConfig() (counter_q2.CounterQ2Config, error) {
 	id, err := strconv.Atoi(os.Getenv("ID"))
 	if err != nil {
@@ -98,6 +101,16 @@ func run() int {
 	if err != nil {
 		slog.Error("While initializing counter_q2", "err", err)
 		return 1
+	}
+
+	slog.Info("leyendo flag restaurate", "value", os.Getenv("RESTAURATE"))
+	if os.Getenv("RESTAURATE") == "TRUE" {
+		slog.Info("restaurando")
+		if err := worker.Restaurate(); err != nil {
+			slog.Error("While restoring state", "err", err)
+			return 1
+		}
+		slog.Info("restaurado todo piola")
 	}
 
 	worker.Run()

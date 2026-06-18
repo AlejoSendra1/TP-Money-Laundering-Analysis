@@ -32,7 +32,7 @@ func NewDinamicExchangeMiddleware(exchange string, connectionSettings ConnSettin
 
 	q, err := em.ch.QueueDeclare(
 		"",    // name
-		false, // durability
+		true,  // durability
 		false, // delete when unused
 		true,  // exclusive
 		false, // no-wait

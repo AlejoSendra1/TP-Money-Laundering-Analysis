@@ -9,6 +9,7 @@ import (
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
 
 const FANOUT = ""
@@ -98,61 +99,30 @@ func (groupWorker *Group) Run() {
 	<-done
 }
 
-func (groupWorker *Group) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	//slog.Info("Received msg", "body", middlewareMsg.Body)
-	msg, err := inner.DeserializeMessage(middlewareMsg)
-	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
-	}
-
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		mustPropagate, sender, err := inner.DeserializeEOR(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		slog.Info("Received EOF record message from ", "clientID", msg.ClientID, "sender", sender)
-		if err := groupWorker.handleEndOfRecordMessage(msg.ClientID, mustPropagate); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-
-	case inner.TransactionBatch:
-		//obtenemos las transacciones
-		//slog.Info("Received msg", "type", "tranasction batch")
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-
-		// hacemos lo q haya q hacer con las transa
-		if err := groupWorker.handleTransactionBatchMessage(msg.ClientID, transactions); err != nil {
-			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-	default:
-		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
-	}
-	ack()
+func (g *Group) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	worker.HandleMessage(middlewareMsg, ack, nack,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:     g.handleEndOfRecordMessage,
+			inner.TransactionBatch: g.handleTransactionBatchMessage,
+		},
+	)
 }
 
-func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate bool) error {
+func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
 
 	// se debe propagar entre todos los group workers y estos a todos los bridges analizers
+	mustPropagate, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
+		return err
+	}
+	slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
 
 	senderName := fmt.Sprintf("%s_%d", "group", groupWorker.config.ID)
 
 	if mustPropagate {
 		// EOF viene del date_filter, reenviar por controlExchange sin propagación
-		msg, err := inner.SerializeEOF(clientID, false, senderName)
+		msg, err := inner.SerializeEOR(clientID, false, senderName)
 		if err != nil {
 			slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 			return err
@@ -179,7 +149,7 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 	}
 
 	slog.Info("EOF threshold reached, sending to output", "clientID", clientID)
-	msg, err := inner.SerializeEOF(clientID, false, senderName)
+	msg, err := inner.SerializeEOR(clientID, false, senderName)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
@@ -196,7 +166,13 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, mustPropagate
 	return nil
 }
 
-func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, transactionRecords []transaction.Transaction) error {
+func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, data []interface{}) error {
+	transactionRecords, err := inner.DeserializeTransactionBatch(data)
+	if err != nil {
+		slog.Error("While deserializing transactions from message", "err", err, "clientID", clientID)
+		return err
+	}
+
 	groupWorker.controlMutex.Lock()
 	if _, ok := groupWorker.eofCounter[clientID]; !ok {
 		groupWorker.eofCounter[clientID] = 0

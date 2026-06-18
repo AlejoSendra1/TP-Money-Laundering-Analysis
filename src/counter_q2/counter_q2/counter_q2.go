@@ -7,13 +7,20 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
+
+const LOGS_UNTIL_CHECKPOINT = 250
+
+//docker compose run q2_counter_0 -e RESTAURATE="TRUE"
 
 type CounterQ2Config struct {
 	ID              int
@@ -35,6 +42,12 @@ type bankEntry struct {
 	account string
 }
 
+// struct usado para el guardado de checkpoints y recuperacion de datos
+type CheckpointData struct {
+	TopByClient map[int64]map[int]bankEntry `json:"topByClient"`
+	EofCounter  map[int64][]string          `json:"eofCounter"`
+}
+
 // CounterQ2 keeps the maximum-amount transaction per bank per client,
 // then shards partial results to the downstream joiners.
 type CounterQ2 struct {
@@ -43,9 +56,12 @@ type CounterQ2 struct {
 	outputExchanges []middleware.Middleware
 	controlOutputs  []middleware.Middleware // one per peer
 	controlInput    middleware.Middleware
-	eofCounter      map[int64]int // client_id -> count of EOFs received from peers (to know when to flush)
+	eofCounter      map[int64][]string
 	mutex           sync.Mutex
 	topByClient     map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
+	// for data saving and restoration
+	handleFunctions worker.MessageHandlerMap
+	dataSaver       *datasaver.DataSaver
 }
 
 func getJoinerIndex(bank string, joinAmount int) int {
@@ -117,15 +133,90 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		return nil, fmt.Errorf("creating control input exchange: %w", err)
 	}
 
-	return &CounterQ2{
+	// para q siempre se use la misma queue ---------------------- se deberia refactorisar el control
+	controlQueueName := fmt.Sprintf("%s_control_%d", config.ControlExchange, config.ID)
+	controlInput, err = middleware.CreateQueueMiddleware(controlQueueName, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		for _, o := range outputExchanges {
+			o.Close()
+		}
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		return nil, fmt.Errorf("creating control input queue: %w", err)
+	}
+
+	if err := controlInput.BindToTopics(config.ControlExchange, myKey); err != nil {
+		inputQueue.Close()
+		controlInput.Close()
+		for _, o := range outputExchanges {
+			o.Close()
+		}
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		return nil, fmt.Errorf("binding control input queue: %w", err)
+	}
+
+	// para persistir la info ante posibles caidas
+	//se podria agregar el nombre de del archivo de restauracion como var de entorno
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q2_counter_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	if err != nil {
+		return nil, err
+	}
+
+	counter := &CounterQ2{
 		config:          config,
 		inputQueue:      inputQueue,
 		outputExchanges: outputExchanges,
 		controlOutputs:  controlOutputs,
 		controlInput:    controlInput,
 		topByClient:     make(map[int64]map[int]bankEntry),
-		eofCounter:      make(map[int64]int),
-	}, nil
+		eofCounter:      make(map[int64][]string),
+		dataSaver:       dataSaver,
+	}
+	counter.handleFunctions = worker.MessageHandlerMap{
+		inner.EndOfRecords:     counter.handleEndOfRecordMessage,
+		inner.TransactionBatch: counter.processBatch,
+	}
+
+	return counter, nil
+}
+
+// Restaurate restaura el estado del nodo al estado en el que se encontraba previo a su caida
+func (c *CounterQ2) Restaurate() error {
+	// primero restauramos el checkpoint
+	var checkpoint CheckpointData
+
+	thereIsCheckpoint, err := c.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil { // habria q agregar retrys?
+		return err
+	}
+	if thereIsCheckpoint == true {
+		slog.Info("cargando en base a checkpoint")
+		c.topByClient = checkpoint.TopByClient
+		c.eofCounter = checkpoint.EofCounter
+	}
+
+	var savedDataVar middleware.Message
+	var thereIsLogs bool
+
+	for {
+		thereIsLogs, err = c.dataSaver.GetDataFromLogs(&savedDataVar)
+		if err != nil { // habria q modificar para retrys
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+		// gracias a que hay idempotencia y no se hacen envios hasta finalizar, no hay problema
+		if err := worker.HandleMessageV2(&savedDataVar, c.handleFunctions); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Run starts the worker. It returns when processing is complete or a signal is received.
@@ -151,56 +242,69 @@ func (counter *CounterQ2) Run() {
 	// Stop control consumer once main consuming finishes
 	counter.controlInput.StopConsuming()
 	waitGroup.Wait()
-
 	counter.close()
 }
 
+func (c *CounterQ2) GetCheckpointData() any {
+	return CheckpointData{
+		TopByClient: c.topByClient,
+		EofCounter:  c.eofCounter,
+	}
+	// agregar log counter asi evitamos que se acumulen mas logs que los indicados
+	// dado q en caso de caida y vuelta se podrian acumular mas logs q los indicados < (guardados + limite)
+}
+
 // handleMessage processes messages from the shared input queue.
-func (counter *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack, nack func()) {
-	msg, err := inner.DeserializeMessage(&middlewareMsg)
-	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
+// And periodicaly stores checkpoints to keep the backup to date
+func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), nack func()) {
+	if err := worker.HandleMessageV2(&middlewareMsg, c.handleFunctions); err != nil {
 		nack()
 		return
 	}
 
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		slog.Info("EOF received, notifying peers and flushing", "client_id", msg.ClientID)
-		if err := counter.sendControlEOF(msg.ClientID); err != nil {
-			slog.Error("Sending control EOF", "err", err, "client_id", msg.ClientID)
-			nack()
-			return
-		}
-		if err := counter.flushClient(msg.ClientID); err != nil {
-			slog.Error("Flushing client", "err", err, "client_id", msg.ClientID)
-			nack()
-			return
-		}
-		ack()
-		return
-	case inner.TransactionBatch:
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		counter.processBatch(msg.ClientID, transactions)
-		ack()
+	datasaver.Crash(datasaver.CrashAfterLog) // para testing
+	c.dataSaver.Save(middlewareMsg, c)       // persistencia de datos
 
+	ack()
+}
+
+func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
+	slog.Info("EOF received, notifying peers and flushing", "client_id", clientID)
+
+	// habria q hacer q el coso guarde por sender en lugar de contar
+	_, sender, err := inner.DeserializeEOR(data) // no hace falta el bool dado que se utiliza otro canal para propagar
+	if err != nil {
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
+		return err
 	}
+
+	if err := c.sendControlEOF(clientID, sender); err != nil {
+		slog.Error("Sending control EOF", "err", err, "client_id", clientID)
+		return err
+	}
+
+	if err := c.flushClient(clientID, sender); err != nil {
+		slog.Error("Flushing client", "err", err, "client_id", clientID)
+		return err
+	}
+	return nil
 }
 
 // processBatch updates in-memory state: keeps max-amount entry per bank.
-func (counter *CounterQ2) processBatch(clientID int64, transactions []transaction.Transaction) {
+func (counter *CounterQ2) processBatch(clientID int64, data []interface{}) error {
+	transactions, err := inner.DeserializeTransactionBatch(data)
+	if err != nil {
+		slog.Error("While deserializing transactions from message", "err", err, "clientID", clientID)
+		return err
+	}
+
 	counter.mutex.Lock()
 	defer counter.mutex.Unlock()
 	banks, ok := counter.topByClient[clientID]
 	if !ok {
 		banks = make(map[int]bankEntry)
 		counter.topByClient[clientID] = banks
-		counter.eofCounter[clientID] = 0
+		counter.eofCounter[clientID] = make([]string, 0, 5)
 	}
 	for _, tx := range transactions {
 		prev, exists := banks[tx.FromBank]
@@ -209,27 +313,38 @@ func (counter *CounterQ2) processBatch(clientID int64, transactions []transactio
 			//slog.Info("New top", "client_id", clientID, "bank", tx.FromBank, "amount", tx.Amount, "account", tx.FromAccount)
 		}
 	}
+
+	return nil
 }
 
 // handleControlMessage processes EOF notifications from peer pods.
-func (counter *CounterQ2) handleControlMessage(msg middleware.Message, ack, nack func()) {
-	clientID, _, _, err := inner.DeserializeMaxBankTransactionMessage(&msg)
+func (counter *CounterQ2) handleControlMessage(middlewareMsg middleware.Message, ack, nack func()) {
+	msg, err := inner.DeserializeMessage(&middlewareMsg)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err)
+		nack()
+		return
+	}
+	_, sender, err := inner.DeserializeEOR(msg.Data)
 	if err != nil {
 		slog.Error("Deserializing control message", "err", err)
 		nack()
 		return
 	}
-	slog.Info("Control EOF received from peer, flushing", "client_id", clientID)
-	if err := counter.flushClient(clientID); err != nil {
-		slog.Error("Flushing client from control", "err", err, "client_id", clientID)
+	slog.Info("Control EOF received from peer, flushing", "client_id", msg.ClientID)
+
+	if err := counter.flushClient(msg.ClientID, sender); err != nil {
+		slog.Error("Flushing client from control", "err", err, "client_id", msg.ClientID)
 		nack()
 		return
 	}
+	ack()
 }
 
 // sendControlEOF notifies all peer pods that this pod received an EOF for clientID.
-func (counter *CounterQ2) sendControlEOF(clientID int64) error {
-	msg, err := inner.SerializeMaxBankTransactionMessage(clientID, []transaction.MaxBankTransaction{})
+func (counter *CounterQ2) sendControlEOF(clientID int64, sender string) error {
+	//msg, err := inner.SerializeMaxBankTransactionMessage(clientID, []transaction.MaxBankTransaction{})
+	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		return err
 	}
@@ -242,14 +357,24 @@ func (counter *CounterQ2) sendControlEOF(clientID int64) error {
 }
 
 // flushClient pops partial state for clientID and sends it to the correct joiner(s).
-func (counter *CounterQ2) flushClient(clientID int64) error {
+func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
+	slog.Info("tomando lock")
 	counter.mutex.Lock()
-	counter.eofCounter[clientID] += 1
-	if counter.eofCounter[clientID] != counter.config.USDFilterAmount {
+	slog.Info("lock tomado")
+
+	if slices.Contains(counter.eofCounter[clientID], sender) {
+		slog.Info("Sender de EOR repetido")
+		return nil
+	}
+
+	counter.eofCounter[clientID] = append(counter.eofCounter[clientID], sender)
+
+	if len(counter.eofCounter[clientID]) != counter.config.USDFilterAmount {
 		slog.Info("Waiting for more EOFs from usd filter")
 		counter.mutex.Unlock()
 		return nil
 	}
+	slog.Info("SE PUEDE ENVIAR EOF")
 	banks := counter.topByClient[clientID]
 	delete(counter.topByClient, clientID)
 	delete(counter.eofCounter, clientID)
@@ -258,6 +383,8 @@ func (counter *CounterQ2) flushClient(clientID int64) error {
 	if err := counter.sendData(clientID, banks); err != nil {
 		return err
 	}
+	datasaver.Crash(datasaver.CrashAfterSendData) // para testear caida
+	slog.Info("ENVIANDO EOF")
 	return counter.sendEOF(clientID)
 }
 
