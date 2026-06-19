@@ -148,8 +148,11 @@ func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
 		return err
 	}
 
-	//slog.Info("Writing q1 result", "data", data)
-	for _, transaction := range data {
+	records, ok := data[0].([]interface{})
+	if !ok {
+		return fmt.Errorf("q2: expected nested []interface{}, got %T", data[0])
+	}
+	for _, transaction := range records {
 		fields, ok := transaction.([]interface{})
 		if !ok {
 			slog.Error("While writing q1 result", "data", data)

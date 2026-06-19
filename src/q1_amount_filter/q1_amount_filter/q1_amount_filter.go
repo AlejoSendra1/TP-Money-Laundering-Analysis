@@ -142,7 +142,11 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 	}
 
 	if len(transactions) != 0 {
-		if err := q1AmountFilter.sendOutput(clientID, transactions); err != nil {
+		queryResult := transaction.QueryResult{
+			QueryID:      transaction.Query1,
+			Transactions: transactions,
+		}
+		if err := q1AmountFilter.sendOutput(clientID, queryResult); err != nil {
 			return err
 		}
 	}
@@ -185,8 +189,8 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 	ack()
 }
 
-func (q1AmountFilter *Q1AmountFilter) sendOutput(clientID int64, queryResult []transaction.LowAmountTransfer) error {
-	message, err := inner.SerializeQuery1ResultMessage(clientID, queryResult)
+func (q1AmountFilter *Q1AmountFilter) sendOutput(clientID int64, queryResult transaction.QueryResult) error {
+	message, err := inner.SerializeQueryResultMessage(clientID, queryResult)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
 		return err
