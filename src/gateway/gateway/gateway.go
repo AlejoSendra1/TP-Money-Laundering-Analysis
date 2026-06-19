@@ -193,14 +193,11 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		return
 	}
 
-	// Por ahora solo me fijo en los duplicados de EOFs
-	if msg.MsgType == inner.EndOfRecords {
-		batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
-		if gateway.deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
-			slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
-			ack()
-			return
-		}
+	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
+	if gateway.deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
+		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
+		ack()
+		return
 	}
 
 	// Procesamos y enviamos AFUERA del lock del registro
