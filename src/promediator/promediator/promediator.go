@@ -7,6 +7,7 @@ import (
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
 
 type PromediatorConfig struct {
@@ -59,51 +60,47 @@ func (promediator *Promediator) Run() {
 	})
 }
 func (promediator *Promediator) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV3(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:     promediator.handleEndOfRecords,
+			inner.TransactionBatch: promediator.handleTransactionBatch,
+		},
+		promediator.deduplicator,
+	)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
-	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
-	if promediator.deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
-		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID)
-		ack()
-		return
-	}
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		slog.Info("Received msg", "type", "EOF")
-		_, sender, err := inner.DeserializeEOR(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
 
-		if err := promediator.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		ack()
-		return
-	case inner.TransactionBatch:
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		if err := promediator.handleDataMessage(transactions, msg.ClientID); err != nil {
-			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-	default:
-		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
-	}
 	ack()
+}
+
+func (promediator *Promediator) handleTransactionBatch(clientID int64, data []interface{}) error {
+	transactions, err := inner.DeserializeTransactionBatch(data)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err, "clientID", clientID)
+		return err
+	}
+	if err = promediator.handleDataMessage(transactions, clientID); err != nil {
+		slog.Error("While handling data message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
+}
+
+func (promediator *Promediator) handleEndOfRecords(clientID int64, data []interface{}) error {
+	slog.Info("Received msg", "type", "EOF")
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
+		return err
+	}
+	if err = promediator.handleEndOfRecordMessage(clientID, sender); err != nil {
+		slog.Error("While handling end of record message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
 }
 
 func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender string) error {
