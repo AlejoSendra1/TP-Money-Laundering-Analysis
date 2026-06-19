@@ -155,7 +155,7 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 
 	if needNotify {
 		// Envio el EOF
-		msgToSend, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%d", q3AmountFilter.config.Id))
+		msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", q3AmountFilter.config.Id))
 		if err != nil {
 			slog.Info("While serializing notification message", "err", err, "clientID", clientID)
 			return err
@@ -275,7 +275,7 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(middlewareMs
 
 func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Received End Of Records message", "clientID", clientID)
-	msg, err := inner.SerializeEOF(clientID, false, sender)
+	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err

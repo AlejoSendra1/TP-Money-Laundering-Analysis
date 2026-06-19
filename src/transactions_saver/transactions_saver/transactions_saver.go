@@ -138,7 +138,7 @@ func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middlew
 
 func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Received End Of Records message", "clientID", clientID)
-	msg, err := inner.SerializeEOF(clientID, false, sender)
+	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
@@ -251,7 +251,7 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 }
 
 func (transactionsSaver *TransactionsSaver) sentEOF(clientID int64) error {
-	msgToSend, err := inner.SerializeEOF(clientID, false, fmt.Sprintf("%d", transactionsSaver.config.Id))
+	msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", transactionsSaver.config.Id))
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
