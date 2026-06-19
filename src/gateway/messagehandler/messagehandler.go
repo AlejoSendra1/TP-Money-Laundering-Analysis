@@ -3,7 +3,6 @@ package messagehandler
 import (
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -19,10 +18,7 @@ type MessageHandler struct {
 
 type accumulatorFunc func(current, incoming any) any
 
-func NewMessageHandler(eofExpectedByQuery map[transaction.QueryID]int) MessageHandler {
-	n := rand.Int64()
-	slog.Info("UserId created", "value", n)
-
+func NewMessageHandler(id int64, eofExpectedByQuery map[transaction.QueryID]int) MessageHandler {
 	eorCountByQuery := make(map[transaction.QueryID]int)
 	eorCountByQuery[transaction.Query1] = 0
 	eorCountByQuery[transaction.Query2] = 0
@@ -31,7 +27,7 @@ func NewMessageHandler(eofExpectedByQuery map[transaction.QueryID]int) MessageHa
 	eorCountByQuery[transaction.Query5] = 0
 
 	return MessageHandler{
-		UserId:             n,
+		UserId:             id,
 		eorCountByQuery:    eorCountByQuery,
 		eorExpectedByQuery: eofExpectedByQuery,
 	}

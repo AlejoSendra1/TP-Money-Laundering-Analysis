@@ -1,21 +1,19 @@
 package gateway
 
 import (
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"sync/atomic"
 	"syscall"
-	"tp_distribuidos/common/transaction"
-
-	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/common/messageprotocol/external"
-	"tp_distribuidos/common/messageprotocol/external/safeio"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/middleware"
+	"tp_distribuidos/common/transaction"
+
+	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/messagehandler"
 )
 
@@ -65,7 +63,13 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
-	gateway := &Gateway{batchCounter: 0, outputExchange: outputExchange, inputQueue: inputQueue, listener: listener, config: config}
+	gateway := &Gateway{
+		batchCounter:   0,
+		registry:       clientregistry.NewClientRegistry(),
+		inputQueue:     inputQueue,
+		outputExchange: outputExchange,
+		listener:       listener,
+		config:         config}
 	gateway.running.Store(true)
 	return gateway, nil
 }
@@ -97,15 +101,22 @@ func (gateway *Gateway) Run() error {
 
 		slog.Info("Client connected...")
 
-		handler := messagehandler.NewMessageHandler(eorMap)
+		clientId, err := gateway.handleClientConnection(conn)
+		slog.Info("UserId assigned", "value", clientId)
+		if err != nil {
+			slog.Error("While client connects")
+			continue
+		}
+		handler := messagehandler.NewMessageHandler(clientId, eorMap)
 		client := clientregistry.ClientState{Conn: conn, Handler: &handler}
-		gateway.registry.Add(client)
+
+		gateway.registry.Add(clientId, client)
 
 		go gateway.handleClientRequest(client)
 	}
 
 	gateway.outputExchange.StopConsuming()
-	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
+	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
 		for _, client := range clients {
 			client.Conn.Close()
 		}
@@ -123,6 +134,7 @@ func (gateway *Gateway) handleSignals() {
 }
 
 func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
+
 loop:
 	for {
 		msgType, err := external.ReadMsgType(client.Conn)
@@ -130,7 +142,6 @@ loop:
 			slog.Error("While reading message type", "err", err)
 			return
 		}
-
 		switch msgType {
 		case external.TransactionBatch:
 			if err := gateway.handleTransactionBatchMessage(client); err != nil {
@@ -145,17 +156,20 @@ loop:
 				return
 			}
 			break loop
-
 		default:
 			slog.Info("Read unexpected message type")
 			return
 		}
+		if err := external.WriteAck(client.Conn); err != nil {
+			slog.Info("While writing ACK message", "err", err)
+			return
+		}
+
 	}
 }
 
 func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, ack func(), nack func()) {
 	var targetClient clientregistry.ClientState
-	var clientIndex int = -1
 	found := false
 
 	// Deserializamos el mensaje de la cola antes de bloquear nada
@@ -167,20 +181,16 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	}
 
 	// Lock corto: Solo buscamos el cliente idóneo en el registro
-	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
-		for i, client := range clients {
-			if client.Handler.UserId == msg.ClientID {
-				targetClient = client
-				clientIndex = i
-				found = true
-				break
-			}
+	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
+		if c, ok := clients[msg.ClientID]; ok {
+			targetClient = *c
+			found = true
 		}
 	})
 
 	if !found {
 		slog.Warn("No client handler could process this message", "clientID", msg.ClientID)
-		ack() // Si el cliente se desconectó, descartamos/confirmamos para no trabar la cola
+		ack()
 		return
 	}
 
@@ -216,7 +226,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 
 			slog.Info("Client received all result queries, removing from registry", "clientID", msg.ClientID)
 			// Removemos usando el índice detectado previamente
-			gateway.registry.Remove(clientIndex)
+			gateway.registry.Remove(msg.ClientID)
 		}
 
 	default:
@@ -226,56 +236,4 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	}
 
 	ack()
-}
-
-func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
-	transactions, err := external.ReadTransactionBatch(client.Conn)
-	if err != nil {
-		slog.Info("While reading transaction batch", "err", err)
-		return err
-	}
-	message, err := client.Handler.SerializeDataMessage(*transactions)
-	if err != nil {
-		slog.Info("While serializing data message", "err", err)
-		return err
-	}
-	if err := gateway.outputExchange.Send(*message); err != nil {
-		slog.Info("While sending data message", "err", err)
-		return err
-	}
-	if err := external.WriteAck(client.Conn); err != nil {
-		slog.Info("While writing ACK message", "err", err)
-		return err
-	}
-	gateway.batchCounter += 1
-	return nil
-}
-
-func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientState) error {
-	slog.Info("Received END_OF_RECORDS message")
-	str := fmt.Sprint("batches enviados: ", gateway.batchCounter)
-	slog.Info(str)
-
-	message, err := client.Handler.SerializeEORMessage()
-	if err != nil {
-		slog.Info("While serializing END_OF_RECORDS message", "err", err)
-		return err
-	}
-	if err := gateway.outputExchange.Send(*message); err != nil {
-		slog.Info("While sending eof message", "err", err)
-		return err
-	}
-	if err := external.WriteAck(client.Conn); err != nil {
-		slog.Info("While writing ACK message", "err", err)
-		return err
-	}
-	return nil
-}
-
-func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
-	if err := safeio.WriteAll(socket, data); err != nil {
-		slog.Error("While writing queries result message", "err", err)
-		return fmt.Errorf("While writing queries result message: %w", err)
-	}
-	return nil
 }

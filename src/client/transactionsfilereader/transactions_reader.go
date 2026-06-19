@@ -23,30 +23,28 @@ const (
 )
 
 type TransactionsFileReader struct {
-	counter   int64
 	file      *os.File
 	scanner   *bufio.Scanner
 	batchSize int
 }
 
-func (c *TransactionsFileReader) getCount() int64 {
-	return c.counter
-}
-
 // NewCSVWriter ahora recibe un basePath o archivo base para las transacciones comunes.
 // Los archivos de las queries se crearán en el mismo directorio con nombres específicos.
-func NewTransactionsFileReader(filepath string, batchSize int) (*TransactionsFileReader, error) {
+func NewTransactionsFileReader(filepath string, batchSize int, batchesAlreadySent int64) (*TransactionsFileReader, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		slog.Info("Error while runninging input file", "err", err)
 		return nil, err
 	}
 
-	scanner := bufio.NewScanner(file)
 	//scanner.Scan() // para saltear la primera linea del archivo (saltea el header)
 
+	scanner := bufio.NewScanner(file)
+	for range batchesAlreadySent * int64(batchSize) {
+		scanner.Scan()
+	}
+
 	return &TransactionsFileReader{
-		counter:   0,
 		file:      file,
 		scanner:   scanner,
 		batchSize: batchSize,
@@ -55,7 +53,6 @@ func NewTransactionsFileReader(filepath string, batchSize int) (*TransactionsFil
 
 func (tfr *TransactionsFileReader) Close() {
 	tfr.file.Close()
-	slog.Info("transacciones enviadas: ", "value", tfr.counter)
 }
 
 func (trf *TransactionsFileReader) GetTransactionRecords() ([]transaction.Transaction, error) {
@@ -73,12 +70,10 @@ func (trf *TransactionsFileReader) GetTransactionRecords() ([]transaction.Transa
 
 		batch = append(batch, tx)
 		if len(batch) == trf.batchSize {
-			trf.counter += int64(len(batch))
 			return batch, nil
 		}
 	}
 
-	trf.counter += int64(len(batch))
 	return batch, nil
 }
 

@@ -14,23 +14,31 @@ type ClientState struct {
 
 type ClientRegistry struct {
 	mutex   sync.Mutex
-	clients []ClientState
+	clients map[int64]*ClientState
 }
 
-func (registry *ClientRegistry) Add(client ClientState) {
+func NewClientRegistry() ClientRegistry {
+	return ClientRegistry{clients: make(map[int64]*ClientState)}
+}
+
+func (registry *ClientRegistry) Add(clientID int64, client ClientState) {
 	registry.mutex.Lock()
 	defer registry.mutex.Unlock()
-	registry.clients = append(registry.clients, client)
+	registry.clients[clientID] = &client
 }
 
-func (registry *ClientRegistry) Remove(i int) {
+func (registry *ClientRegistry) Remove(id int64) {
 	registry.mutex.Lock()
 	defer registry.mutex.Unlock()
-	registry.clients = append(registry.clients[:i], registry.clients[i+1:]...)
+	delete(registry.clients, id)
 }
 
-func (registry *ClientRegistry) WithLock(action func([]ClientState)) {
+func (registry *ClientRegistry) WithLock(action func(map[int64]*ClientState)) {
 	registry.mutex.Lock()
 	defer registry.mutex.Unlock()
 	action(registry.clients)
+}
+
+func (registry *ClientRegistry) GetClients() *(map[int64]*ClientState) {
+	return &registry.clients
 }

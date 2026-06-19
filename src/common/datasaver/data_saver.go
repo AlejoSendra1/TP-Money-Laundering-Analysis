@@ -67,6 +67,22 @@ func (ds *DataSaver) Clean() {
 // / ----------------------------------------- FUNCIONES DE GUARDADO ------------------------------------------
 // funciones utilizadas para guardar el estado del nodo previo a una posible caida
 
+// Para que el worker no se preocupe de realizar el checkpoint
+// este se hara cuando el saver detecte cumplimiento de su condicion de creacion
+func (ds *DataSaver) Save(content any, w worker.Worker) {
+	ds.Log(content)      // persistencia de datos
+	Crash(CrashAfterLog) // para testing
+	// gestion del checkpoint
+	ds.logCounter++
+	if ds.logCounter >= ds.logsUntilCheckpoint {
+		slog.Info("Guardando checkpoint")
+		ds.logCounter = 0
+		ds.SaveCheckpoint(w.GetCheckpointData())
+	}
+}
+
+// Para mayor control de como se guardan las cosas -----------
+
 // logueo del resultado procesado
 func (ds *DataSaver) Log(v any) error {
 	// wrapp content
@@ -93,8 +109,8 @@ func (ds *DataSaver) Log(v any) error {
 }
 
 // SaveCheckpoint debe ser utilizado como opcion de guardado una vez procesadas multiples transacciones
-// para evitar cuellos de botella. cualquier tipo de dato es valido y guardado de forma atomica eliminando
-// logs viejos.
+// para evitar cuellos de botella.
+// Este metodo escribe un checkpoint al comienzo del archivo eliminando logs viejos de forma atomica.
 func (ds *DataSaver) SaveCheckpoint(checkpoint any) error {
 	// wrapps the content
 	payload, err := json.Marshal(checkpoint)
@@ -110,24 +126,8 @@ func (ds *DataSaver) SaveCheckpoint(checkpoint any) error {
 	return ds.writeFile(data)
 }
 
-// Para que el worker no se preocupe de realizar el checkpoint
-// este se hara cuando el saver detecte cumplimiento de su condicion de creacion
-func (ds *DataSaver) Save(content any, w worker.Worker) {
-	ds.Log(content)      // persistencia de datos
-	Crash(CrashAfterLog) // para testing
-	// gestion del checkpoint
-	ds.logCounter++
-	if ds.logCounter >= ds.logsUntilCheckpoint {
-		slog.Info("Guardando checkpoint")
-		ds.logCounter = 0
-		ds.SaveCheckpoint(w.GetCheckpointData())
-	}
-}
-
 // escritura atomica
-// WriteFile writes data to filename+some suffix, then renames it into filename.
-// The perm argument but if the target filename already
-// exists then the target file's attributes and ACLs are preserved. If the target
+// WriteFile escribe los datos en un archivo temporal y pisa el archivo persistente una vez exitosa la escritura.
 // filename already exists but is not a regular file, WriteFile returns an error.
 func (ds *DataSaver) writeFile(data []byte) (err error) {
 	ds.file.Close()
@@ -184,6 +184,11 @@ func (ds *DataSaver) writeFile(data []byte) (err error) {
 
 // / ----------------------------------------- FUNCIONES DE CARGA ------------------------------------------
 // funciones utilizadas para recuperar el estado del nodo postiormente a su recuperacion
+
+// Lee el primer elemento guardado en el archivo
+// En caso de ser un checkpoint y coincidir con el tipo de la variable target la actualizara in place
+// y dejara el escanner en un estado consistente para realizar a continuacion la recuperacion de los logs.
+// en otro caso no hara nada
 func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 	if ds.file == nil {
 		return false, fmt.Errorf("pointer to restoration file is null")
@@ -222,7 +227,7 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 	return false, nil
 }
 
-// lee cada batch y lo parsea in place en la variable indicada por parametro
+// lee cada batch y lo parsea in place en la variable pasada por parametro
 func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 	if ds.reader == nil {
 		ds.reader = bufio.NewScanner(ds.file)
@@ -258,5 +263,6 @@ func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 
 	}
 
+	ds.logCounter++
 	return thereIsMore, nil
 }

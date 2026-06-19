@@ -77,7 +77,7 @@ func (c *CSVWriter) getQueryWriter(queryName string) (*csv.Writer, error) {
 	fileName := fmt.Sprintf("%s_results_%s.csv", c.basePath, queryName)
 	fullPath := filepath.Join(c.basePath, fileName)
 
-	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("opening file for %s: %w", queryName, err)
 	}

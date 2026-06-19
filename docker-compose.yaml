@@ -8,13 +8,16 @@ services:
     - usd_filter_0
     - usd_filter_1
     environment:
+    - ID=0
     - BATCH_SIZE=200
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    #- CRASH_AFTER_LOG=300
     volumes:
+    - ./persistence:/persistence 
     - ./datasets:/datasets
     - ./output:/output
   q2_counter_0:
@@ -38,7 +41,6 @@ services:
     - COUNTER_Q2_CONTROL=counter_q2_control
     - BATCH_SIZE=100
     - USD_FILTER_AMOUNT=2
-    - CRASH_AFTER_LOG=300
     volumes:
     - ./persistence:/persistence 
   q2_counter_1:

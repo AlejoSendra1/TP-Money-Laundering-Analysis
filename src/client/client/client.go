@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/external/safeio"
 	"tp_distribuidos/common/messageprotocol/inner"
@@ -34,14 +34,25 @@ type ClientConfig struct {
 	ServerPort string
 	InputFile  string
 	OutputFile string
+	Restorate  bool
+	ID         int
 }
 
 type Client struct {
-	conn    net.Conn
-	running atomic.Bool
-	config  ClientConfig
-	writer  csvwriter.CSVWriter
-	//stateSaver StateSaver
+	conn      net.Conn
+	running   atomic.Bool
+	config    ClientConfig
+	writer    csvwriter.CSVWriter
+	dataSaver *datasaver.DataSaver
+	// tolerance resistence data
+	assignedID        int64
+	batchesSentAmount int64
+	ackChan           chan struct{}
+}
+
+type CheckpointData struct {
+	AssignedID        int64 `json:"assigned_id"`
+	BatchesSentAmount int64 `json:"batches_sent_amount"`
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -55,11 +66,41 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{
-		conn:   conn,
-		config: config,
-		writer: *writer,
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/client_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	if err != nil {
+		return nil, err
 	}
+
+	client := &Client{
+		conn:      conn,
+		config:    config,
+		writer:    *writer,
+		dataSaver: dataSaver,
+		ackChan:   make(chan struct{}, 1),
+	}
+
+	if config.Restorate {
+		client.restaurateState()
+
+		slog.Info("cargando en base a checkpoint")
+
+		err = sendReconnectMsg(conn, client.assignedID) // aviso al server la reconexion
+
+		if err != nil {
+			return nil, err
+		}
+		slog.Info("Connection was succefull", "Id recuperated", client.assignedID)
+
+	} else {
+		client.batchesSentAmount = 0
+		id, err := sendConnectMsg(conn) // para obtener un id en caso de desconexion
+		if err != nil {
+			return nil, err
+		}
+		client.assignedID = id
+		slog.Info("Connection was succefull", "Id assigned", client.assignedID)
+	}
+
 	client.running.Store(true)
 	return client, nil
 }
@@ -152,14 +193,12 @@ func (client *Client) sendTransactionRecords() error {
 		return err
 	}
 
-	transactionsReader, err := transactionsfilereader.NewTransactionsFileReader(client.config.InputFile, batchSize)
+	transactionsReader, err := transactionsfilereader.NewTransactionsFileReader(client.config.InputFile, batchSize, client.batchesSentAmount)
 	defer transactionsReader.Close()
 	if err != nil {
 		slog.Info("Error opening transactions file for reading", "err", err)
 		return err
 	}
-
-	//slog.Info("procesando transacciones")
 
 	for {
 		records, err := transactionsReader.GetTransactionRecords()
@@ -174,116 +213,27 @@ func (client *Client) sendTransactionRecords() error {
 			slog.Info("Error while sending transaction batch", "err", err)
 			return err
 		}
+
+		// wait for recvManager to signal the ACK arrived
+		if _, ok := <-client.ackChan; !ok {
+			return fmt.Errorf("ack channel closed unexpectedly")
+		}
+
+		// por cada linea se va a representar un batch enviado,
+		//  osea, batch_size transacciones enviadas de arriba para para abajo
+		var b byte
+		b = 1
+		client.batchesSentAmount++
+		client.dataSaver.Save(b, client)
 	}
 
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-// recvQueriesResult lee la respuesta de las queries
-// Por ahora soporta solo Query1
-// Formato: [MsgType][numRecords][records...][EOF]
-// Ejemplo:
-// [Query1Response][numRecords][records...]
-// [Query2Response][numRecords][records...]
-// [Query3Response][numRecords][records...]
-// [Query4Response][numRecords][records...]
-// [Query5Response][numRecords][records...]
-// [EOF]
-func (client *Client) recvQueriesResult() error {
-	// MsgType
-	slog.Info("Waiting for answers")
-	msgType, err := external.ReadMsgType(client.conn)
-	if err != nil {
-		slog.Error("While reading message type for queries result", "err", err)
-		return err
-	}
-	slog.Info("Read message type for queries result", "msgType", msgType)
-	for inner.MsgType(msgType) != inner.EndOfRecords { // En el futuro sera 5...
-		switch inner.MsgType(msgType) {
-		case inner.Query2Response, inner.Query3Response, inner.Query5Response:
-			if err := client.handleQueryResponseWithQueryResult(uint32(msgType)); err != nil {
-				return err
-			}
-		case inner.Query1Response, inner.Query4Response:
-			if err := client.handleQueryResponse(uint32(msgType)); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unexpected message type while receiving queries result: %d", msgType)
-		}
-
-		if err := external.WriteAck(client.conn); err != nil {
-			slog.Info("While writing ACK after queries result", "err", err)
-			return err
-		}
-
-		msgType, err = external.ReadMsgType(client.conn)
-		if err != nil {
-			return err
-		}
-
-	}
-
-	slog.Info("End of records received, closing")
-	if err := external.WriteAck(client.conn); err != nil {
-		slog.Info("While writing ACK after queries result", "err", err)
-		return err
-	}
+	slog.Info("Batches enviados", "val", client.batchesSentAmount)
 
 	return nil
-}
-
-func (client *Client) readQuery1Records() ([]transaction.LowAmountTransfer, error) {
-	count, err := client.readUint32()
-	if err != nil {
-		slog.Info("While reading query1 records count", "err", err)
-		return nil, err
-	}
-	slog.Info("Read query1 records count", "count", count)
-
-	records := make([]transaction.LowAmountTransfer, 0, int(count))
-	for i := 0; i < int(count); i++ {
-		record, err := client.readLowAmountTransferRecord()
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	return records, nil
-}
-
-func (client *Client) readLowAmountTransferRecord() (transaction.LowAmountTransfer, error) {
-	fromBank, err := client.readUint64AsInt("FromBank")
-	if err != nil {
-		return transaction.LowAmountTransfer{}, err
-	}
-	fromAccount, err := client.readLengthPrefixedString("FromAccount")
-	if err != nil {
-		return transaction.LowAmountTransfer{}, err
-	}
-	toBank, err := client.readUint64AsInt("ToBank")
-	if err != nil {
-		return transaction.LowAmountTransfer{}, err
-	}
-	toAccount, err := client.readLengthPrefixedString("ToAccount")
-	if err != nil {
-		return transaction.LowAmountTransfer{}, err
-	}
-	amount, err := client.readFloat64("Amount")
-	if err != nil {
-		return transaction.LowAmountTransfer{}, err
-	}
-	return transaction.LowAmountTransfer{
-		FromBank:    fromBank,
-		FromAccount: fromAccount,
-		ToBank:      toBank,
-		ToAccount:   toAccount,
-		Amount:      amount,
-	}, nil
 }
 
 func (client *Client) expectEndOfRecords() error {
@@ -296,28 +246,6 @@ func (client *Client) expectEndOfRecords() error {
 		slog.Info("Expected EndOfRecords message type after reading queries result, got", "msgType", msgType)
 		return fmt.Errorf("expected EndOfRecords message type after reading queries result, got %d", msgType)
 	}
-	return nil
-}
-
-func (client *Client) writeQuery1CSV(records []transaction.LowAmountTransfer) error {
-	outputFile, err := os.Create(client.config.OutputFile)
-	if err != nil {
-		slog.Info("Error while creating output file", "err", err)
-		return err
-	}
-	defer outputFile.Close()
-
-	writer := csv.NewWriter(outputFile)
-	defer writer.Flush()
-
-	for _, r := range records {
-		line := []string{strconv.Itoa(r.FromBank), r.FromAccount, strconv.Itoa(r.ToBank), r.ToAccount, fmt.Sprintf("%.2f", r.Amount)}
-		if err := writer.Write(line); err != nil {
-			slog.Info("Error while writing CSV line", "err", err)
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -413,6 +341,7 @@ func (client *Client) handleQueryResponseWithQueryResult(queryCode uint32) error
 
 func (client *Client) recvManager() error {
 	slog.Info("Manager de lectura iniciado...")
+	defer close(client.ackChan)
 
 	for {
 		msgType, err := external.ReadMsgType(client.conn)
@@ -428,8 +357,8 @@ func (client *Client) recvManager() error {
 
 		// 1. El Gateway nos devuelve el ACK de un batch que enviamos
 		case inner.MsgType(external.Ack): // Asegúrate de mapear bien tus constantes de protocolo
-			slog.Debug("ACK de batch recibido en el cliente")
-			// No hacemos nada, el Gateway procesó el lote exitosamente.
+			client.ackChan <- struct{}{}
+			// Avisamos al otro hilo que puede considerar el msg como recibido.
 
 		// 2. Respuestas de Queries con JSON estructurado
 		case inner.Query2Response, inner.Query3Response, inner.Query5Response:
@@ -452,4 +381,44 @@ func (client *Client) recvManager() error {
 			return fmt.Errorf("tipo de mensaje inesperado recibido en el cliente: %d", msgType)
 		}
 	}
+}
+
+// --------------- para la restauracion del cliente ---------------
+
+func (client *Client) GetCheckpointData() any {
+	return CheckpointData{
+		AssignedID:        client.assignedID,
+		BatchesSentAmount: client.batchesSentAmount,
+	}
+}
+
+// Asigna al cliente los valores guardados en el checkpoint antes de la caida
+func (client *Client) restaurateState() error {
+	// restauracion checkpoint
+	var checkpoint CheckpointData
+	thereIsCheckpoint, err := client.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil || !thereIsCheckpoint { // habria q agregar retrys?
+		return err
+	}
+
+	slog.Info("Checkpoint levantado", "values", checkpoint)
+	client.assignedID = checkpoint.AssignedID
+	client.batchesSentAmount = checkpoint.BatchesSentAmount
+
+	// restauracion logs
+	// lo unico importante es que cada log representa un batch enviado, no se necesita mas info(no se haria nada con eso)
+	var b byte
+	for {
+		thereIsLogs, err := client.dataSaver.GetDataFromLogs(&b)
+		if err != nil { // habria q modificar para retrys
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+
+		client.batchesSentAmount++
+	}
+
+	return nil
 }

@@ -13,6 +13,7 @@ import (
 
 const UINT64_SIZE uint32 = 8
 const UINT32_SIZE uint32 = 4
+const INT64_SIZE uint32 = 8
 const BOOL_SIZE uint32 = 1
 
 func SerializeTransactions(transactions []transaction.Transaction) ([]byte, error) {
