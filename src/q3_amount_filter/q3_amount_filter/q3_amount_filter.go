@@ -330,6 +330,7 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 				FromAccount:   tx.FromAccount,
 				PaymentFormat: tx.PaymentFormat,
 				Amount:        tx.Amount,
+				Timestamp:     tx.Timestamp,
 			})
 		}
 	}
@@ -338,7 +339,13 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 		q3AmountFilter.mu.Lock()
 		q3AmountFilter.qtyTx[clientID] += len(transactions)
 		q3AmountFilter.mu.Unlock()
+		batch_utils.SortBatch(transactions, func(a, b transaction.ThresholdFilteredTransfer) bool {
+			if !a.Timestamp.Equal(b.Timestamp) {
+				return a.Timestamp.Before(b.Timestamp) // Ascendente: Las más viejas primero
+			}
 
+			return a.Amount > b.Amount // Descendente: Las más caras primero
+		})
 		queryResult := transaction.QueryResult{
 			QueryID:      transaction.Query3,
 			Transactions: transactions,

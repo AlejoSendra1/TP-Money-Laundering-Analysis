@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
@@ -137,11 +138,19 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 				ToBank:      transactionRecord.ToBank,
 				ToAccount:   transactionRecord.ToAccount,
 				Amount:      transactionRecord.Amount,
+				Timestamp:   transactionRecord.Timestamp,
 			})
 		}
 	}
 
 	if len(transactions) != 0 {
+		batch_utils.SortBatch(transactions, func(a, b transaction.LowAmountTransfer) bool {
+			if !a.Timestamp.Equal(b.Timestamp) {
+				return a.Timestamp.Before(b.Timestamp) // Ascendente: Las más viejas primero
+			}
+
+			return a.Amount > b.Amount // Descendente: Las más caras primero
+		})
 		queryResult := transaction.QueryResult{
 			QueryID:      transaction.Query1,
 			Transactions: transactions,
