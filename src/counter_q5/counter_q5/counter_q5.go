@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"tp_distribuidos/common/batch_utils"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -212,6 +213,9 @@ func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error 
 	if len(records) == 0 {
 		return nil
 	}
+	batch_utils.SortBatch(records, func(a, b transaction.PaymentFormatCount) bool {
+		return a.Count < b.Count
+	})
 	queryResult := transaction.QueryResult{
 		QueryID:      transaction.Query5,
 		Transactions: records,
