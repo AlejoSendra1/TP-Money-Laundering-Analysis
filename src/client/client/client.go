@@ -2,7 +2,6 @@ package client
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -162,18 +161,6 @@ func (client *Client) handleSignals() {
 	client.conn.Close()
 }
 
-func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
-	msgType, err := external.ReadMsgType(client.conn)
-	if err != nil {
-		slog.Error("Error while reading message type", "err", err)
-		return err
-	}
-	if msgType != expectedMsgType {
-		return errors.New("Unexpected message type")
-	}
-	return nil
-}
-
 func (client *Client) sendBatch(batch []transaction.Transaction) error {
 	if len(batch) == 0 {
 		return nil
@@ -236,19 +223,6 @@ func (client *Client) sendTransactionRecords() error {
 	return nil
 }
 
-func (client *Client) expectEndOfRecords() error {
-	msgType, err := external.ReadMsgType(client.conn)
-	if err != nil {
-		slog.Error("While reading message type for queries result EOF", "err", err)
-		return err
-	}
-	if msgType != external.EndOfRecords {
-		slog.Info("Expected EndOfRecords message type after reading queries result, got", "msgType", msgType)
-		return fmt.Errorf("expected EndOfRecords message type after reading queries result, got %d", msgType)
-	}
-	return nil
-}
-
 // ---- HELPERS ----
 
 func (client *Client) readUint32() (uint32, error) {
@@ -257,38 +231,6 @@ func (client *Client) readUint32() (uint32, error) {
 		return 0, err
 	}
 	return serializer.DeserializeUint32(bytes), nil
-}
-
-func (client *Client) readUint64AsInt(fieldName string) (int, error) {
-	bytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE)
-	if err != nil {
-		slog.Info("While reading field", "field", fieldName, "err", err)
-		return 0, err
-	}
-	return int(serializer.DeserializeUint64(bytes)), nil
-}
-
-func (client *Client) readLengthPrefixedString(fieldName string) (string, error) {
-	length, err := client.readUint32()
-	if err != nil {
-		slog.Info("While reading string length", "field", fieldName, "err", err)
-		return "", err
-	}
-	bytes, err := safeio.ReadAll(client.conn, length)
-	if err != nil {
-		slog.Info("While reading string bytes", "field", fieldName, "err", err)
-		return "", err
-	}
-	return serializer.DeserializeString(bytes), nil
-}
-
-func (client *Client) readFloat64(fieldName string) (float64, error) {
-	bytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE)
-	if err != nil {
-		slog.Info("While reading field", "field", fieldName, "err", err)
-		return 0, err
-	}
-	return serializer.DeserializeFloat64(bytes), nil
 }
 
 func (Client *Client) handleQueryResponse(queryCode uint32) error {
