@@ -8,6 +8,7 @@ services:
     - usd_filter_0
     - usd_filter_1
     environment:
+    - ID=0
     - BATCH_SIZE=200
     - INPUT_FILE=/datasets/LI-Small_Trans.csv
     - OUTPUT_FILE=/output/output.csv
@@ -17,6 +18,7 @@ services:
     volumes:
     - ./datasets:/datasets
     - ./output:/output
+    - ./persistence:/persistence 
   q2_counter_0:
     build:
       context: ./src/

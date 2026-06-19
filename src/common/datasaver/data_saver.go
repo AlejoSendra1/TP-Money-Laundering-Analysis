@@ -11,6 +11,9 @@ import (
 	"tp_distribuidos/common/worker"
 )
 
+// PARA RESTAURAR A UN WORKER CAIDO USAR
+// RESTAURATE=TRUE (creando la lectura de la env var primero)
+
 const RESTORATION_FILE_SUFIX = "_restoration_point" + ".txt"
 
 type DataSaver struct {
