@@ -8,6 +8,7 @@ import (
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
 
 const FANOUT = ""
@@ -64,43 +65,21 @@ func (join *Join) Run() {
 }
 
 func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	//slog.Info("Received msg", "body", middlewareMsg.Body)
-	msg, err := inner.DeserializeMessage(middlewareMsg)
-	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
-	}
-
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		slog.Info("Received msg", "type", "EOF")
-		_, sender, err := inner.DeserializeEOR(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-
-		if err := join.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-	case inner.PossibleFraudDestinations:
-
-		if err := join.handlePossibleFraudDestinationsMessage(msg.ClientID, msg.Data); err != nil {
-			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-	default:
-		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
-	}
-	ack()
+	worker.HandleMessage(middlewareMsg, ack, nack,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:              join.handleEndOfRecordMessage,
+			inner.PossibleFraudDestinations: join.handlePossibleFraudDestinationsMessage,
+		},
+	)
 }
 
-func (join *Join) handleEndOfRecordMessage(clientID int64, sender string) error {
+func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
+	slog.Info("Received msg", "type", "EOF")
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
+		return err
+	}
 	slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
 
 	join.updateClientEORCondition(clientID, sender)

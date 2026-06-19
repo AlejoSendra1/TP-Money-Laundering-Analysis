@@ -64,7 +64,7 @@ func DeserializeMessage(message *middleware.Message) (*MessageClient, error) {
 	return &messageClient, nil
 }
 
-func SerializeEOF(clientId int64, mustPropagate bool, sender string) (*middleware.Message, error) {
+func SerializeEOR(clientId int64, mustPropagate bool, sender string) (*middleware.Message, error) {
 	//slog.Info("serializando eof")
 	data := []interface{}{}
 
