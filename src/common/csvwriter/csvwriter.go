@@ -226,7 +226,7 @@ func (c *CSVWriter) writeQ3Result(data []interface{}) error {
 	records := data[0].([]interface{})
 	for _, rec := range records {
 		fields, ok := rec.([]interface{})
-		if !ok || len(fields) != 4 {
+		if !ok || len(fields) != 5 {
 			return fmt.Errorf("q3: invalid record structure: %v", rec)
 		}
 		fromBank, ok1 := fields[0].(float64)
