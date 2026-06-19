@@ -148,8 +148,11 @@ func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
 		return err
 	}
 
-	//slog.Info("Writing q1 result", "data", data)
-	for _, transaction := range data {
+	records, ok := data[0].([]interface{})
+	if !ok {
+		return fmt.Errorf("q2: expected nested []interface{}, got %T", data[0])
+	}
+	for _, transaction := range records {
 		fields, ok := transaction.([]interface{})
 		if !ok {
 			slog.Error("While writing q1 result", "data", data)
@@ -223,7 +226,7 @@ func (c *CSVWriter) writeQ3Result(data []interface{}) error {
 	records := data[0].([]interface{})
 	for _, rec := range records {
 		fields, ok := rec.([]interface{})
-		if !ok || len(fields) != 4 {
+		if !ok || len(fields) != 5 {
 			return fmt.Errorf("q3: invalid record structure: %v", rec)
 		}
 		fromBank, ok1 := fields[0].(float64)

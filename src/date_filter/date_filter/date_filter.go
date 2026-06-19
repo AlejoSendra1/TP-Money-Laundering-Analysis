@@ -144,7 +144,7 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 
 func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Received End Of Records message", "clientID", clientID)
-	msg, err := inner.SerializeEOF(clientID, false, sender)
+	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
@@ -217,8 +217,7 @@ func (dateFilter *DateFilter) handleControlMessage(middlewareMsg *middleware.Mes
 		return
 	}
 
-
-	msgEOF, err := inner.SerializeEOF(clientID, true, fmt.Sprintf("%d", dateFilter.config.Id)) // TO DO agregar otra var de entorno y para group tmb
+	msgEOF, err := inner.SerializeEOR(clientID, true, fmt.Sprintf("%d", dateFilter.config.Id)) // TO DO agregar otra var de entorno y para group tmb
 
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)

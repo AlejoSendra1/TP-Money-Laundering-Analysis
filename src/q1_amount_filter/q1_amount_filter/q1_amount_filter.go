@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
@@ -137,12 +138,24 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 				ToBank:      transactionRecord.ToBank,
 				ToAccount:   transactionRecord.ToAccount,
 				Amount:      transactionRecord.Amount,
+				Timestamp:   transactionRecord.Timestamp,
 			})
 		}
 	}
 
 	if len(transactions) != 0 {
-		if err := q1AmountFilter.sendOutput(clientID, transactions); err != nil {
+		batch_utils.SortBatch(transactions, func(a, b transaction.LowAmountTransfer) bool {
+			if !a.Timestamp.Equal(b.Timestamp) {
+				return a.Timestamp.Before(b.Timestamp) // Ascendente: Las más viejas primero
+			}
+
+			return a.Amount > b.Amount // Descendente: Las más caras primero
+		})
+		queryResult := transaction.QueryResult{
+			QueryID:      transaction.Query1,
+			Transactions: transactions,
+		}
+		if err := q1AmountFilter.sendOutput(clientID, queryResult); err != nil {
 			return err
 		}
 	}
@@ -168,7 +181,7 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 		ack()
 		return
 	}
-	msgEof, err := inner.SerializeQueryEOR(clientID, transaction.Query1) // TO DO agregar otra var de entorno y para group tmb
+	msgEof, err := inner.SerializeQueryEOR(clientID, transaction.Query1, fmt.Sprintf("%d", q1AmountFilter.config.Id)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
 		nack()
@@ -185,8 +198,8 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 	ack()
 }
 
-func (q1AmountFilter *Q1AmountFilter) sendOutput(clientID int64, queryResult []transaction.LowAmountTransfer) error {
-	message, err := inner.SerializeQuery1ResultMessage(clientID, queryResult)
+func (q1AmountFilter *Q1AmountFilter) sendOutput(clientID int64, queryResult transaction.QueryResult) error {
+	message, err := inner.SerializeQueryResultMessage(clientID, queryResult)
 	if err != nil {
 		slog.Debug("While serializing data message", "err", err, "clientID", clientID)
 		return err

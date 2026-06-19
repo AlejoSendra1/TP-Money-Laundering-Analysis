@@ -33,6 +33,7 @@ type LowAmountTransfer struct {
 	ToBank      int
 	ToAccount   string
 	Amount      float64
+	Timestamp   time.Time
 }
 type PaymentFormatAverage struct {
 	PaymentFormat string
@@ -50,6 +51,7 @@ type ThresholdFilteredTransfer struct {
 	FromAccount   string
 	PaymentFormat string
 	Amount        float64
+	Timestamp     time.Time
 }
 type QueryResult struct {
 	QueryID      QueryID
