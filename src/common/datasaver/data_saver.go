@@ -190,6 +190,9 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 	}
 
 	scanner := bufio.NewScanner(ds.file)
+	const maxCapacity = 10 * 1024 * 1024 // 10 MB
+	buf := make([]byte, bufio.MaxScanTokenSize)
+	scanner.Buffer(buf, maxCapacity)
 	ds.reader = scanner
 
 	if !scanner.Scan() {
@@ -225,7 +228,11 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 // lee cada batch y lo parsea in place en la variable indicada por parametro
 func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 	if ds.reader == nil {
-		ds.reader = bufio.NewScanner(ds.file)
+		scanner := bufio.NewScanner(ds.file)
+		const maxCapacity = 10 * 1024 * 1024 // 10 MB
+		buf := make([]byte, bufio.MaxScanTokenSize)
+		scanner.Buffer(buf, maxCapacity)
+		ds.reader = scanner
 	}
 
 	// Scan through the file line by line
