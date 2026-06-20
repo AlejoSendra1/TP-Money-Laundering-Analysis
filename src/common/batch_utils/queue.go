@@ -1,32 +1,32 @@
 package batch_utils
 
 type queue struct {
-	buffer  []BatchID
-	head    int
-	size    int
-	maxSize int
+	Buffer  []BatchID `json:"buffer"`
+	Head    int       `json:"head"`
+	Size    int       `json:"size"`
+	MaxSize int       `json:"maxSize"`
 }
 
 func newQueue(maxSize int) *queue {
 	return &queue{
-		buffer:  make([]BatchID, maxSize),
-		maxSize: maxSize,
+		Buffer:  make([]BatchID, maxSize),
+		MaxSize: maxSize,
 	}
 }
 
 func (q *queue) isFull() bool {
-	return q.size == q.maxSize
+	return q.Size == q.MaxSize
 }
 
 func (q *queue) push(val BatchID) {
-	tail := (q.head + q.size) % q.maxSize
-	q.buffer[tail] = val
-	q.size++
+	tail := (q.Head + q.Size) % q.MaxSize
+	q.Buffer[tail] = val
+	q.Size++
 }
 
 func (q *queue) pop() BatchID {
-	val := q.buffer[q.head]
-	q.head = (q.head + 1) % q.maxSize
-	q.size--
+	val := q.Buffer[q.Head]
+	q.Head = (q.Head + 1) % q.MaxSize
+	q.Size--
 	return val
 }
