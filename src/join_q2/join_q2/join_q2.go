@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"tp_distribuidos/common/batch_utils"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -171,6 +172,9 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 			end = len(rows)
 		}
 		chunk := rows[i:end]
+		batch_utils.SortBatch(chunk, func(a, b transaction.MaxBankTransaction) bool {
+			return a.Amount > b.Amount
+		})
 		msg, err := inner.SerializeQueryResultMessage(clientID, transaction.QueryResult{
 			QueryID:      transaction.Query2,
 			Transactions: chunk,
@@ -189,7 +193,7 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 // sendEOF sends an EOF marker to the output queue.
 func (joinQ2 *JoinQ2) sendEOF(clientID int64) error {
 
-	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query2)
+	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query2, fmt.Sprintf("%d", joinQ2.config.ID))
 	if err != nil {
 		return fmt.Errorf("serializing EOF: %w", err)
 	}

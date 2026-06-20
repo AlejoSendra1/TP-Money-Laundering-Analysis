@@ -8,11 +8,14 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/transaction"
+
+	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/common/messageprotocol/external"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/middleware"
-	"tp_distribuidos/common/transaction"
 
 	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/messagehandler"
@@ -44,6 +47,7 @@ type Gateway struct {
 	listener       net.Listener
 	running        atomic.Bool
 	config         GatewayConfig
+	deduplicator   *batch_utils.MultiClientDeduplicator
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -73,6 +77,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		outputExchange: outputExchange,
 		listener:       listener,
 		config:         config,
+		deduplicator:   batch_utils.NewMultiClientDeduplicator(1000),
 	}
 	gateway.running.Store(true)
 	return gateway, nil
@@ -237,6 +242,13 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		return
 	}
 
+	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
+	if gateway.deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
+		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
+		ack()
+		return
+	}
+
 	// Procesamos y enviamos AFUERA del lock del registro
 	switch msg.MsgType {
 	case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
@@ -286,6 +298,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			slog.Info("Client received all result queries, removing from registry", "clientID", msg.ClientID)
 			// Removemos usando el índice detectado previamente
 			gateway.registry.Remove(msg.ClientID)
+			gateway.deduplicator.RemoveClient(int(msg.ClientID))
 		}
 
 	default:

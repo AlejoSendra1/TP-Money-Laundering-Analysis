@@ -239,6 +239,7 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 			FromAccount:   tx.FromAccount,
 			PaymentFormat: tx.PaymentFormat,
 			Amount:        tx.Amount,
+			Timestamp:     tx.Timestamp,
 		})
 	}
 

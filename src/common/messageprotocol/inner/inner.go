@@ -218,11 +218,13 @@ func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers
 	serializedRecords := []interface{}{}
 
 	for _, rec := range bankPeakTransfers {
+		formattedTimestamp := rec.Timestamp.Format("2006/01/02 15:04")
 		datum := []interface{}{
 			rec.FromBank,
 			rec.FromAccount,
 			rec.PaymentFormat,
 			rec.Amount,
+			formattedTimestamp,
 		}
 		serializedRecords = append(serializedRecords, datum)
 	}
@@ -244,15 +246,20 @@ func DeserializeThresholdFilteredTransferMessage(message *middleware.Message) (i
 	records := make([]transaction.ThresholdFilteredTransfer, 0, len(messageClient.Data))
 	for _, datum := range messageClient.Data {
 		fields, ok := datum.([]interface{})
-		if !ok || len(fields) != 4 {
+		if !ok || len(fields) != 5 {
 			return 0, nil, false, fmt.Errorf("invalid structure inside payment format average record")
 		}
-
+		timestamp := fields[4].(string)
+		parsedTime, err := time.Parse("2006/01/02 15:04", timestamp)
+		if err != nil {
+			return 0, nil, false, fmt.Errorf("invalid timestamp %q: %w", timestamp, err)
+		}
 		rec := transaction.ThresholdFilteredTransfer{
 			FromBank:      int(fields[0].(float64)),
 			FromAccount:   fields[1].(string),
 			PaymentFormat: fields[2].(string),
 			Amount:        fields[3].(float64),
+			Timestamp:     parsedTime,
 		}
 		records = append(records, rec)
 	}
@@ -343,7 +350,8 @@ func serializeQuery1(qr transaction.QueryResult) ([]interface{}, error) {
 		return nil, fmt.Errorf("serializeQuery1: unexpected transactions type: %T", qr.Transactions)
 	}
 	for _, r := range records {
-		datum := []interface{}{r.FromBank, r.FromAccount, r.ToBank, r.ToAccount, r.Amount}
+		formattedTimestamp := r.Timestamp.Format("2006/01/02 15:04")
+		datum := []interface{}{r.FromBank, r.FromAccount, r.ToBank, r.ToAccount, r.Amount, formattedTimestamp}
 		serialized = append(serialized, datum)
 	}
 	return serialized, nil
@@ -353,8 +361,13 @@ func deserializeQuery1(records []interface{}) (interface{}, error) {
 	transactions := make([]transaction.LowAmountTransfer, 0, len(records))
 	for _, datum := range records {
 		fields, ok := datum.([]interface{})
-		if !ok || len(fields) != 5 {
+		if !ok || len(fields) != 6 {
 			return nil, fmt.Errorf("deserializing invalid structure for results query 1")
+		}
+		timestamp := fields[5].(string)
+		parsedTime, err := time.Parse("2006/01/02 15:04", timestamp)
+		if err != nil {
+			return transaction.Transaction{}, fmt.Errorf("invalid timestamp %q: %w", timestamp, err)
 		}
 		tx := transaction.LowAmountTransfer{
 			FromBank:    int(fields[0].(float64)),
@@ -362,6 +375,7 @@ func deserializeQuery1(records []interface{}) (interface{}, error) {
 			ToBank:      int(fields[2].(float64)),
 			ToAccount:   fields[3].(string),
 			Amount:      fields[4].(float64),
+			Timestamp:   parsedTime,
 		}
 		transactions = append(transactions, tx)
 	}
@@ -626,7 +640,8 @@ func serializeQuery3(qr transaction.QueryResult) ([]interface{}, error) {
 		return nil, fmt.Errorf("serializeQuery3: unexpected transactions type: %T", qr.Transactions)
 	}
 	for _, r := range records {
-		datum := []interface{}{r.FromBank, r.FromAccount, r.PaymentFormat, r.Amount}
+		formattedTimestamp := r.Timestamp.Format("2006/01/02 15:04")
+		datum := []interface{}{r.FromBank, r.FromAccount, r.PaymentFormat, r.Amount, formattedTimestamp}
 		serialized = append(serialized, datum)
 	}
 	return serialized, nil
@@ -636,14 +651,20 @@ func deserializeQuery3(records []interface{}) (interface{}, error) {
 	transactions := make([]transaction.ThresholdFilteredTransfer, 0, len(records))
 	for _, datum := range records {
 		fields, ok := datum.([]interface{})
-		if !ok || len(fields) != 4 {
+		if !ok || len(fields) != 5 {
 			return nil, fmt.Errorf("deserializing invalid structure for results query 3")
+		}
+		timestamp := fields[4].(string)
+		parsedTime, err := time.Parse("2006/01/02 15:04", timestamp)
+		if err != nil {
+			return 0, fmt.Errorf("invalid timestamp %q: %w", timestamp, err)
 		}
 		tx := transaction.ThresholdFilteredTransfer{
 			FromBank:      int(fields[0].(float64)),
 			FromAccount:   fields[1].(string),
 			PaymentFormat: fields[2].(string),
 			Amount:        fields[3].(float64),
+			Timestamp:     parsedTime,
 		}
 		transactions = append(transactions, tx)
 	}
@@ -863,9 +884,10 @@ func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryRe
 	return &message, nil
 }
 
-func SerializeQueryEOR(clientID int64, queryID transaction.QueryID) (*middleware.Message, error) {
+func SerializeQueryEOR(clientID int64, queryID transaction.QueryID, sender string) (*middleware.Message, error) {
 	data := []interface{}{
 		int(queryID),
+		sender,
 	}
 
 	body, err := SerializeJson(MessageClient{ClientID: clientID, MsgType: EndOfRecords, Data: data})
