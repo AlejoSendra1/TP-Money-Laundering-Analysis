@@ -91,6 +91,7 @@ func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.Clie
 		slog.Error("While sending data message", "err", err)
 		return err
 	}
+	gateway.registry.IncrementSequenceNumber(client.Handler.UserId)
 
 	return nil
 }
@@ -125,7 +126,7 @@ func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
 }
 
 func (gateway *Gateway) mustProcess(client clientregistry.ClientState, secNum int64) bool {
-	secuenceNumberToReceive := gateway.registry.GetAndIncrementSequence(client.Handler.UserId)
+	secuenceNumberToReceive := gateway.registry.GetSecuenceNumber(client.Handler.UserId)
 	if secNum != secuenceNumberToReceive {
 		slog.Error("Un mensaje recibido se ha salteado uno o mas numeros de secuencia", "Recibido", secNum, "Esperado", secuenceNumberToReceive)
 	}

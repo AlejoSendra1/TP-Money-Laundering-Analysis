@@ -57,6 +57,19 @@ func (registry *ClientRegistry) GetAndIncrementSequence(clientID int64) int64 {
 	return seq
 }
 
+func (registry *ClientRegistry) GetSecuenceNumber(clientID int64) int64 {
+	registry.mutex.Lock()
+	defer registry.mutex.Unlock()
+	seq := registry.sequenceNumbersByClient[clientID]
+	return seq
+}
+
+func (registry *ClientRegistry) IncrementSequenceNumber(clientID int64) {
+	registry.mutex.Lock()
+	defer registry.mutex.Unlock()
+	registry.sequenceNumbersByClient[clientID]++
+}
+
 func (registry *ClientRegistry) UserSentEOF(clientID int64) bool {
 	registry.mutex.Lock()
 	defer registry.mutex.Unlock()

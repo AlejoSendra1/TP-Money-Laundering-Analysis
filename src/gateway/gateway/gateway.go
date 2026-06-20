@@ -117,6 +117,7 @@ func (gateway *Gateway) Run() error {
 		var client clientregistry.ClientState
 		gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
 			if c, ok := clients[clientId]; ok {
+				c.Conn.Close()
 				c.Conn = conn
 				isAnOldClient = true
 				client = *c
