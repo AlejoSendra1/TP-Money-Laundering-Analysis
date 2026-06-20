@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"log/slog"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
 	"tp_distribuidos/common/worker"
 )
+
+const LogsUntilCheckpoint = 250
+const MaxBatchSize = 1000
 
 type PromediatorConfig struct {
 	Id                 int
@@ -21,6 +25,12 @@ type PromediatorConfig struct {
 	PromediatorPrefix  string
 }
 
+type CheckpointData struct {
+	PaymentFormatAverage map[int64]map[string]transaction.PaymentFormatAverage `json:"topByClient"`
+	EofCounter           map[int64]batch_utils.Set[string]                     `json:"eofCounter"`
+	Deduplicator         *batch_utils.MultiClientDeduplicator                  `json:"deduplicator"`
+}
+
 type Promediator struct {
 	inputExchange    middleware.Middleware
 	outputExchange   middleware.Middleware
@@ -28,6 +38,7 @@ type Promediator struct {
 	eofCounter       map[int64]batch_utils.Set[string]
 	config           PromediatorConfig
 	deduplicator     *batch_utils.MultiClientDeduplicator
+	dataSaver        *datasaver.DataSaver
 }
 
 func NewPromediator(config PromediatorConfig) (*Promediator, error) {
@@ -43,15 +54,27 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		inputExchange.Close()
 		return nil, err
 	}
-
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", config.PromediatorPrefix, config.Id), LogsUntilCheckpoint)
+	if err != nil {
+		return nil, err
+	}
 	return &Promediator{
 		inputExchange:    inputExchange,
 		outputExchange:   outputExchange,
 		paymentFormatAvg: make(map[int64]map[string]transaction.PaymentFormatAverage),
 		eofCounter:       make(map[int64]batch_utils.Set[string]),
 		config:           config,
-		deduplicator:     batch_utils.NewMultiClientDeduplicator(1000),
+		deduplicator:     batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
+		dataSaver:        dataSaver,
 	}, nil
+}
+
+func (promediator *Promediator) GetCheckpointData() any {
+	return CheckpointData{
+		PaymentFormatAverage: promediator.paymentFormatAvg,
+		EofCounter:           promediator.eofCounter,
+		Deduplicator:         promediator.deduplicator,
+	}
 }
 
 func (promediator *Promediator) Run() {
@@ -72,7 +95,7 @@ func (promediator *Promediator) handleMessage(middlewareMsg *middleware.Message,
 		nack()
 		return
 	}
-
+	promediator.dataSaver.Save(middlewareMsg, promediator) // persistencia de datos
 	ack()
 }
 
@@ -180,4 +203,46 @@ func (promediator *Promediator) getPaymentFormats(clientID int64) []transaction.
 		result = append(result, avg)
 	}
 	return result
+}
+
+func (promediator *Promediator) Restaurate() error {
+	// primero restauramos el checkpoint
+	var checkpoint CheckpointData
+
+	thereIsCheckpoint, err := promediator.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil { // habria q agregar retrys?
+		return err
+	}
+	if thereIsCheckpoint == true {
+		slog.Info("cargando en base a checkpoint")
+		promediator.paymentFormatAvg = checkpoint.PaymentFormatAverage
+		promediator.eofCounter = checkpoint.EofCounter
+		promediator.deduplicator = checkpoint.Deduplicator
+	}
+
+	var savedDataVar middleware.Message
+	var thereIsLogs bool
+
+	for {
+		thereIsLogs, err = promediator.dataSaver.GetDataFromLogs(&savedDataVar)
+		if err != nil { // habria q modificar para retrys
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+		err = worker.HandleMessageV3(
+			&savedDataVar,
+			worker.MessageHandlerMap{
+				inner.EndOfRecords:     promediator.handleEndOfRecords,
+				inner.TransactionBatch: promediator.handleTransactionBatch,
+			},
+			promediator.deduplicator,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
