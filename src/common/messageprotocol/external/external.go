@@ -22,6 +22,7 @@ const (
 	ConnectionMsg
 	ConnectionResponseMsg
 	ReconnectionMsg
+	ResponseAck
 )
 
 func writeMsgType(writer io.Writer, msgType MsgType) error { // no modif
@@ -39,38 +40,52 @@ func ReadMsgType(reader io.Reader) (MsgType, error) { // no modif
 	return msgType, nil
 }
 
-func WriteTransactionBatch(writer io.Writer, transactionBatch []transaction.Transaction) error { // no modif
+// --------------- TransactionBatch ---------------
+func WriteTransactionBatch(writer io.Writer, batchSecuenceNumber int64, transactionBatch []transaction.Transaction) error { // no modif
 	msg := serializer.SerializeUint32(uint32(TransactionBatch))
+	secNum := serializer.SerializeUint64(uint64(batchSecuenceNumber))
 	serial, err := serializer.SerializeTransactions(transactionBatch)
 	if err != nil {
 		return err
 	}
+	msg = append(msg, secNum...)
 	msg = append(msg, serial...)
 	return safeio.WriteAll(writer, msg)
 }
 
-func ReadTransactionBatch(reader io.Reader) (*[]transaction.Transaction, error) {
+func ReadTransactionBatch(reader io.Reader) (*[]transaction.Transaction, int64, error) {
+	secNum, err := safeio.ReadAll(reader, serializer.UINT64_SIZE)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	serializedBytesToRead, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	bytesToRead := serializer.DeserializeUint32(serializedBytesToRead)
 
 	serializedTransactions, err := safeio.ReadAll(reader, bytesToRead)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	transactions, err := serializer.DeserializeTransactions(serializedTransactions)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return &transactions, nil
+	return &transactions, int64(serializer.DeserializeUint64(secNum)), nil
 }
+
+// ----
 
 func WriteAck(writer io.Writer) error {
 	return writeMsgType(writer, Ack)
+}
+
+func WriteResponseAck(writer io.Writer) error {
+	return writeMsgType(writer, ResponseAck)
 }
 
 func WriteEndOfRecords(writer io.Writer) error {

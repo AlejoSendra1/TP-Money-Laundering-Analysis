@@ -42,3 +42,9 @@ func sendConnectMsg(socket net.Conn) (int64, error) {
 	return id, external.WriteAck(socket)
 
 }
+
+func (c *Client) sendResponseAck() error {
+
+	external.WriteResponseAck(c.conn)
+	return nil
+}

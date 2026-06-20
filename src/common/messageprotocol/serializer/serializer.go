@@ -16,6 +16,8 @@ const UINT32_SIZE uint32 = 4
 const INT64_SIZE uint32 = 8
 const BOOL_SIZE uint32 = 1
 
+// Serializa como bytes todas las transacciones dadas y agrega al comienzo la cantidad de
+// bytes ocupados por todo el conjunto
 func SerializeTransactions(transactions []transaction.Transaction) ([]byte, error) {
 	data, err := json.Marshal(transactions)
 	if err != nil {

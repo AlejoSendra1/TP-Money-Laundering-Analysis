@@ -36,6 +36,7 @@ func loadConfig() (client.ClientConfig, error) {
 
 	var restorate bool
 	restorateStr := os.Getenv("RESTAURATE")
+	slog.Info("valor obtenido en restaurate", "val", restorateStr)
 	if restorateStr == "TRUE" {
 		restorate = true
 	} else {

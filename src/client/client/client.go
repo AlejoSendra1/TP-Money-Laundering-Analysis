@@ -44,14 +44,14 @@ type Client struct {
 	writer    csvwriter.CSVWriter
 	dataSaver *datasaver.DataSaver
 	// tolerance resistence data
-	assignedID        int64
-	batchesSentAmount int64
-	ackChan           chan struct{}
+	assignedID    int64
+	BatchesSecNum int64
+	ackChan       chan struct{}
 }
 
 type CheckpointData struct {
-	AssignedID        int64 `json:"assigned_id"`
-	BatchesSentAmount int64 `json:"batches_sent_amount"`
+	AssignedID    int64 `json:"assigned_id"`
+	BatchesSecNum int64 `json:"batches_sent_amount"`
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -91,7 +91,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		slog.Info("Connection was succefull", "Id recuperated", client.assignedID)
 
 	} else {
-		client.batchesSentAmount = 0
+		client.BatchesSecNum = 0
 		id, err := sendConnectMsg(conn) // para obtener un id en caso de desconexion
 		if err != nil {
 			return nil, err
@@ -100,6 +100,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		slog.Info("Connection was succefull", "Id assigned", client.assignedID)
 	}
 
+	client.dataSaver.SaveCheckpoint(client.GetCheckpointData()) // guardamos checkpoint de una para persistir el id
 	client.running.Store(true)
 	return client, nil
 }
@@ -124,6 +125,7 @@ func connectToServer(host, port string) (net.Conn, error) {
 func (client *Client) Run() error {
 	defer client.conn.Close()
 	defer client.writer.Close()
+	defer client.dataSaver.Close()
 	go client.handleSignals()
 
 	// Canal para avisar a la goroutine principal que la lectura terminó (con o sin error)
@@ -143,6 +145,7 @@ func (client *Client) Run() error {
 	}
 
 	// Esperamos a que la goroutine de lectura finalice por completo
+	slog.Info("Solo queda esperar resultados...")
 	if err := <-readDone; err != nil {
 		if client.running.Load() {
 			return fmt.Errorf("error en la rutina de lectura: %w", err)
@@ -166,9 +169,10 @@ func (client *Client) sendBatch(batch []transaction.Transaction) error {
 		return nil
 	}
 
-	if err := external.WriteTransactionBatch(client.conn, batch); err != nil { // implementar esta func
+	if err := external.WriteTransactionBatch(client.conn, client.BatchesSecNum, batch); err != nil { // implementar esta func
 		return err
 	}
+
 	return nil
 }
 
@@ -180,13 +184,14 @@ func (client *Client) sendTransactionRecords() error {
 		return err
 	}
 
-	transactionsReader, err := transactionsfilereader.NewTransactionsFileReader(client.config.InputFile, batchSize, client.batchesSentAmount)
+	transactionsReader, err := transactionsfilereader.NewTransactionsFileReader(client.config.InputFile, batchSize, client.BatchesSecNum)
 	defer transactionsReader.Close()
 	if err != nil {
 		slog.Info("Error opening transactions file for reading", "err", err)
 		return err
 	}
 
+	slog.Info("Comenzando el envio de transacciones...")
 	for {
 		records, err := transactionsReader.GetTransactionRecords()
 		if err != nil {
@@ -202,23 +207,29 @@ func (client *Client) sendTransactionRecords() error {
 		}
 
 		// wait for recvManager to signal the ACK arrived
+		slog.Info("Esperando ack...")
 		if _, ok := <-client.ackChan; !ok {
 			return fmt.Errorf("ack channel closed unexpectedly")
 		}
+		slog.Info("Ack recibido")
 
 		// por cada linea se va a representar un batch enviado,
 		//  osea, batch_size transacciones enviadas de arriba para para abajo
 		var b byte
 		b = 1
-		client.batchesSentAmount++
 		client.dataSaver.Save(b, client)
+		client.BatchesSecNum++
 	}
 
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
 		return err
 	}
 
-	slog.Info("Batches enviados", "val", client.batchesSentAmount)
+	if _, ok := <-client.ackChan; !ok {
+		return fmt.Errorf("ack channel closed unexpectedly")
+	}
+
+	slog.Info("Batches enviados", "val", client.BatchesSecNum)
 
 	return nil
 }
@@ -234,13 +245,10 @@ func (client *Client) readUint32() (uint32, error) {
 }
 
 func (Client *Client) handleQueryResponse(queryCode uint32) error {
-	//slog.Info("Leyendo query")
-
 	toRead, err := Client.readUint32()
 	if err != nil {
 		return err
 	}
-	//slog.Info("Bytes a leer", "value", toRead)
 
 	read, err := safeio.ReadAll(Client.conn, toRead)
 	if err != nil {
@@ -248,7 +256,6 @@ func (Client *Client) handleQueryResponse(queryCode uint32) error {
 	}
 
 	toWrite, err := serializer.DeserializeQueryResponse(read)
-	//slog.Info("Data obtenida", "value", toWrite)
 	if err != nil {
 		return err
 	}
@@ -297,10 +304,12 @@ func (client *Client) recvManager() error {
 
 		switch inner.MsgType(msgType) {
 
-		// 1. El Gateway nos devuelve el ACK de un batch que enviamos
-		case inner.MsgType(external.Ack): // Asegúrate de mapear bien tus constantes de protocolo
+		case inner.MsgType(external.Ack):
+			slog.Info("Notificando a la otra go rutine de la llegada del ack...")
 			client.ackChan <- struct{}{}
 			// Avisamos al otro hilo que puede considerar el msg como recibido.
+			slog.Info("Go rutine de envio notificada")
+			continue
 
 		// 2. Respuestas de Queries con JSON estructurado
 		case inner.Query2Response, inner.Query3Response, inner.Query5Response:
@@ -317,10 +326,17 @@ func (client *Client) recvManager() error {
 		// 4. Fin de todo el procesamiento (El Gateway nos avisa que no hay más respuestas)
 		case inner.EndOfRecords:
 			slog.Info("End of records total recibido del Gateway. Finalizando cliente.")
+			if err := client.sendResponseAck(); err != nil {
+				return err
+			}
 			return nil
 
 		default:
 			return fmt.Errorf("tipo de mensaje inesperado recibido en el cliente: %d", msgType)
+		}
+
+		if err := client.sendResponseAck(); err != nil {
+			return err
 		}
 	}
 }
@@ -329,8 +345,8 @@ func (client *Client) recvManager() error {
 
 func (client *Client) GetCheckpointData() any {
 	return CheckpointData{
-		AssignedID:        client.assignedID,
-		BatchesSentAmount: client.batchesSentAmount,
+		AssignedID:    client.assignedID,
+		BatchesSecNum: client.BatchesSecNum,
 	}
 }
 
@@ -345,7 +361,7 @@ func (client *Client) restaurateState() error {
 
 	slog.Info("Checkpoint levantado", "values", checkpoint)
 	client.assignedID = checkpoint.AssignedID
-	client.batchesSentAmount = checkpoint.BatchesSentAmount
+	client.BatchesSecNum = checkpoint.BatchesSecNum
 
 	// restauracion logs
 	// lo unico importante es que cada log representa un batch enviado, no se necesita mas info(no se haria nada con eso)
@@ -359,7 +375,7 @@ func (client *Client) restaurateState() error {
 			break
 		}
 
-		client.batchesSentAmount++
+		client.BatchesSecNum++
 	}
 
 	return nil

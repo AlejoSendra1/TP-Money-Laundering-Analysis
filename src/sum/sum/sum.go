@@ -124,7 +124,7 @@ func (sum *Sum) handleMessage(middlewareMsg *middleware.Message, ack func(), nac
 
 func (sum *Sum) handleEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Received End Of Records message", "clientID", clientID)
-	msg, err := inner.SerializeEOF(clientID, false, sender)
+	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
@@ -195,7 +195,7 @@ func (sum *Sum) handleControlMessage(middlewareMsg *middleware.Message, ack func
 	delete(sum.eofCounter, msg.ClientID)
 	sum.mu.Unlock()
 
-	msgToSend, err := inner.SerializeEOF(msg.ClientID, false, fmt.Sprintf("%d", sum.config.Id))
+	msgToSend, err := inner.SerializeEOR(msg.ClientID, false, fmt.Sprintf("%d", sum.config.Id))
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", msg.ClientID)
 		return

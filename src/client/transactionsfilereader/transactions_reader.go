@@ -40,9 +40,12 @@ func NewTransactionsFileReader(filepath string, batchSize int, batchesAlreadySen
 	//scanner.Scan() // para saltear la primera linea del archivo (saltea el header)
 
 	scanner := bufio.NewScanner(file)
+
+	slog.Info("salteando batches ya enviados....")
 	for range batchesAlreadySent * int64(batchSize) {
 		scanner.Scan()
 	}
+	slog.Info("Transacciones salteadas", "cantidad", batchesAlreadySent*int64(batchSize))
 
 	return &TransactionsFileReader{
 		file:      file,
@@ -58,7 +61,6 @@ func (tfr *TransactionsFileReader) Close() {
 func (trf *TransactionsFileReader) GetTransactionRecords() ([]transaction.Transaction, error) {
 	batch := make([]transaction.Transaction, 0, trf.batchSize)
 
-	//slog.Info("procesando transacciones")
 	for trf.scanner.Scan() {
 		columns := strings.Split(trf.scanner.Text(), ",")
 
@@ -74,6 +76,7 @@ func (trf *TransactionsFileReader) GetTransactionRecords() ([]transaction.Transa
 		}
 	}
 
+	slog.Info("Mandando batch a client - file reader")
 	return batch, nil
 }
 

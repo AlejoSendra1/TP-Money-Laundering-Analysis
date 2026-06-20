@@ -56,10 +56,14 @@ func (gateway *Gateway) getNewClientId() int64 {
 	id := rand.Int64()
 
 	// para asegurar que no se repitan los ids muy improbable pero bueno
-	for _, client := range *(gateway.registry.GetClients()) {
-		if client.Handler.UserId == id {
-			return gateway.getNewClientId()
+	var clientExists bool
+	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
+		if _, ok := clients[id]; ok {
+			clientExists = ok
 		}
+	})
+	if clientExists {
+		return gateway.getNewClientId()
 	}
 
 	return id
@@ -68,35 +72,43 @@ func (gateway *Gateway) getNewClientId() int64 {
 // ------------------------  Handlers de msgs recibidos ---------------------------------------------------------------
 
 func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
-	transactions, err := external.ReadTransactionBatch(client.Conn)
+	transactions, secNum, err := external.ReadTransactionBatch(client.Conn)
 	if err != nil {
-		slog.Info("While reading transaction batch", "err", err)
-		return err
-	}
-	message, err := client.Handler.SerializeDataMessage(*transactions)
-	if err != nil {
-		slog.Info("While serializing data message", "err", err)
-		return err
-	}
-	if err := gateway.outputExchange.Send(*message); err != nil {
-		slog.Info("While sending data message", "err", err)
+		slog.Error("While reading transaction batch", "err", err)
 		return err
 	}
 
-	gateway.batchCounter += 1
+	if !gateway.mustProcess(client, secNum) {
+		return nil
+	}
+
+	message, err := client.Handler.SerializeDataMessage(*transactions)
+	if err != nil {
+		slog.Error("While serializing data message", "err", err)
+		return err
+	}
+	if err := gateway.outputExchange.Send(*message); err != nil {
+		slog.Error("While sending data message", "err", err)
+		return err
+	}
+
 	return nil
 }
 
 func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientState) error {
 	slog.Info("Received END_OF_RECORDS message")
 
+	if gateway.registry.UserSentEOF(client.Handler.UserId) {
+		return nil
+	}
+
 	message, err := client.Handler.SerializeEORMessage()
 	if err != nil {
-		slog.Info("While serializing END_OF_RECORDS message", "err", err)
+		slog.Error("While serializing END_OF_RECORDS message", "err", err)
 		return err
 	}
 	if err := gateway.outputExchange.Send(*message); err != nil {
-		slog.Info("While sending eof message", "err", err)
+		slog.Error("While sending eof message", "err", err)
 		return err
 	}
 
@@ -104,9 +116,18 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 }
 
 func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
+	slog.Info("Enviando algo al cliente")
 	if err := safeio.WriteAll(socket, data); err != nil {
 		slog.Error("While writing queries result message", "err", err)
 		return fmt.Errorf("While writing queries result message: %w", err)
 	}
 	return nil
+}
+
+func (gateway *Gateway) mustProcess(client clientregistry.ClientState, secNum int64) bool {
+	secuenceNumberToReceive := gateway.registry.GetAndIncrementSequence(client.Handler.UserId)
+	if secNum != secuenceNumberToReceive {
+		slog.Error("Un mensaje recibido se ha salteado uno o mas numeros de secuencia", "Recibido", secNum, "Esperado", secuenceNumberToReceive)
+	}
+	return secNum == secuenceNumberToReceive
 }

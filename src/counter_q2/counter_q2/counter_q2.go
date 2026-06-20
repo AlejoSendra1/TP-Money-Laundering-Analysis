@@ -20,7 +20,7 @@ import (
 
 const LOGS_UNTIL_CHECKPOINT = 250
 
-//docker compose run q2_counter_0 -e RESTAURATE="TRUE"
+//docker compose run -e RESTAURATE="TRUE" q2_counter_0
 
 type CounterQ2Config struct {
 	ID              int
