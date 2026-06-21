@@ -206,6 +206,7 @@ func (client *Client) sendTransactionRecords() error {
 		}
 
 		if len(records) == 0 {
+			slog.Info("No hay mas para mandar...")
 			break
 		}
 		if err := client.sendBatch(records); err != nil {
@@ -241,30 +242,6 @@ func (client *Client) sendTransactionRecords() error {
 	return nil
 }
 
-/*
-	func (client *Client) handleQueryResponse(queryCode uint32) error {
-		toRead, err := client.readUint32()
-		if err != nil {
-			return err
-		}
-
-		read, err := safeio.ReadAll(client.conn, toRead)
-		if err != nil {
-			return err
-		}
-
-		receivedResultSecuenceNumber, toWrite, err := serializer.DeserializeQueryResponse(read)
-		if err != nil {
-			return err
-		}
-		if receivedResultSecuenceNumber != client.ReceivingSecNum {
-			slog.Warn("Se recibio un numero de secuencia diferente al esperado", "esperado", client.ReceivingSecNum, "recibido", receivedResultSecuenceNumber)
-			return nil
-		}
-
-		return client.writer.WriteResult(queryCode, toWrite)
-	}
-*/
 func (client *Client) handleQueryResponse(queryCode uint32) error {
 	secNumBytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE) // numero de secuencia del msg
 	if err != nil {
@@ -354,7 +331,9 @@ func (client *Client) recvManager() error {
 
 		// 4. Fin de todo el procesamiento (El Gateway nos avisa que no hay más respuestas)
 		case inner.EndOfRecords:
+			datasaver.Crash(datasaver.CrashBeforeEOF)
 			slog.Info("End of records total recibido del Gateway. Finalizando cliente.")
+
 			if err := client.sendResponseAck(); err != nil {
 				return err
 			}

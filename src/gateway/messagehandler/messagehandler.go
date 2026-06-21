@@ -56,7 +56,7 @@ func (messageHandler *MessageHandler) HandleQueryEOR(message *inner.MessageClien
 			"current_count", currentCount,
 			"expected_count", expectedCount,
 		)
-		return false, nil
+		return true, nil
 	}
 	messageHandler.eorCountByQuery[queryID]++
 	slog.Info("EOR received for query",

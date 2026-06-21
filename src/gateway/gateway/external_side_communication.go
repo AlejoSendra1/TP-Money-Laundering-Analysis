@@ -13,7 +13,7 @@ import (
 func (gateway *Gateway) handleClientConnection(socket net.Conn) (int64, error) {
 	msgType, err := external.ReadMsgType(socket)
 	if err != nil {
-		slog.Error("While reading message type", "err", err)
+		slog.Error("While reading message type handling client connection", "err", err)
 		return 0, err
 	}
 
@@ -100,6 +100,7 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 	slog.Info("Received END_OF_RECORDS message")
 
 	if gateway.registry.UserSentEOF(client.Handler.UserId) {
+		slog.Info("No es necesario enviar el eor, ya fue enviado")
 		return nil
 	}
 

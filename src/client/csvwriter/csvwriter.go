@@ -81,15 +81,26 @@ func (c *CSVWriter) getQueryWriter(queryName string) (*csv.Writer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening file for %s: %w", queryName, err)
 	}
+
+	// Check if file is empty before writing headers ---
+	fi, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("getting file stat for %s: %w", queryName, err)
+	}
+
 	w := csv.NewWriter(file)
 
-	if headers, exists := queryHeaders[queryName]; exists {
-		if err := w.Write(headers); err != nil {
-			file.Close()
-			return nil, fmt.Errorf("writing headers for %s: %w", queryName, err)
+	if fi.Size() == 0 {
+		if headers, exists := queryHeaders[queryName]; exists {
+			if err := w.Write(headers); err != nil {
+				file.Close()
+				return nil, fmt.Errorf("writing headers for %s: %w", queryName, err)
+			}
+			w.Flush()
 		}
-		w.Flush()
 	}
+
 	c.queryFiles[queryName] = file
 	c.queryWriters[queryName] = w
 
@@ -150,7 +161,7 @@ func (c *CSVWriter) WriteQ1Result(data []interface{}) error {
 
 	records, ok := data[0].([]interface{})
 	if !ok {
-		return fmt.Errorf("q2: expected nested []interface{}, got %T", data[0])
+		return fmt.Errorf("q1: expected nested []interface{}, got %T", data[0])
 	}
 	for _, transaction := range records {
 		fields, ok := transaction.([]interface{})

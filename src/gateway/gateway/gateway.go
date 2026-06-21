@@ -39,14 +39,13 @@ type GatewayConfig struct {
 }
 
 type Gateway struct {
-	registry                   clientregistry.ClientRegistry
-	inputQueue                 middleware.Middleware
-	outputExchange             middleware.Middleware
-	listener                   net.Listener
-	running                    atomic.Bool
-	config                     GatewayConfig
-	deduplicator               *batch_utils.MultiClientDeduplicator
-	sentSecuenceNumberByClient map[int64]int64 // agregar mutex o a registry con mutex
+	registry       clientregistry.ClientRegistry
+	inputQueue     middleware.Middleware
+	outputExchange middleware.Middleware
+	listener       net.Listener
+	running        atomic.Bool
+	config         GatewayConfig
+	deduplicator   *batch_utils.MultiClientDeduplicator
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -71,13 +70,12 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	}
 
 	gateway := &Gateway{
-		registry:                   clientregistry.NewClientRegistry(),
-		inputQueue:                 inputQueue,
-		outputExchange:             outputExchange,
-		listener:                   listener,
-		config:                     config,
-		deduplicator:               batch_utils.NewMultiClientDeduplicator(1000),
-		sentSecuenceNumberByClient: make(map[int64]int64),
+		registry:       clientregistry.NewClientRegistry(),
+		inputQueue:     inputQueue,
+		outputExchange: outputExchange,
+		listener:       listener,
+		config:         config,
+		deduplicator:   batch_utils.NewMultiClientDeduplicator(1000),
 	}
 	gateway.running.Store(true)
 	return gateway, nil
@@ -132,7 +130,6 @@ func (gateway *Gateway) Run() error {
 			handler := messagehandler.NewMessageHandler(clientId, eorMap)
 			NewClient := clientregistry.ClientState{Conn: conn, Handler: &handler, AckCh: make(chan struct{}, 1)}
 			gateway.registry.Add(clientId, NewClient)
-			gateway.sentSecuenceNumberByClient[clientId] = 0
 			go gateway.handleClientRequest(NewClient)
 		} else {
 			go gateway.handleClientRequest(client)
@@ -162,7 +159,7 @@ func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
 	for {
 		msgType, err := external.ReadMsgType(client.Conn)
 		if err != nil {
-			slog.Error("While reading message type", "err", err)
+			slog.Error("While reading message type handling client request", "err", err)
 			return
 		}
 		switch msgType {
@@ -253,7 +250,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	switch msg.MsgType {
 	case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
 
-		actualSecuenceNumber := gateway.sentSecuenceNumberByClient[msg.ClientID]
+		actualSecuenceNumber := gateway.registry.GetSecuenceNumberToSent(msg.ClientID)
 		serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), actualSecuenceNumber, *msg)
 		if err != nil {
 			slog.Error("While serializing response", "err", err)
@@ -274,7 +271,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		}
 
 		gateway.deduplicator.Load(msg.ClientID, batchID)
-		gateway.sentSecuenceNumberByClient[msg.ClientID]++
+		gateway.registry.IncrementSequenceNumberToSent(msg.ClientID)
 
 	case inner.EndOfRecords:
 		slog.Info("Response received from MOM", "query", msg.MsgType, "clientID", msg.ClientID)

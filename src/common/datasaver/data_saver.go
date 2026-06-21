@@ -81,6 +81,8 @@ func (ds *DataSaver) Save(content any, w worker.Worker) {
 		slog.Info("Guardando checkpoint")
 		ds.logCounter = 0
 		ds.SaveCheckpoint(w.GetCheckpointData())
+		Crash(CrashAfterCheckpoint) // para testing
+
 	}
 }
 
