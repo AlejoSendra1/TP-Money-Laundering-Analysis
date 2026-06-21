@@ -319,3 +319,66 @@ func (c *CSVWriter) writeQ5Result(data []interface{}) error {
 	c.counter++
 	return w.Error()
 }
+
+// QueryCodeToName maps a numerical query code to its internal string representation.
+func QueryCodeToName(queryCode uint32) string {
+	// Matching the codes used in your WriteResult switch statement
+	switch queryCode {
+	case uint32(inner.Query1Response): // assuming external.Query1Response evaluates to 1
+		return "q1"
+	case uint32(inner.Query2Response): // inner.Query2Response
+		return "q2"
+	case uint32(inner.Query3Response): // inner.Query3Response
+		return "q3"
+	case uint32(inner.Query4Response): // external.Query4Response
+		return "q4"
+	case uint32(inner.Query5Response): // inner.Query5Response
+		return "q5"
+	default:
+		return fmt.Sprintf("unknown_q%d", queryCode)
+	}
+}
+
+// GetCurrentOffset returns the current byte size of a query's CSV file.
+func (c *CSVWriter) GetCurrentOffset(queryName string) (int64, error) {
+	file, exists := c.queryFiles[queryName]
+	if !exists {
+		// If the file hasn't been lazily opened/created yet, its offset is 0.
+		return 0, nil
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stating file for %s: %w", queryName, err)
+	}
+	return info.Size(), nil
+}
+
+// TruncateFile forcibly chops a file down to a specific byte length and resets the cursor.
+func (c *CSVWriter) TruncateFile(queryCode uint32, offset int64) error {
+	queryName := QueryCodeToName(queryCode)
+	// Ensure the file is opened/initialized via your existing helper
+	_, err := c.getQueryWriter(queryName)
+	if err != nil {
+		return err
+	}
+
+	file := c.queryFiles[queryName]
+
+	// 1. Flush any data sitting in the csv.Writer buffer to disk first
+	if w, exists := c.queryWriters[queryName]; exists {
+		w.Flush()
+	}
+
+	// 2. Truncate the file to our last confirmed valid checkpoint offset
+	if err := file.Truncate(offset); err != nil {
+		return fmt.Errorf("truncating file %s to offset %d: %w", queryName, offset, err)
+	}
+
+	// 3. CRITICAL: Move the OS write cursor to the truncated point so appends don't leave gaps
+	if _, err := file.Seek(offset, 0); err != nil {
+		return fmt.Errorf("seeking file %s to offset %d: %w", queryName, offset, err)
+	}
+
+	return nil
+}

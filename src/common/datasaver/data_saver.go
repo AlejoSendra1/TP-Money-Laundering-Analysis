@@ -256,7 +256,20 @@ func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 
 	var record FileRecord
 	if err := json.Unmarshal(line, &record); err != nil {
-		return false, fmt.Errorf("parsing Log: %w", err)
+		// Peak ahead: check if this error happened on the absolute last line of the file.
+		// We try to scan one more time. If there is nothing else, this was the tail.
+		nextScan := ds.reader.Scan()
+
+		if !nextScan && ds.reader.Err() == nil {
+			slog.Warn("Detected a corrupted log entry at the end of the file. Truncating recovery here.",
+				"error", err.Error())
+			ds.reader = nil
+			return false, nil // Stop recovery gracefully without returning an error
+		}
+
+		// If there WAS more data after this line, the file is corrupted in the middle,
+		// which is a critical error we shouldn't ignore.
+		return false, fmt.Errorf("parsing Log failed mid-file: %w", err)
 	}
 
 	if record.Type == LogType {

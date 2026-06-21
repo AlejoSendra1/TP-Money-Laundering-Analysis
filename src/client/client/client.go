@@ -1,13 +1,13 @@
 package client
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -25,9 +25,6 @@ import (
 const connectionAttempts = 3
 const connectionAttemptsDelayMs = 300
 
-// agregar a vars de entorno
-const LOGS_UNTIL_CHECKPOINT = 200
-
 type ClientConfig struct {
 	ServerHost string
 	ServerPort string
@@ -38,20 +35,21 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	conn      net.Conn
-	running   atomic.Bool
-	config    ClientConfig
-	writer    csvwriter.CSVWriter
-	dataSaver *datasaver.DataSaver
+	mutex   sync.Mutex
+	conn    net.Conn
+	running atomic.Bool
+	config  ClientConfig
+	writer  csvwriter.CSVWriter
+	ackChan chan struct{} // para asegurar la llegada de los batches
 	// tolerance resistence data
+	// sending phase
+	dataSaver     *datasaver.DataSaver
 	assignedID    int64
 	BatchesSecNum int64
-	ackChan       chan struct{}
-}
 
-type CheckpointData struct {
-	AssignedID    int64 `json:"assigned_id"`
-	BatchesSecNum int64 `json:"batches_sent_amount"`
+	// Tracks valid state for results
+	resultsLogsSaver *datasaver.DataSaver
+	processedQueries map[uint32]QueryState
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -65,34 +63,43 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/client_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	dataSaverVar, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/client_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	if err != nil {
+		return nil, err
+	}
+	resultsLogsSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/results_client_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
 	if err != nil {
 		return nil, err
 	}
 
 	client := &Client{
-		conn:      conn,
-		config:    config,
-		writer:    *writer,
-		dataSaver: dataSaver,
-		ackChan:   make(chan struct{}, 1),
+		conn:             conn,
+		config:           config,
+		writer:           *writer,
+		dataSaver:        dataSaverVar,
+		ackChan:          make(chan struct{}, 1),
+		BatchesSecNum:    0,
+		processedQueries: make(map[uint32]QueryState),
+		resultsLogsSaver: resultsLogsSaver,
 	}
 
 	if config.Restorate {
-		client.restaurateState()
+		if err := client.restaurateState(); err != nil { // restauramos la fase de envio y el id
+			return nil, err
+		}
+
+		if err := client.restaurateResultsState(); err != nil { // restauramos la fase de envio
+			return nil, err
+		}
 
 		slog.Info("cargando en base a checkpoint")
-
-		err = sendReconnectMsg(conn, client.assignedID) // aviso al server la reconexion
-
+		err = sendReconnectMsg(conn, client.assignedID)
 		if err != nil {
 			return nil, err
 		}
 		slog.Info("Connection was succefull", "Id recuperated", client.assignedID)
-
 	} else {
-		client.BatchesSecNum = 0
-		id, err := sendConnectMsg(conn) // para obtener un id en caso de desconexion
+		id, err := sendConnectMsg(conn) // para obtener el id en caso de requerir reconexion
 		if err != nil {
 			return nil, err
 		}
@@ -234,23 +241,43 @@ func (client *Client) sendTransactionRecords() error {
 	return nil
 }
 
-// ---- HELPERS ----
+/*
+	func (client *Client) handleQueryResponse(queryCode uint32) error {
+		toRead, err := client.readUint32()
+		if err != nil {
+			return err
+		}
 
-func (client *Client) readUint32() (uint32, error) {
-	bytes, err := safeio.ReadAll(client.conn, serializer.UINT32_SIZE)
-	if err != nil {
-		return 0, err
+		read, err := safeio.ReadAll(client.conn, toRead)
+		if err != nil {
+			return err
+		}
+
+		receivedResultSecuenceNumber, toWrite, err := serializer.DeserializeQueryResponse(read)
+		if err != nil {
+			return err
+		}
+		if receivedResultSecuenceNumber != client.ReceivingSecNum {
+			slog.Warn("Se recibio un numero de secuencia diferente al esperado", "esperado", client.ReceivingSecNum, "recibido", receivedResultSecuenceNumber)
+			return nil
+		}
+
+		return client.writer.WriteResult(queryCode, toWrite)
 	}
-	return serializer.DeserializeUint32(bytes), nil
-}
+*/
+func (client *Client) handleQueryResponse(queryCode uint32) error {
+	secNumBytes, err := safeio.ReadAll(client.conn, serializer.UINT64_SIZE) // numero de secuencia del msg
+	if err != nil {
+		return err
+	}
+	newSecNum := int64(serializer.DeserializeUint64(secNumBytes))
 
-func (Client *Client) handleQueryResponse(queryCode uint32) error {
-	toRead, err := Client.readUint32()
+	toRead, err := client.readUint32()
 	if err != nil {
 		return err
 	}
 
-	read, err := safeio.ReadAll(Client.conn, toRead)
+	read, err := safeio.ReadAll(client.conn, toRead)
 	if err != nil {
 		return err
 	}
@@ -260,32 +287,37 @@ func (Client *Client) handleQueryResponse(queryCode uint32) error {
 		return err
 	}
 
-	Client.writer.WriteResult(queryCode, toWrite)
+	// CHECKEO Q NO LO HAYA ESCRITO
+	if state, exists := client.processedQueries[queryCode]; exists && newSecNum <= state.LastSecNum {
+		slog.Warn("Ignoring duplicate message from gateway redelivery", "query", queryCode, "secNum", newSecNum)
+		return nil
+	}
+
+	// ESCRIBO EN EL ARCHIVO Q CORRESPONDA
+	if err := client.writer.WriteResult(queryCode, toWrite); err != nil {
+		return err
+	}
+
+	qName := csvwriter.QueryCodeToName(queryCode)
+	newOffset, err := client.writer.GetCurrentOffset(qName)
+	if err != nil {
+		return fmt.Errorf("failed to fetch current file size: %w", err)
+	}
+
+	// efectivisamos el cambio
+	client.processedQueries[queryCode] = QueryState{
+		LastSecNum: newSecNum,
+	}
+
+	client.resultsLogsSaver.Save(
+		LogData{
+			QueryCode:  queryCode,
+			QueryState: QueryState{LastSecNum: newSecNum, LastWriteOffset: newOffset},
+		},
+		client,
+	)
+
 	return nil
-}
-
-// igual q arriba
-func (client *Client) handleQueryResponseWithQueryResult(queryCode uint32) error {
-	//slog.Info("Leyendo query resultado", "queryCode", queryCode)
-
-	// leer length prefix
-	toRead, err := client.readUint32()
-	if err != nil {
-		return fmt.Errorf("reading length for query %d: %w", queryCode, err)
-	}
-
-	raw, err := safeio.ReadAll(client.conn, toRead)
-	if err != nil {
-		return fmt.Errorf("reading body for query %d: %w", queryCode, err)
-	}
-
-	// deserializar el []interface{} de records
-	var records []interface{}
-	if err := json.Unmarshal(raw, &records); err != nil {
-		return fmt.Errorf("unmarshaling query %d result: %w", queryCode, err)
-	}
-
-	return client.writer.WriteResult(queryCode, records)
 }
 
 func (client *Client) recvManager() error {
@@ -311,15 +343,12 @@ func (client *Client) recvManager() error {
 			slog.Info("Go rutine de envio notificada")
 			continue
 
-		// 2. Respuestas de Queries con JSON estructurado
-		case inner.Query2Response, inner.Query3Response, inner.Query5Response:
-			if err := client.handleQueryResponseWithQueryResult(uint32(msgType)); err != nil {
+		case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
+
+			if err := client.handleQueryResponse(uint32(msgType)); err != nil {
 				return err
 			}
-
-		// 3. Respuestas de Queries serializadas nativas
-		case inner.Query1Response, inner.Query4Response:
-			if err := client.handleQueryResponse(uint32(msgType)); err != nil {
+			if err := client.sendResponseAck(); err != nil {
 				return err
 			}
 
@@ -335,48 +364,15 @@ func (client *Client) recvManager() error {
 			return fmt.Errorf("tipo de mensaje inesperado recibido en el cliente: %d", msgType)
 		}
 
-		if err := client.sendResponseAck(); err != nil {
-			return err
-		}
 	}
 }
 
-// --------------- para la restauracion del cliente ---------------
+// ---- HELPERS ----
 
-func (client *Client) GetCheckpointData() any {
-	return CheckpointData{
-		AssignedID:    client.assignedID,
-		BatchesSecNum: client.BatchesSecNum,
+func (client *Client) readUint32() (uint32, error) {
+	bytes, err := safeio.ReadAll(client.conn, serializer.UINT32_SIZE)
+	if err != nil {
+		return 0, err
 	}
-}
-
-// Asigna al cliente los valores guardados en el checkpoint antes de la caida
-func (client *Client) restaurateState() error {
-	// restauracion checkpoint
-	var checkpoint CheckpointData
-	thereIsCheckpoint, err := client.dataSaver.GetRestaurationCheckpoint(&checkpoint)
-	if err != nil || !thereIsCheckpoint { // habria q agregar retrys?
-		return err
-	}
-
-	slog.Info("Checkpoint levantado", "values", checkpoint)
-	client.assignedID = checkpoint.AssignedID
-	client.BatchesSecNum = checkpoint.BatchesSecNum
-
-	// restauracion logs
-	// lo unico importante es que cada log representa un batch enviado, no se necesita mas info(no se haria nada con eso)
-	var b byte
-	for {
-		thereIsLogs, err := client.dataSaver.GetDataFromLogs(&b)
-		if err != nil { // habria q modificar para retrys
-			return err
-		}
-		if !thereIsLogs {
-			break
-		}
-
-		client.BatchesSecNum++
-	}
-
-	return nil
+	return serializer.DeserializeUint32(bytes), nil
 }

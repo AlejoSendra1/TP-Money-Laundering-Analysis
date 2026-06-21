@@ -16,8 +16,6 @@ import (
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/middleware"
-
-	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/messagehandler"
 )
 
@@ -41,13 +39,14 @@ type GatewayConfig struct {
 }
 
 type Gateway struct {
-	registry       clientregistry.ClientRegistry
-	inputQueue     middleware.Middleware
-	outputExchange middleware.Middleware
-	listener       net.Listener
-	running        atomic.Bool
-	config         GatewayConfig
-	deduplicator   *batch_utils.MultiClientDeduplicator
+	registry                   clientregistry.ClientRegistry
+	inputQueue                 middleware.Middleware
+	outputExchange             middleware.Middleware
+	listener                   net.Listener
+	running                    atomic.Bool
+	config                     GatewayConfig
+	deduplicator               *batch_utils.MultiClientDeduplicator
+	sentSecuenceNumberByClient map[int64]int64 // agregar mutex o a registry con mutex
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -72,12 +71,13 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	}
 
 	gateway := &Gateway{
-		registry:       clientregistry.NewClientRegistry(),
-		inputQueue:     inputQueue,
-		outputExchange: outputExchange,
-		listener:       listener,
-		config:         config,
-		deduplicator:   batch_utils.NewMultiClientDeduplicator(1000),
+		registry:                   clientregistry.NewClientRegistry(),
+		inputQueue:                 inputQueue,
+		outputExchange:             outputExchange,
+		listener:                   listener,
+		config:                     config,
+		deduplicator:               batch_utils.NewMultiClientDeduplicator(1000),
+		sentSecuenceNumberByClient: make(map[int64]int64),
 	}
 	gateway.running.Store(true)
 	return gateway, nil
@@ -116,7 +116,6 @@ func (gateway *Gateway) Run() error {
 			slog.Error("While client connects")
 			continue
 		}
-
 		// si el cliente se reconecto solo cambiamos el socket del registro para enviarle las respuestas
 		isAnOldClient := false
 		var client clientregistry.ClientState
@@ -133,6 +132,7 @@ func (gateway *Gateway) Run() error {
 			handler := messagehandler.NewMessageHandler(clientId, eorMap)
 			NewClient := clientregistry.ClientState{Conn: conn, Handler: &handler, AckCh: make(chan struct{}, 1)}
 			gateway.registry.Add(clientId, NewClient)
+			gateway.sentSecuenceNumberByClient[clientId] = 0
 			go gateway.handleClientRequest(NewClient)
 		} else {
 			go gateway.handleClientRequest(client)
@@ -243,7 +243,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	}
 
 	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
-	if gateway.deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
+	if gateway.deduplicator.IsDuplicateNoUpdate(msg.ClientID, batchID) {
 		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
 		ack()
 		return
@@ -253,7 +253,8 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	switch msg.MsgType {
 	case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
 
-		serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), *msg)
+		actualSecuenceNumber := gateway.sentSecuenceNumberByClient[msg.ClientID]
+		serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), actualSecuenceNumber, *msg)
 		if err != nil {
 			slog.Error("While serializing response", "err", err)
 			nack()
@@ -271,6 +272,9 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			nack()
 			return
 		}
+
+		gateway.deduplicator.Load(msg.ClientID, batchID)
+		gateway.sentSecuenceNumberByClient[msg.ClientID]++
 
 	case inner.EndOfRecords:
 		slog.Info("Response received from MOM", "query", msg.MsgType, "clientID", msg.ClientID)
@@ -298,7 +302,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			slog.Info("Client received all result queries, removing from registry", "clientID", msg.ClientID)
 			// Removemos usando el índice detectado previamente
 			gateway.registry.Remove(msg.ClientID)
-			gateway.deduplicator.RemoveClient(int(msg.ClientID))
+			gateway.deduplicator.RemoveClient(msg.ClientID)
 		}
 
 	default:

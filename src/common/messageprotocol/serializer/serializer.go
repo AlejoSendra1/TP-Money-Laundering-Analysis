@@ -98,8 +98,9 @@ func SerializeEOR() []byte {
 	return msgType
 }
 
-func SerializeQueryResponse(queryCode uint32, response inner.MessageClient) ([]byte, error) {
+func SerializeQueryResponse(queryCode uint32, secNum int64, response inner.MessageClient) ([]byte, error) {
 	msgType := make([]byte, 4)
+	secNumBytes := SerializeUint64(uint64(secNum))
 	binary.BigEndian.PutUint32(msgType, queryCode)
 
 	serialization, err := json.Marshal(response.Data)
@@ -109,14 +110,16 @@ func SerializeQueryResponse(queryCode uint32, response inner.MessageClient) ([]b
 
 	serialization = appendLenght(serialization)
 
-	bytes := append(msgType, serialization...)
+	bytes := append(msgType, secNumBytes...)
+	bytes = append(bytes, serialization...)
 	return bytes, nil
 }
 
 func DeserializeQueryResponse(bytes []byte) ([]interface{}, error) {
 	var data []interface{}
+	jsonBytes := bytes
 
-	if err := json.Unmarshal(bytes, &data); err != nil {
+	if err := json.Unmarshal(jsonBytes, &data); err != nil {
 		slog.Error("Deserializando query", "data", bytes)
 		return data, fmt.Errorf("Deserializing message body: %w", err)
 	}
