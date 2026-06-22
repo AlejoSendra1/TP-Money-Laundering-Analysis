@@ -191,17 +191,12 @@ func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages 
 	return &middleware.Message{Body: string(body)}, nil
 }
 
-func DeserializePaymentFormatAverageMessage(message *middleware.Message) (int64, []transaction.PaymentFormatAverage, bool, error) {
-	var messageClient MessageClient
-	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
-		return 0, nil, false, fmt.Errorf("deserializing payment format average body: %w", err)
-	}
-
-	records := make([]transaction.PaymentFormatAverage, 0, len(messageClient.Data))
-	for _, datum := range messageClient.Data {
+func DeserializePaymentFormatAverageMessage(data []interface{}) ([]transaction.PaymentFormatAverage, error) {
+	records := make([]transaction.PaymentFormatAverage, 0, len(data))
+	for _, datum := range data {
 		fields, ok := datum.([]interface{})
 		if !ok || len(fields) != 3 {
-			return 0, nil, false, fmt.Errorf("invalid structure inside payment format average record")
+			return records, fmt.Errorf("invalid structure inside payment format average record")
 		}
 
 		rec := transaction.PaymentFormatAverage{
@@ -212,7 +207,7 @@ func DeserializePaymentFormatAverageMessage(message *middleware.Message) (int64,
 		records = append(records, rec)
 	}
 
-	return messageClient.ClientID, records, len(records) == 0, nil
+	return records, nil
 }
 
 func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers []transaction.ThresholdFilteredTransfer) (*middleware.Message, error) {
@@ -237,17 +232,13 @@ func SerializeThresholdFilteredTransferMessage(clientId int64, bankPeakTransfers
 	return &middleware.Message{Body: string(body)}, nil
 }
 
-func DeserializeThresholdFilteredTransferMessage(message *middleware.Message) (int64, []transaction.ThresholdFilteredTransfer, bool, error) {
-	var messageClient MessageClient
-	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
-		return 0, nil, false, fmt.Errorf("deserializing threshold filtered transfer body: %w", err)
-	}
+func DeserializeThresholdFilteredTransferMessage(data []interface{}) ([]transaction.ThresholdFilteredTransfer, error) {
 
-	records := make([]transaction.ThresholdFilteredTransfer, 0, len(messageClient.Data))
-	for _, datum := range messageClient.Data {
+	records := make([]transaction.ThresholdFilteredTransfer, 0, len(data))
+	for _, datum := range data {
 		fields, ok := datum.([]interface{})
 		if !ok || len(fields) != 5 {
-			return 0, nil, false, fmt.Errorf("invalid structure inside payment format average record")
+			return records, fmt.Errorf("invalid structure inside payment format average record")
 		}
 		rec := transaction.ThresholdFilteredTransfer{
 			FromBank:      int(fields[0].(float64)),
@@ -259,7 +250,7 @@ func DeserializeThresholdFilteredTransferMessage(message *middleware.Message) (i
 		records = append(records, rec)
 	}
 
-	return messageClient.ClientID, records, len(records) == 0, nil
+	return records, nil
 }
 
 // sliceToTransaction decodes a single raw JSON datum into a Transaction.
