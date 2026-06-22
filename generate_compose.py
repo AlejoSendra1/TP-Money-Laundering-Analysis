@@ -20,6 +20,7 @@ def main():
             config = yaml.safe_load(f)
             SCALE = config.get("scale", {})
             CLIENTS = config.get("clients", [])
+            WATCHDOG_AMOUNT = config.get("watchdog_amount", 3)
     except FileNotFoundError:
         print("Error: No se encontró 'config.yaml'.")
         sys.exit(1)
@@ -224,7 +225,23 @@ def main():
     ])
 
     # ==============================================================================
-    # 6. ESCRITURA OUTPUT
+    # 6. WATCHDOGS
+    # ==============================================================================
+    for i in range(WATCHDOG_AMOUNT):
+        services[f"watchdog_{i}"] = {
+            "build": {"context": "./src/", "dockerfile": "watchdog/Dockerfile"},
+            "container_name": f"watchdog_{i}",
+            "depends_on": {"rabbitmq": {"condition": "service_healthy"}},
+            "environment": [
+                f"ID={i}",
+                "MOM_HOST=rabbitmq",
+                "MOM_PORT=5672",
+            ],
+            "volumes": ["/var/run/docker.sock:/var/run/docker.sock"]
+        }
+
+    # ==============================================================================
+    # 7. ESCRITURA OUTPUT
     # ==============================================================================
     compose_dict = {"services": services}
     with open(output_filename, "w") as f:
