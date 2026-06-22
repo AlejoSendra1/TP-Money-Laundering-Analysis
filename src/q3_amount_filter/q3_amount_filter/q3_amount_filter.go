@@ -154,8 +154,8 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 	q3AmountFilter.mu.Unlock()
 
 	if needNotify {
-		// Envio el EOF
-		msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", q3AmountFilter.config.Id))
+		// Envio la notificacion
+		msgToSend, err := inner.SerializeNotificationAvg(clientID, false, fmt.Sprintf("%d", q3AmountFilter.config.Id))
 		if err != nil {
 			slog.Info("While serializing notification message", "err", err, "clientID", clientID)
 			return err
@@ -202,7 +202,15 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middle
 		return
 	}
 	clientID := msg.ClientID
+	q3AmountFilter.mu.Lock()
+	_, ok := q3AmountFilter.eofCounterTs[clientID]
+	q3AmountFilter.mu.Unlock()
 
+	if !ok {
+		// Si me llego un EOF de un cliente que no tengo registro, es porque me mando tarde la data
+		slog.Warn("New client arrived from control message, but , wont process", "clientID", clientID)
+		return
+	}
 	shouldSendEOF := false
 	var qty int
 	q3AmountFilter.mu.Lock()
@@ -340,11 +348,10 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 		q3AmountFilter.qtyTx[clientID] += len(transactions)
 		q3AmountFilter.mu.Unlock()
 		batch_utils.SortBatch(transactions, func(a, b transaction.ThresholdFilteredTransfer) bool {
-			if !a.Timestamp.Equal(b.Timestamp) {
-				return a.Timestamp.Before(b.Timestamp) // Ascendente: Las más viejas primero
+			if a.Timestamp != b.Timestamp {
+				return a.Timestamp < b.Timestamp
 			}
-
-			return a.Amount > b.Amount // Descendente: Las más caras primero
+			return a.Amount > b.Amount
 		})
 		queryResult := transaction.QueryResult{
 			QueryID:      transaction.Query3,
