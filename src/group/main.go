@@ -98,6 +98,16 @@ func run() int {
 		return 1
 	}
 
+	slog.Info("leyendo flag restaurate", "value", os.Getenv("RESTAURATE"))
+	if os.Getenv("RESTAURATE") == "TRUE" {
+		slog.Info("restaurando")
+		if err := group.Restaurate(); err != nil {
+			slog.Error("While restoring state", "err", err)
+			return 1
+		}
+		slog.Info("restaurado todo piola")
+	}
+
 	server.Run()
 	return 0
 }

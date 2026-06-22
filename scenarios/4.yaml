@@ -19,6 +19,8 @@ services:
     - NEXT_FASE_WORKERS_AMOUNT=1
     - NEXT_FASE_WORKERS_PREFIX=q4_join
     - PYTHONUNBUFFERED=1
+    volumes:
+    - ./persistence:/persistence 
   bridge_matcher_1:
     build:
       context: ./src/
@@ -39,6 +41,8 @@ services:
     - NEXT_FASE_WORKERS_AMOUNT=1
     - NEXT_FASE_WORKERS_PREFIX=q4_join
     - PYTHONUNBUFFERED=1
+    volumes:
+    - ./persistence:/persistence 
   bridge_matcher_2:
     build:
       context: ./src/
@@ -59,6 +63,8 @@ services:
     - NEXT_FASE_WORKERS_AMOUNT=1
     - NEXT_FASE_WORKERS_PREFIX=q4_join
     - PYTHONUNBUFFERED=1
+    volumes:
+    - ./persistence:/persistence 
   client_0:
     build:
       context: ./src/
@@ -167,6 +173,8 @@ services:
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
     - DATE_FILTER_AMOUNT=2
     - PYTHONUNBUFFERED=1
+    volumes:
+    - ./persistence:/persistence 
   group_1:
     build:
       context: ./src/
@@ -189,6 +197,8 @@ services:
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
     - DATE_FILTER_AMOUNT=2
     - PYTHONUNBUFFERED=1
+    volumes:
+    - ./persistence:/persistence 
   group_2:
     build:
       context: ./src/
@@ -211,6 +221,8 @@ services:
     - NEXT_FASE_WORKERS_PREFIX=bridge_matcher
     - DATE_FILTER_AMOUNT=2
     - PYTHONUNBUFFERED=1
+    volumes:
+    - ./persistence:/persistence 
   q4_join_0:
     build:
       context: ./src/
@@ -227,6 +239,8 @@ services:
     - OUTPUT_QUEUE_NAME=results_queue
     - PREV_FASE_WORKERS_AMOUNT=3
     - PYTHONUNBUFFERED=1
+    volumes:
+    - ./persistence:/persistence 
   rabbitmq:
     build:
       context: ./src/rabbitmq

@@ -103,6 +103,7 @@ func run() int {
 		return 1
 	}
 
+	// agregado para la restauracion
 	slog.Info("leyendo flag restaurate", "value", os.Getenv("RESTAURATE"))
 	if os.Getenv("RESTAURATE") == "TRUE" {
 		slog.Info("restaurando")
@@ -112,6 +113,7 @@ func run() int {
 		}
 		slog.Info("restaurado todo piola")
 	}
+	// -----------------------------
 
 	worker.Run()
 	return 0

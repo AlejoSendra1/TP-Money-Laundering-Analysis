@@ -262,9 +262,7 @@ func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), 
 		return
 	}
 
-	datasaver.Crash(datasaver.CrashAfterLog) // para testing
-	c.dataSaver.Save(middlewareMsg, c)       // persistencia de datos
-
+	c.dataSaver.Save(middlewareMsg, c) // persistencia de datos
 	ack()
 }
 
