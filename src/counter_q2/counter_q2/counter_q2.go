@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sync"
 	"syscall"
+	"tp_distribuidos/common/heatbeat"
 
 	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
@@ -24,6 +25,7 @@ const LOGS_UNTIL_CHECKPOINT = 250
 
 type CounterQ2Config struct {
 	ID              int
+	WorkerID        string
 	MomHost         string
 	MomPort         int
 	InputQueue      string
@@ -62,6 +64,7 @@ type CounterQ2 struct {
 	// for data saving and restoration
 	handleFunctions worker.MessageHandlerMap
 	dataSaver       *datasaver.DataSaver
+	heartbeat       *heatbeat.HeartbeatSender
 }
 
 func getJoinerIndex(bank string, joinAmount int) int {
@@ -166,6 +169,11 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		return nil, err
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	counter := &CounterQ2{
 		config:          config,
 		inputQueue:      inputQueue,
@@ -175,6 +183,7 @@ func NewCounterQ2(config CounterQ2Config) (*CounterQ2, error) {
 		topByClient:     make(map[int64]map[int]bankEntry),
 		eofCounter:      make(map[int64][]string),
 		dataSaver:       dataSaver,
+		heartbeat:       hb,
 	}
 	counter.handleFunctions = worker.MessageHandlerMap{
 		inner.EndOfRecords:     counter.handleEndOfRecordMessage,
@@ -221,14 +230,8 @@ func (c *CounterQ2) Restaurate() error {
 
 // Run starts the worker. It returns when processing is complete or a signal is received.
 func (counter *CounterQ2) Run() {
-	signalChannel := make(chan os.Signal, 1)
-	signal.Notify(signalChannel, syscall.SIGTERM)
-	go func() {
-		<-signalChannel
-		slog.Info("SIGTERM received, stopping consumers")
-		counter.inputQueue.StopConsuming()
-		counter.controlInput.StopConsuming()
-	}()
+	go counter.handleSigterm()
+	counter.heartbeat.Start()
 
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(1)
@@ -243,6 +246,16 @@ func (counter *CounterQ2) Run() {
 	counter.controlInput.StopConsuming()
 	waitGroup.Wait()
 	counter.close()
+}
+
+func (counter *CounterQ2) handleSigterm() {
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGTERM)
+	<-signalChannel
+	slog.Info("SIGTERM received, stopping consumers")
+	counter.heartbeat.Stop()
+	counter.inputQueue.StopConsuming()
+	counter.controlInput.StopConsuming()
 }
 
 func (c *CounterQ2) GetCheckpointData() any {
