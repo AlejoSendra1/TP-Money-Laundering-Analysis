@@ -19,6 +19,7 @@ const (
 	CrashAfterSendData   CrashPoint = "CRASH_AFTER_SEND_DATA"
 	CrashBeforeEOF       CrashPoint = "CRASH_BEFORE_EOF"
 	CrashAfterRename     CrashPoint = "CRASH_AFTER_RENAME" // dentro de writeFile
+	CrashBeforeFlush     CrashPoint = "CRASH_BEFORE_FLUSH_DATA"
 )
 
 var crashCounters = map[CrashPoint]int{}

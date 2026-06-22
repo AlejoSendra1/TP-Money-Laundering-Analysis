@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strconv"
 	"tp_distribuidos/client"
 )
 
@@ -28,11 +29,27 @@ func loadConfig() (client.ClientConfig, error) {
 		return client.ClientConfig{}, errors.New("OUTPUT_FILE environment variable is required")
 	}
 
+	id, err := strconv.Atoi(os.Getenv("ID"))
+	if err != nil {
+		return client.ClientConfig{}, errors.New("ID environment variable is required and must be a number")
+	}
+
+	var restorate bool
+	restorateStr := os.Getenv("RESTAURATE")
+	slog.Info("valor obtenido en restaurate", "val", restorateStr)
+	if restorateStr == "TRUE" {
+		restorate = true
+	} else {
+		restorate = false
+	}
+
 	return client.ClientConfig{
 		ServerHost: serverHost,
 		ServerPort: serverPort,
 		InputFile:  inputFile,
 		OutputFile: outputFile,
+		Restorate:  restorate,
+		ID:         id,
 	}, nil
 }
 
