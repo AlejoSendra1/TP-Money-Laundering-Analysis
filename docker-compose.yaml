@@ -51,7 +51,7 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-    #- CRASH_AFTER_SEND_DATA=100
+    #- CRASH_BEFORE_FLUSH_DATA=100
     volumes:
     - ./datasets:/datasets
     - ./output:/output

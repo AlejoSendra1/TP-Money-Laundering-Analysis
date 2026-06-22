@@ -24,6 +24,7 @@ type DataSaver struct {
 	logsUntilCheckpoint int
 	logCounter          int
 	pendingLine         []byte
+	validOffset         int64 // byte offset right after the last successfully parsed line
 }
 
 type RecordType string
@@ -106,7 +107,7 @@ func (ds *DataSaver) Log(v any) error {
 	if _, err := ds.writer.Write(append(jsonData, '\n')); err != nil {
 		return fmt.Errorf("writing transaction batch to disk: %w", err)
 	}
-
+	Crash(CrashBeforeFlush)
 	if err := ds.writer.Flush(); err != nil {
 		return fmt.Errorf("flushing transaction batch buffer: %w", err)
 	}
@@ -226,6 +227,7 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 		if err := json.Unmarshal(record.Payload, target); err != nil {
 			return false, fmt.Errorf("failed to unmarshal checkpoint payload: %w", err) //
 		}
+		ds.validOffset = int64(len(line)) + 1 // +1 for the '\n'
 		return true, nil
 	}
 	slog.Info("No se leyo un checkpoint type")
@@ -265,19 +267,17 @@ func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 
 	var record FileRecord
 	if err := json.Unmarshal(line, &record); err != nil {
-		// Peak ahead: check if this error happened on the absolute last line of the file.
-		// We try to scan one more time. If there is nothing else, this was the tail.
 		nextScan := ds.reader.Scan()
-
 		if !nextScan && ds.reader.Err() == nil {
 			slog.Warn("Detected a corrupted log entry at the end of the file. Truncating recovery here.",
-				"error", err.Error())
-			ds.reader = nil
-			return false, nil // Stop recovery gracefully without returning an error
-		}
+				"error", err.Error(), "truncateOffset", ds.validOffset)
 
-		// If there WAS more data after this line, the file is corrupted in the middle,
-		// which is a critical error we shouldn't ignore.
+			if err := ds.truncateToValidOffset(); err != nil {
+				return false, fmt.Errorf("truncating corrupted tail: %w", err)
+			}
+			ds.reader = nil
+			return false, nil
+		}
 		return false, fmt.Errorf("parsing Log failed mid-file: %w", err)
 	}
 
@@ -288,6 +288,18 @@ func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 
 	}
 
+	ds.validOffset += int64(len(line)) + 1
 	ds.logCounter++
 	return thereIsMore, nil
+}
+
+func (ds *DataSaver) truncateToValidOffset() error {
+	if err := ds.file.Truncate(ds.validOffset); err != nil {
+		return fmt.Errorf("truncating to offset %d: %w", ds.validOffset, err)
+	}
+	if _, err := ds.file.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("seeking to new end: %w", err)
+	}
+	ds.writer = bufio.NewWriter(ds.file) // fresh writer, old one's buffer state is stale
+	return nil
 }
