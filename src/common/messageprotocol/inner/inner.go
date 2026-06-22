@@ -55,6 +55,8 @@ var queryDeserializers = map[transaction.QueryID]queryDeserializer{
 	transaction.Query5: deserializeQuery5,
 }
 
+// Uso gral
+
 func SerializeJson(messageClient MessageClient) ([]byte, error) {
 	return json.Marshal(messageClient)
 }
@@ -66,6 +68,8 @@ func DeserializeMessage(message *middleware.Message) (*MessageClient, error) {
 	}
 	return &messageClient, nil
 }
+
+// ------------- EndOfRecords -------------
 
 func SerializeEOR(clientId int64, mustPropagate bool, sender string) (*middleware.Message, error) {
 	//slog.Info("serializando eof")
@@ -103,6 +107,8 @@ func DeserializeEOR(data []interface{}) (bool, string, error) {
 	}
 	return mustPropagate, sender, nil
 }
+
+// ------------- TransactionBatch -------------
 
 func SerializeMessage(clientId int64, transactionBatch []transaction.Transaction) (*middleware.Message, error) {
 	data := []interface{}{}
@@ -164,6 +170,8 @@ func DeserializeTransactionBatch(data []interface{}) ([]transaction.Transaction,
 
 	return transactions, nil
 }
+
+// ------------- TransactionBatch -------------
 
 func SerializePaymentFormatAverageMessage(clientId int64, paymentFormatAverages []transaction.PaymentFormatAverage) (*middleware.Message, error) {
 	serializedRecords := []interface{}{}
