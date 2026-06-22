@@ -43,7 +43,7 @@ func NewTransactionsFileReader(filepath string, batchSize int) (*TransactionsFil
 	}
 
 	scanner := bufio.NewScanner(file)
-	//scanner.Scan() // para saltear la primera linea del archivo (saltea el header)
+	scanner.Scan() // para saltear la primera linea del archivo (saltea el header)
 
 	return &TransactionsFileReader{
 		counter:   0,
