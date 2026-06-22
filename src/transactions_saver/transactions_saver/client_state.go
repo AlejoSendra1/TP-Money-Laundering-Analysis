@@ -15,18 +15,22 @@ const (
 )
 
 type ClientState struct {
-	mu               sync.Mutex // Protege el estado del cliente
-	stage            Stage
-	notificationEOFs batch_utils.Set[string]
-	receivedFlowEOF  bool
-	qtyTx            int      // Para debug
-	Storage          *Storage // Abstraccion del archivo
+	mu               sync.Mutex              `json:"-"` // Protege el estado del cliente
+	Stage            Stage                   `json:"stage"`
+	NotificationEOFs batch_utils.Set[string] `json:"notificationEOFs"`
+	ReceivedFlowEOF  bool                    `json:"receivedFlowEOF"`
+	QtyTx            int                     `json:"qtyTx"` // Para debug
+	StorageFilePath  string                  `json:"storageFilePath"`
+	StorageFileName  string                  `json:"storageFileName"`
+	Storage          *Storage                // Abstraccion del archivo
 }
 
 func NewClientState(filePath string, name string) *ClientState {
 	return &ClientState{
-		notificationEOFs: batch_utils.NewSet[string](),
-		stage:            StageBufferingData,
+		NotificationEOFs: batch_utils.NewSet[string](),
+		Stage:            StageBufferingData,
+		StorageFilePath:  filePath,
+		StorageFileName:  name,
 		Storage:          NewStorage(filePath, name),
 	}
 }
@@ -35,10 +39,10 @@ func NewClientState(filePath string, name string) *ClientState {
 func (clientState *ClientState) ShouldBuffData(count int) bool {
 	clientState.mu.Lock()
 	defer clientState.mu.Unlock()
-	clientState.qtyTx += count
+	clientState.QtyTx += count
 
 	// Si ya flusheamos o estamos en eso, le avisamos al caller que mande directo a la output queue
-	if clientState.stage == StageFlushingDisk || clientState.stage == StageSendingNetwork {
+	if clientState.Stage == StageFlushingDisk || clientState.Stage == StageSendingNetwork {
 		return false
 	}
 	// Por defecto, seguimos acumulando en disco
@@ -50,14 +54,14 @@ func (clientState *ClientState) ShouldStartFlush(maxAmount int, sender string) (
 	clientState.mu.Lock()
 	defer clientState.mu.Unlock()
 
-	clientState.notificationEOFs.Add(sender)
+	clientState.NotificationEOFs.Add(sender)
 	// Si todavia faltan notificaciones de los promedios, no hacemos nada
-	if clientState.notificationEOFs.Size() != maxAmount {
+	if clientState.NotificationEOFs.Size() != maxAmount {
 		return false
 	}
 
 	// Ya estan los promedios, cambiamos de estado para vaciar el disco
-	clientState.stage = StageFlushingDisk
+	clientState.Stage = StageFlushingDisk
 	return true
 }
 
@@ -66,7 +70,7 @@ func (clientState *ClientState) MarkFlushAndCheckFinish() bool {
 	clientState.mu.Lock()
 	defer clientState.mu.Unlock()
 
-	clientState.stage = StageSendingNetwork
+	clientState.Stage = StageSendingNetwork
 	if clientState.shouldFinish() {
 		return true
 	}
@@ -78,7 +82,7 @@ func (clientState *ClientState) MarkEOFAndCheckFinish() bool {
 	clientState.mu.Lock()
 	defer clientState.mu.Unlock()
 
-	clientState.receivedFlowEOF = true
+	clientState.ReceivedFlowEOF = true
 	if clientState.shouldFinish() {
 		return true
 	}
@@ -87,6 +91,6 @@ func (clientState *ClientState) MarkEOFAndCheckFinish() bool {
 
 // Solo podemos cerrar si el flujo de datos termino (recibi eof) y el disco ya fue vaciado
 func (clientState *ClientState) shouldFinish() bool {
-	slog.Info("Size transactions send:", "size", clientState.qtyTx)
-	return clientState.receivedFlowEOF && (clientState.stage == StageSendingNetwork)
+	slog.Info("Size transactions send:", "size", clientState.QtyTx)
+	return clientState.ReceivedFlowEOF && (clientState.Stage == StageSendingNetwork)
 }

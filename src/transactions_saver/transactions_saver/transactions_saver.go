@@ -6,10 +6,14 @@ import (
 	"os"
 	"sync"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
+
+const LogsUntilCheckpoint = 1 // Se reciben pocos EOFs y NotificationAVG
 
 type TransactionsSaverConfig struct {
 	Id                       int
@@ -28,6 +32,11 @@ type TransactionsSaverConfig struct {
 	DateFilterAmount         int
 }
 
+type CheckpointData struct {
+	ClientStates map[int64]*ClientState            `json:"clientStates"`
+	EofCounter   map[int64]batch_utils.Set[string] `json:"eofCounter"`
+}
+
 type TransactionsSaver struct {
 	inputQueue           middleware.Middleware
 	outputQueue          middleware.Middleware
@@ -37,6 +46,8 @@ type TransactionsSaver struct {
 	clientStates         map[int64]*ClientState // Ahora mapea al nuevo tipo State
 	eofCounter           map[int64]batch_utils.Set[string]
 	mu                   sync.Mutex // Protege clientStates y eofCounter
+	muDataSaver          sync.Mutex // Protege el acceso a dataSaver
+	dataSaver            *datasaver.DataSaver
 }
 
 func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, error) {
@@ -75,6 +86,11 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		controlExchange.Close()
 		return nil, err
 	}
+
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "transactions_saver", config.Id), LogsUntilCheckpoint)
+	if err != nil {
+		return nil, err
+	}
 	return &TransactionsSaver{
 		inputQueue:           inputQueue,
 		outputQueue:          outputQueue,
@@ -83,7 +99,16 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		config:               config,
 		clientStates:         make(map[int64]*ClientState),
 		eofCounter:           make(map[int64]batch_utils.Set[string]),
+		dataSaver:            dataSaver,
 	}, nil
+}
+
+func (transactionsSaver *TransactionsSaver) GetCheckpointData() any {
+	slog.Info("State saved", "clientStates", transactionsSaver.clientStates, "eofCounter", transactionsSaver.eofCounter)
+	return CheckpointData{
+		ClientStates: transactionsSaver.clientStates,
+		EofCounter:   transactionsSaver.eofCounter,
+	}
 }
 
 func (transactionsSaver *TransactionsSaver) Run() {
@@ -101,39 +126,40 @@ func (transactionsSaver *TransactionsSaver) Run() {
 }
 
 func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middleware.Message, ack, nack func()) {
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV2(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:     transactionsSaver.handleEndOfRecordMessageWrapper,
+			inner.TransactionBatch: transactionsSaver.handleDataMessageWrapper,
+		})
 	if err != nil {
-		slog.Error("While deserializing message", "err", err)
-		nack()
-		return
-	}
-
-	var processErr error
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		_, sender, err := inner.DeserializeEOR(msg.Data)
-		if err == nil {
-			processErr = transactionsSaver.handleEndOfRecordMessage(msg.ClientID, sender)
-		} else {
-			processErr = err
-		}
-	case inner.TransactionBatch:
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err == nil {
-			processErr = transactionsSaver.handleDataMessage(transactions, msg.ClientID)
-		} else {
-			processErr = err
-		}
-	default:
-		processErr = fmt.Errorf("unexpected msg type received")
-	}
-
-	if processErr != nil {
-		slog.Error("Failed processing message", "err", processErr, "clientID", msg.ClientID)
 		nack()
 		return
 	}
 	ack()
+}
+
+func (transactionsSaver *TransactionsSaver) handleDataMessageWrapper(clientID int64, data []interface{}) error {
+	transactions, err := inner.DeserializeTransactionBatch(data)
+	var processErr error
+	if err == nil {
+		processErr = transactionsSaver.handleDataMessage(transactions, clientID)
+	} else {
+		processErr = err
+	}
+	return processErr
+}
+
+func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessageWrapper(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
+	var processErr error
+
+	if err == nil {
+		processErr = transactionsSaver.handleEndOfRecordMessage(clientID, sender)
+	} else {
+		processErr = err
+	}
+	return processErr
 }
 
 func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID int64, sender string) error {
@@ -151,84 +177,96 @@ func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID in
 }
 
 func (transactionsSaver *TransactionsSaver) handleNotificationMessage(middlewareMsg *middleware.Message, ack, nack func()) {
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV2(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.NotificationAverage: transactionsSaver.handleNotificationMessageWrapper,
+		})
 	if err != nil {
-		slog.Error("While deserializing message", "err", err)
 		nack()
 		return
 	}
-	_, sender, err := inner.DeserializeEOR(msg.Data)
+	transactionsSaver.muDataSaver.Lock()
+	transactionsSaver.dataSaver.Save(middlewareMsg, transactionsSaver)
+	transactionsSaver.muDataSaver.Unlock()
+	ack()
+}
+
+func (transactionsSaver *TransactionsSaver) handleNotificationMessageWrapper(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
-		slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
+		return err
 	}
 
-	slog.Info("Received notification message", "clientID", msg.ClientID)
-	clientState := transactionsSaver.getOrCreateClientState(msg.ClientID)
+	slog.Info("Received notification message", "clientID", clientID)
+	clientState := transactionsSaver.getOrCreateClientState(clientID)
 	if !clientState.ShouldStartFlush(transactionsSaver.config.Q3AmountFilterAmount, sender) {
 		slog.Info("Dont flush disk because still waiting for more averages notification",
-			"clientID", msg.ClientID,
-			"receivedNotifications", clientState.notificationEOFs,
+			"clientID", clientID,
+			"receivedNotifications", clientState.NotificationEOFs,
 			"expectedNotifications", transactionsSaver.config.Q3AmountFilterAmount,
 		)
-		ack()
-		return
+		return nil
 	}
 
-	if err = clientState.Storage.FlushTransactions(msg.ClientID, transactionsSaver.sendToOutput); err != nil {
-		slog.Error("While flushing transactions for client", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
+	if err = clientState.Storage.FlushTransactions(clientID, transactionsSaver.sendToOutput); err != nil {
+		slog.Error("While flushing transactions for client", "err", err, "clientID", clientID)
+		return err
 	}
 	if clientState.MarkFlushAndCheckFinish() {
-		if err = transactionsSaver.finishClient(msg.ClientID); err != nil {
-			nack() // Manejar bien este caso...
-			return
+		if err = transactionsSaver.finishClient(clientID); err != nil {
+			return err
 		}
 	} else {
 		slog.Info("Flushed disk, but cannot send client EOF because it hasnt been received yet")
 	}
-	ack()
+	return nil
 }
 
 func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV2(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords: transactionsSaver.handleControlMessageWrapper,
+		})
 	if err != nil {
-		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
-	_, sender, err := inner.DeserializeEOR(msg.Data)
-	if err != nil {
-		slog.Error("While deserializing control message", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
-	}
-	clientState := transactionsSaver.getOrCreateClientState(msg.ClientID)
+	transactionsSaver.muDataSaver.Lock()
+	transactionsSaver.dataSaver.Save(middlewareMsg, transactionsSaver)
+	transactionsSaver.muDataSaver.Unlock()
+	ack()
+}
 
+func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
+		return err
+	}
+	clientState := transactionsSaver.getOrCreateClientState(clientID)
 	transactionsSaver.mu.Lock()
-	transactionsSaver.eofCounter[msg.ClientID].Add(sender)
-	if transactionsSaver.eofCounter[msg.ClientID].Size() != transactionsSaver.config.DateFilterAmount {
+	transactionsSaver.eofCounter[clientID].Add(sender)
+	if transactionsSaver.eofCounter[clientID].Size() != transactionsSaver.config.DateFilterAmount {
 		slog.Info("Dont send EOF because still waiting for more EOFs",
-			"clientID", msg.ClientID,
-			"receivedEOFCount", transactionsSaver.eofCounter[msg.ClientID],
+			"clientID", clientID,
+			"receivedEOFCount", transactionsSaver.eofCounter[clientID],
 			"expectedEOFCount", transactionsSaver.config.DateFilterAmount)
 		transactionsSaver.mu.Unlock()
-		ack()
-		return
+		return nil
 	}
 	transactionsSaver.mu.Unlock()
 
 	if clientState.MarkEOFAndCheckFinish() {
-		if err = transactionsSaver.finishClient(msg.ClientID); err != nil {
-			nack() // Manejar bien este caso...
-			return
+		if err = transactionsSaver.finishClient(clientID); err != nil {
+			return err
 		}
 	} else {
 		slog.Info("Received client EOF, but cannot send because disk has not been flushed yet")
 	}
-	ack()
+	return nil
 }
 
 func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
@@ -239,10 +277,15 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 			FromAccount:   tx.FromAccount,
 			PaymentFormat: tx.PaymentFormat,
 			Amount:        tx.Amount,
-			Timestamp:     tx.Timestamp,
+			Timestamp:     tx.Timestamp.UnixNano(),
 		})
 	}
-
+	batch_utils.SortBatch(transactions, func(a, b transaction.ThresholdFilteredTransfer) bool {
+		if a.Timestamp != b.Timestamp {
+			return a.Timestamp < b.Timestamp
+		}
+		return a.Amount > b.Amount
+	})
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
 	if clientState.ShouldBuffData(len(transactionRecords)) {
 		return clientState.Storage.StoreTransactions(transactions)
@@ -315,4 +358,46 @@ func (transactionsSaver *TransactionsSaver) finishClient(clientID int64) error {
 		return err
 	}
 	return transactionsSaver.cleanupClientState(clientID)
+}
+
+func (transactionsSaver *TransactionsSaver) Restaurate() error {
+	var checkpoint CheckpointData
+	thereIsCheckpoint, err := transactionsSaver.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil {
+		return err
+	}
+
+	if thereIsCheckpoint {
+		slog.Info("Cargando TransactionsSaver en base a checkpoint")
+
+		transactionsSaver.eofCounter = checkpoint.EofCounter
+		transactionsSaver.clientStates = checkpoint.ClientStates
+
+		for _, state := range transactionsSaver.clientStates {
+			state.Storage = NewStorage(state.StorageFilePath, state.StorageFileName)
+		}
+		slog.Info("State restaured", "clientStates", checkpoint.ClientStates, "eof", checkpoint.EofCounter)
+	}
+	var savedDataVar middleware.Message
+	var thereIsLogs bool
+	for {
+		thereIsLogs, err = transactionsSaver.dataSaver.GetDataFromLogs(&savedDataVar)
+		if err != nil {
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+		err = worker.HandleMessageV2(
+			&savedDataVar,
+			worker.MessageHandlerMap{
+				inner.EndOfRecords:        transactionsSaver.handleControlMessageWrapper,
+				inner.NotificationAverage: transactionsSaver.handleNotificationMessageWrapper,
+			},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
