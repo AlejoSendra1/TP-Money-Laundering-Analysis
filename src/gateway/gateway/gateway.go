@@ -35,6 +35,8 @@ type GatewayConfig struct {
 	EofExpectedByQuery5 int
 }
 
+const MaxBatchSize = 20000
+
 type Gateway struct {
 	batchCounter   int64 // para Info porposes
 	registry       clientregistry.ClientRegistry
@@ -73,7 +75,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		inputQueue:     inputQueue,
 		listener:       listener,
 		config:         config,
-		deduplicator:   batch_utils.NewMultiClientDeduplicator(1000),
+		deduplicator:   batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
 	}
 	gateway.running.Store(true)
 	return gateway, nil
