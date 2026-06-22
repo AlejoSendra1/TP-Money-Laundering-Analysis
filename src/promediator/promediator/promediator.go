@@ -151,8 +151,8 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 		slog.Info("Dont send anything", "clientID", clientID)
 	}
 
-	// Envio el EOF
-	msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%s_%d", promediator.config.PromediatorPrefix, promediator.config.Id))
+	// Envio la notificacion a q3 amount filter
+	msgToSend, err := inner.SerializeNotificationAvg(clientID, false, fmt.Sprintf("%s_%d", promediator.config.PromediatorPrefix, promediator.config.Id))
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
