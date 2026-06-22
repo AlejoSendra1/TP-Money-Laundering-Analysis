@@ -287,7 +287,7 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 		return a.Amount > b.Amount
 	})
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
-	if clientState.ShouldBuffData(len(transactionRecords)) {
+	if clientState.ShouldBuffData() {
 		return clientState.Storage.StoreTransactions(transactions)
 	}
 	return transactionsSaver.sendToOutput(clientID, transactions)

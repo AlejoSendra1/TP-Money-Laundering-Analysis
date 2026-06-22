@@ -1,7 +1,6 @@
 package transactions_saver
 
 import (
-	"log/slog"
 	"sync"
 	"tp_distribuidos/common/batch_utils"
 )
@@ -19,7 +18,6 @@ type ClientState struct {
 	Stage            Stage                   `json:"stage"`
 	NotificationEOFs batch_utils.Set[string] `json:"notificationEOFs"`
 	ReceivedFlowEOF  bool                    `json:"receivedFlowEOF"`
-	QtyTx            int                     `json:"qtyTx"` // Para debug
 	StorageFilePath  string                  `json:"storageFilePath"`
 	StorageFileName  string                  `json:"storageFileName"`
 	Storage          *Storage                // Abstraccion del archivo
@@ -36,10 +34,9 @@ func NewClientState(filePath string, name string) *ClientState {
 }
 
 // Verifica si se debe almacenar los datos o enviarlos directamente al output
-func (clientState *ClientState) ShouldBuffData(count int) bool {
+func (clientState *ClientState) ShouldBuffData() bool {
 	clientState.mu.Lock()
 	defer clientState.mu.Unlock()
-	clientState.QtyTx += count
 
 	// Si ya flusheamos o estamos en eso, le avisamos al caller que mande directo a la output queue
 	if clientState.Stage == StageFlushingDisk || clientState.Stage == StageSendingNetwork {
@@ -91,6 +88,5 @@ func (clientState *ClientState) MarkEOFAndCheckFinish() bool {
 
 // Solo podemos cerrar si el flujo de datos termino (recibi eof) y el disco ya fue vaciado
 func (clientState *ClientState) shouldFinish() bool {
-	slog.Info("Size transactions send:", "size", clientState.QtyTx)
 	return clientState.ReceivedFlowEOF && (clientState.Stage == StageSendingNetwork)
 }
