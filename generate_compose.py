@@ -44,7 +44,7 @@ def main():
         """Genera dinamicamente las replicas para un tipo de worker"""
         amount = SCALE.get(node_name, 0)
         for i in range(amount):
-            env = [f"ID={i}", "MOM_HOST=rabbitmq", "MOM_PORT=5672"] + env_vars
+            env = [f"ID={i}", "MOM_HOST=rabbitmq", "MOM_PORT=5672", f"WORKER_ID={node_name}_{i}"] + env_vars
             service = {
                 "build": {"context": "./src/", "dockerfile": f"{node_name}/Dockerfile"},
                 "container_name": f"{node_name}_{i}",
@@ -104,8 +104,9 @@ def main():
             "environment": [
                 f"BATCH_SIZE={batch_size}", 
                 f"INPUT_FILE={input_file}",
-                f"OUTPUT_FILE=/output/output_{client_name}.csv", 
-                "SERVER_HOST=gateway", 
+                f"OUTPUT_FILE=/output/output_{client_name}.csv",
+                f"WORKER_ID={client_name}",
+                "SERVER_HOST=gateway",
                 "SERVER_PORT=5678"
             ],
             "volumes": ["./datasets:/datasets", "./output:/output"]
