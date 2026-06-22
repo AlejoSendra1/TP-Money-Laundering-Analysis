@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -27,6 +28,8 @@ type Q3AmountFilterConfig struct {
 	OutputQueue              string
 }
 
+const LogsUntilCheckpoint = 1
+
 type CheckpointData struct {
 	EofCounterAvg map[int64]batch_utils.Set[string] `json:"eofCounterAvg"`
 	EofCounterTs  map[int64]batch_utils.Set[string] `json:"eofCounterTs"`
@@ -44,6 +47,8 @@ type Q3AmountFilter struct {
 	averages             map[int64]map[string]float64
 	config               Q3AmountFilterConfig
 	mu                   sync.Mutex
+	dataSaver            *datasaver.DataSaver
+	muDataSaver          sync.Mutex
 }
 
 func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
@@ -86,6 +91,15 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		return nil, err
 	}
 
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_q3_amount_filter_%d", config.Id), LogsUntilCheckpoint)
+	if err != nil {
+		inputPromediator.Close()
+		inputTransactionSaver.Close()
+		outputQueue.Close()
+		notificationExchange.Close()
+		controlExchange.Close()
+		return nil, err
+	}
 	return &Q3AmountFilter{
 		promediatorExchange:  inputPromediator,
 		inputQueue:           inputTransactionSaver,
@@ -96,6 +110,7 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		eofCounterAvg:        make(map[int64]batch_utils.Set[string]),
 		eofCounterTs:         make(map[int64]batch_utils.Set[string]),
 		config:               config,
+		dataSaver:            dataSaver,
 	}, nil
 }
 
@@ -129,7 +144,7 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(middlewareMsg *mi
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
-			inner.EndOfRecords:         q3AmountFilter.handlePaymentEndOfRecordsWrapper,
+			inner.NotificationAverage:  q3AmountFilter.handleNotificationAverageWrapper,
 			inner.PaymentFormatAverage: q3AmountFilter.handlePaymentFormatAverageWrapper,
 		},
 	)
@@ -137,6 +152,9 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(middlewareMsg *mi
 		nack()
 		return
 	}
+	q3AmountFilter.muDataSaver.Lock()
+	q3AmountFilter.dataSaver.Save(middlewareMsg, q3AmountFilter)
+	q3AmountFilter.muDataSaver.Unlock()
 	ack()
 }
 
@@ -151,6 +169,9 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middle
 		nack()
 		return
 	}
+	q3AmountFilter.muDataSaver.Lock()
+	q3AmountFilter.dataSaver.Save(middlewareMsg, q3AmountFilter)
+	q3AmountFilter.muDataSaver.Unlock()
 	ack()
 }
 
@@ -158,7 +179,7 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(middlewareMs
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
-			inner.EndOfRecords:              q3AmountFilter.handleTransactionsSaverEnfOfRecordsWrapper,
+			inner.EndOfRecords:              q3AmountFilter.handleTransactionsSaverEndOfRecordsWrapper,
 			inner.ThresholdFilteredTransfer: q3AmountFilter.handleThresholdFilteredTransferWrapper,
 		},
 	)
@@ -169,7 +190,7 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(middlewareMs
 	ack()
 }
 
-func (q3AmountFilter *Q3AmountFilter) handlePaymentEndOfRecordsWrapper(clientID int64, data []interface{}) error {
+func (q3AmountFilter *Q3AmountFilter) handleNotificationAverageWrapper(clientID int64, data []interface{}) error {
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
@@ -195,6 +216,15 @@ func (q3AmountFilter *Q3AmountFilter) handlePaymentFormatAverageWrapper(clientID
 func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Averages EOF arrived from promediator", "clientID", clientID)
 	needNotify := false
+	q3AmountFilter.mu.Lock()
+	_, ok := q3AmountFilter.eofCounterAvg[clientID]
+	q3AmountFilter.mu.Unlock()
+
+	if !ok {
+		// Si me llego un NotificationAvg de promediator que no tengo registro, es porque me mando tarde la data o porque nunca me mando
+		slog.Warn("Notification avg arrived from promediator, but wont process", "clientID", clientID)
+		return nil
+	}
 	q3AmountFilter.mu.Lock()
 	q3AmountFilter.eofCounterAvg[clientID].Add(sender)
 	if q3AmountFilter.eofCounterAvg[clientID].Size() == q3AmountFilter.config.PromediatorAmount {
@@ -278,7 +308,7 @@ func (q3AmountFilter *Q3AmountFilter) handleControlEndOfRecodsWrapper(clientID i
 	return nil
 }
 
-func (q3AmountFilter *Q3AmountFilter) handleTransactionsSaverEnfOfRecordsWrapper(clientID int64, data []interface{}) error {
+func (q3AmountFilter *Q3AmountFilter) handleTransactionsSaverEndOfRecordsWrapper(clientID int64, data []interface{}) error {
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
@@ -404,5 +434,53 @@ func (q3AmountFilter *Q3AmountFilter) sendOutput(queryResult transaction.QueryRe
 		slog.Debug("While sending data message", "err", err, "clientID", clientID)
 		return err
 	}
+	return nil
+}
+
+func (q3AmountFilter *Q3AmountFilter) Restaurate() error {
+	var checkpoint CheckpointData
+
+	thereIsCheckpoint, err := q3AmountFilter.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil {
+		return err
+	}
+
+	if thereIsCheckpoint {
+		slog.Info("Cargando Q3AmountFilter en base a checkpoint")
+		q3AmountFilter.eofCounterAvg = checkpoint.EofCounterAvg
+		q3AmountFilter.eofCounterTs = checkpoint.EofCounterTs
+		q3AmountFilter.averages = checkpoint.Averages
+		slog.Info("State restaurated",
+			"eofCounterAvg", q3AmountFilter.eofCounterAvg,
+			"eofCounterTs", q3AmountFilter.eofCounterTs,
+			"averages", q3AmountFilter.averages,
+		)
+	}
+
+	var savedDataVar middleware.Message
+	var thereIsLogs bool
+
+	for {
+		thereIsLogs, err = q3AmountFilter.dataSaver.GetDataFromLogs(&savedDataVar)
+		if err != nil {
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+
+		err = worker.HandleMessageV2(
+			&savedDataVar,
+			worker.MessageHandlerMap{
+				inner.NotificationAverage:  q3AmountFilter.handleNotificationAverageWrapper,
+				inner.PaymentFormatAverage: q3AmountFilter.handlePaymentFormatAverageWrapper,
+				inner.EndOfRecords:         q3AmountFilter.handleControlEndOfRecodsWrapper,
+			},
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
