@@ -177,3 +177,13 @@ func ReadReconnectionId(reader io.Reader) (int64, error) {
 	}
 	return int64(serializer.DeserializeUint64(idBytes)), nil
 }
+
+// Helpers
+
+func ReadUint32(reader io.Reader) (uint32, error) {
+	bytes, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	if err != nil {
+		return 0, err
+	}
+	return serializer.DeserializeUint32(bytes), nil
+}

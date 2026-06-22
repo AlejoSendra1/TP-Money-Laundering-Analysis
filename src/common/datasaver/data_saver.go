@@ -23,6 +23,7 @@ type DataSaver struct {
 	reader              *bufio.Scanner
 	logsUntilCheckpoint int
 	logCounter          int
+	pendingLine         []byte
 }
 
 type RecordType string
@@ -210,7 +211,7 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 		return false, nil
 	}
 
-	line := scanner.Bytes()
+	line := append([]byte(nil), scanner.Bytes()...)
 	if len(line) == 0 {
 		ds.reader = nil
 		return false, nil
@@ -228,29 +229,35 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 		return true, nil
 	}
 	slog.Info("No se leyo un checkpoint type")
-	ds.reader = nil
+	ds.pendingLine = line // para usar en el caso donde no hay un checkpoint
 	return false, nil
 }
 
 // lee cada batch y lo parsea in place en la variable pasada por parametro
 func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
-	if ds.reader == nil {
-		ds.reader = bufio.NewScanner(ds.file)
+	var line []byte
+	var thereIsMore bool
+	if ds.pendingLine != nil {
+		line = ds.pendingLine
+		ds.pendingLine = nil
+		thereIsMore = true
+	} else {
+		if ds.reader == nil {
+			ds.reader = bufio.NewScanner(ds.file)
+		}
+		// Scan through the file line by line
+		thereIsMore = ds.reader.Scan()
+
+		if err := ds.reader.Err(); err != nil {
+			return false, fmt.Errorf("error reading file: %w", err)
+		}
+		if !thereIsMore {
+			ds.reader = nil
+			return false, nil
+		}
+		line = ds.reader.Bytes()
 	}
 
-	// Scan through the file line by line
-	thereIsMore := ds.reader.Scan()
-
-	if err := ds.reader.Err(); err != nil {
-		return false, fmt.Errorf("error reading file: %w", err)
-	}
-
-	if !thereIsMore {
-		ds.reader = nil
-		return false, nil
-	}
-
-	line := ds.reader.Bytes()
 	if len(line) == 0 {
 		ds.reader = nil
 		return false, nil
