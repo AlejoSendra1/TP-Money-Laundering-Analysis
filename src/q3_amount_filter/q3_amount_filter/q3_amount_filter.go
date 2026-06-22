@@ -35,7 +35,6 @@ type Q3AmountFilter struct {
 	eofCounterAvg        map[int64]batch_utils.Set[string]
 	eofCounterTs         map[int64]batch_utils.Set[string]
 	averages             map[int64]map[string]float64
-	qtyTx                map[int64]int
 	config               Q3AmountFilterConfig
 	mu                   sync.Mutex
 }
@@ -87,7 +86,6 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		notificationExchange: notificationExchange,
 		controlExchange:      controlExchange,
 		averages:             make(map[int64]map[string]float64),
-		qtyTx:                make(map[int64]int), // Para debug
 		eofCounterAvg:        make(map[int64]batch_utils.Set[string]),
 		eofCounterTs:         make(map[int64]batch_utils.Set[string]),
 		config:               config,
@@ -178,7 +176,6 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormat
 	if _, ok := q3AmountFilter.averages[clientID]; !ok {
 		slog.Info("New average arrived from promediator", "clientID", clientID)
 		q3AmountFilter.averages[clientID] = make(map[string]float64)
-		q3AmountFilter.qtyTx[clientID] = 0
 		q3AmountFilter.eofCounterAvg[clientID] = batch_utils.NewSet[string]()
 		q3AmountFilter.eofCounterTs[clientID] = batch_utils.NewSet[string]()
 	}
@@ -212,12 +209,10 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middle
 		return
 	}
 	shouldSendEOF := false
-	var qty int
 	q3AmountFilter.mu.Lock()
 	q3AmountFilter.eofCounterTs[clientID].Add(sender)
 	if q3AmountFilter.eofCounterTs[clientID].Size() == q3AmountFilter.config.TransactionsSaverAmount {
 		shouldSendEOF = true
-		qty = q3AmountFilter.qtyTx[clientID]
 	}
 	q3AmountFilter.mu.Unlock()
 
@@ -235,7 +230,6 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middle
 			return
 		}
 		slog.Info("Sent EOF to gateway", "clientID", clientID)
-		slog.Info("Size transactions sent", "clientID", clientID, "qtyTx", qty)
 		q3AmountFilter.cleanupClient(clientID)
 	} else {
 		slog.Info("Waiting for more transactions saver EOFs", "clientID", clientID)
@@ -345,7 +339,6 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 
 	if len(transactions) > 0 {
 		q3AmountFilter.mu.Lock()
-		q3AmountFilter.qtyTx[clientID] += len(transactions)
 		q3AmountFilter.mu.Unlock()
 		batch_utils.SortBatch(transactions, func(a, b transaction.ThresholdFilteredTransfer) bool {
 			if a.Timestamp != b.Timestamp {
@@ -368,7 +361,6 @@ func (q3AmountFilter *Q3AmountFilter) cleanupClient(clientID int64) {
 	q3AmountFilter.mu.Lock()
 	defer q3AmountFilter.mu.Unlock()
 	delete(q3AmountFilter.averages, clientID)
-	delete(q3AmountFilter.qtyTx, clientID)
 	delete(q3AmountFilter.eofCounterAvg, clientID)
 	delete(q3AmountFilter.eofCounterTs, clientID)
 }
