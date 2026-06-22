@@ -62,6 +62,7 @@ def main():
         "build": {"context": "./src/rabbitmq", "dockerfile": "Dockerfile"},
         "container_name": "rabbitmq",
         "environment": ["RABBITMQ_LOG_LEVELS=error"],
+        "logging": {"driver": "none"},
         "healthcheck": {
             "test": "rabbitmq-diagnostics check_port_connectivity",
             "interval": "5s", 
