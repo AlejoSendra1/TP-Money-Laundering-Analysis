@@ -39,7 +39,7 @@ type Group struct {
 	controlMutex        sync.Mutex
 	precalculatedTopics []string
 	datasaver           *datasaver.DataSaver
-	handleFunctions     worker.MessageHandlerMap
+	mssgHandlers        worker.MessageHandlerMap
 }
 
 func NewGroupWorker(config GroupConfig) (*Group, error) {
@@ -89,7 +89,7 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		precalculatedTopics: precalculatedTopics,
 		datasaver:           dataSaver,
 	}
-	g.handleFunctions = worker.MessageHandlerMap{ // para no tener q crear el struct en cada recepcion de msg
+	g.mssgHandlers = worker.MessageHandlerMap{ // para no tener q crear el struct en cada recepcion de msg
 		inner.EndOfRecords:     g.handleEndOfRecordMessage,
 		inner.TransactionBatch: g.handleTransactionBatchMessage,
 	}
@@ -101,9 +101,7 @@ func (groupWorker *Group) Run() {
 
 	go func() {
 		groupWorker.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
-			groupWorker.controlMutex.Lock()
 			groupWorker.handleMessage(&msg, ack, nack)
-			groupWorker.controlMutex.Unlock()
 		})
 		close(done)
 	}()
@@ -116,12 +114,10 @@ func (groupWorker *Group) Run() {
 }
 
 func (g *Group) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	if err := worker.HandleMessageV2(middlewareMsg, g.handleFunctions); err != nil {
+	if err := worker.HandleMessageV2(middlewareMsg, g.mssgHandlers); err != nil {
 		nack()
 		return
 	}
-
-	g.datasaver.Save(middlewareMsg, g) // persistencia de datos
 	ack()
 }
 
@@ -133,7 +129,7 @@ func (groupWorker *Group) handleTransactionBatchMessage(clientID int64, data []i
 		slog.Error("While deserializing transactions from message", "err", err, "clientID", clientID)
 		return err
 	}
-
+	datasaver.Crash(datasaver.CrashAfterLog)
 	// transacciones para cada worker de la proxima fase
 	//slog.Info("Received Tansaction batch from ", "clientID", clientID)
 	workerByBatches := make(map[int][]transaction.Transaction)
@@ -185,7 +181,7 @@ func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []
 // --------------- EndOfRecords ---------------
 
 func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
-
+	datasaver.Crash(datasaver.CrashBeforeEOF)
 	// se debe propagar entre todos los group workers y estos a todos los bridges analizers
 	mustPropagate, sender, err := inner.DeserializeEOR(data)
 	if err != nil {

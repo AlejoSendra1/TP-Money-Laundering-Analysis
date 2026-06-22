@@ -4,7 +4,7 @@ import (
 	"log/slog"
 )
 
-const LOGS_UNTIL_CHECKPOINT = 250
+const LOGS_UNTIL_CHECKPOINT = 20
 
 // struct usado para el guardado de checkpoints y recuperacion de datos
 type CheckpointData struct {

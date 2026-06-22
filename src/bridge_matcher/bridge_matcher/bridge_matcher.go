@@ -1,19 +1,21 @@
 package bridge_matcher
 
 import (
+	"fmt"
 	"hash"
 	"hash/fnv"
 	"log/slog"
 	"slices"
 	"strconv"
 
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/worker"
 )
 
 const FANOUT = ""
-const DestinationThreshold = 5
+const DestinationThreshold = 4
 const SuspiciousAccountsBatchSize = 100
 
 type BridgeMatcherConfig struct {
@@ -41,6 +43,9 @@ type BridgeMatcher struct {
 	groupWorkersNotified map[int64][]string
 	bridgesReadyForEOR   map[int64][]int // tracks which peers sent ReadyForEOF
 	hasher               hash.Hash32
+	mssgHandlers         worker.MessageHandlerMap // para optimizar
+	dataSaver            *datasaver.DataSaver
+	restoring            bool
 }
 
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
@@ -69,16 +74,32 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		return nil, err
 	}
 
-	return &BridgeMatcher{
+	// para persistir la info ante posibles caidas
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/bridge_matcher_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	if err != nil {
+		return nil, err
+	}
+
+	bm := &BridgeMatcher{
 		inputQueue:           inputQueue,
 		outputExchange:       *outputExchange,
 		controlExchange:      controlExchange,
 		Registers:            make(map[int64]map[string]map[string]int),
-		groupWorkersNotified: make(map[int64][]string),
 		config:               config,
+		groupWorkersNotified: make(map[int64][]string),
 		bridgesReadyForEOR:   make(map[int64][]int),
 		hasher:               fnv.New32a(),
-	}, nil
+		dataSaver:            dataSaver,
+		restoring:            false,
+	}
+	bm.mssgHandlers = worker.MessageHandlerMap{
+		inner.EndOfRecords:      bm.handleEndOfRecordMessage,
+		inner.TransactionBatch:  bm.handleTransactionBatchMessage,
+		inner.SuspiciousAccount: bm.handleSuspiciousAccountMessage,
+		inner.ReadyForEOR:       bm.handleReadyForEOR,
+	}
+
+	return bm, nil
 }
 
 func (bridgeMatcher *BridgeMatcher) Run() {
@@ -88,19 +109,17 @@ func (bridgeMatcher *BridgeMatcher) Run() {
 }
 
 func (bm *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	worker.HandleMessage(middlewareMsg, ack, nack,
-		worker.MessageHandlerMap{
-			inner.EndOfRecords:      bm.handleEndOfRecordMessage,
-			inner.TransactionBatch:  bm.handleTransactionBatchMessage,
-			inner.SuspiciousAccount: bm.handleSuspiciousAccountMessage,
-			inner.ReadyForEOR:       bm.handleReadyForEOR,
-		},
-	)
+	if err := worker.HandleMessageV2(middlewareMsg, bm.mssgHandlers); err != nil {
+		nack()
+		return
+	}
+
+	bm.dataSaver.Save(*middlewareMsg, bm) // persistencia de datos
+	ack()
 }
 
 func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
 	//slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
-	// se considera que en este punto ya cominicó todo lo relevante
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
@@ -198,6 +217,10 @@ func (bridgeMatcher *BridgeMatcher) processSuspiciousAccount(clientID int64, ori
 		possibleBridgesAndSinks[possibleBridge] = bridgeMatcher.Registers[clientID][possibleBridge]
 	}
 
+	if bridgeMatcher.restoring {
+		return nil
+	}
+
 	msg, err := inner.SerializesPossibleFraudDestinations(clientID, origin, possibleBridgesAndSinks)
 	if err != nil {
 		slog.Info("While serializing PossibleFraudDestinations message", "err", err, "clientID", clientID)
@@ -214,7 +237,7 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	}
 
 	bridgeMatcher.updateBridgeReadyCondition(clientID, senderID)
-	if !bridgeMatcher.assertAllBridgesReady(clientID) {
+	if !bridgeMatcher.assertAllBridgesReady(clientID) || bridgeMatcher.restoring {
 		return nil // still waiting for other bridge_matcher
 	}
 
@@ -224,7 +247,7 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	if err != nil {
 		return err
 	}
-	//slog.Info("Sending EOR", "Client", clientID)
+
 	for i := range bridgeMatcher.config.NextFaseWorkersAmount {
 		topic := makeKey(bridgeMatcher.config.NextFaseWorkersPrefix, i)
 		bridgeMatcher.outputExchange.SendToTopic(*msg, topic)
