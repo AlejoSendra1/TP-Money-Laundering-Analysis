@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	watchdogworker "tp_distribuidos/watchdog"
 )
@@ -29,6 +30,11 @@ func loadConfig() (watchdogworker.WatchdogConfig, error) {
 		}
 	}
 
+	workerIDsRaw := os.Getenv("WORKER_IDS")
+	if workerIDsRaw == "" {
+		return watchdogworker.WatchdogConfig{}, errors.New("WORKER_IDS environment variable is required")
+	}
+	workerIDs := strings.Split(workerIDsRaw, ",")
 
 	electionExchange := os.Getenv("ELECTION_EXCHANGE")
 	if electionExchange == "" {
@@ -36,12 +42,10 @@ func loadConfig() (watchdogworker.WatchdogConfig, error) {
 	}
 
 	return watchdogworker.WatchdogConfig{
-		ID:      id,
-		MomHost: momHost,
-		MomPort: momPort,
 		ID:               id,
 		MomHost:          momHost,
 		MomPort:          momPort,
+		WorkerIDs:        workerIDs,
 		ElectionExchange: electionExchange,
 	}, nil
 }

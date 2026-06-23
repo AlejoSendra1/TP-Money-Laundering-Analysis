@@ -228,6 +228,18 @@ def main():
     # ==============================================================================
     # 6. WATCHDOGS
     # ==============================================================================
+    # Build the full list of worker IDs that watchdogs must monitor: workers + clients + watchdog
+    all_worker_ids = []
+    for node_name, amount in SCALE.items():
+        for i in range(amount):
+            all_worker_ids.append(f"{node_name}_{i}")
+    for idx in range(len(CLIENTS)):
+        all_worker_ids.append(f"client_{idx}")
+    for i in range(WATCHDOG_AMOUNT):
+        all_worker_ids.append(f"watchdog_{i}")
+
+    worker_ids_env = ",".join(all_worker_ids)
+
     for i in range(WATCHDOG_AMOUNT):
         services[f"watchdog_{i}"] = {
             "build": {"context": "./src/", "dockerfile": "watchdog/Dockerfile"},
@@ -237,6 +249,7 @@ def main():
                 f"ID={i}",
                 "MOM_HOST=rabbitmq",
                 "MOM_PORT=5672",
+                f"WORKER_IDS={worker_ids_env}",
                 "ELECTION_EXCHANGE=watchdog_election",
             ],
             "volumes": ["/var/run/docker.sock:/var/run/docker.sock"]

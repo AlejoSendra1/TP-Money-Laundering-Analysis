@@ -26,12 +26,10 @@ const (
 )
 
 type WatchdogConfig struct {
-	ID      int
-	MomHost string
-	MomPort int
 	ID               int
 	MomHost          string
 	MomPort          int
+	WorkerIDs        []string // all expected worker IDs, including other watchdogs
 	ElectionExchange string   // exchange name used for bully leader election
 }
 
@@ -81,10 +79,17 @@ func NewWatchdog(config WatchdogConfig) (*Watchdog, error) {
 		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
 	}
 
+	// watchdog has to know every worker even before they send their first heartbeat
+	now := time.Now()
+	lastSeen := make(map[string]time.Time, len(config.WorkerIDs))
+	for _, id := range config.WorkerIDs {
+		lastSeen[id] = now
+	}
+
 	return &Watchdog{
 		config:     config,
 		input:      input,
-		lastSeen:   make(map[string]time.Time),
+		lastSeen:   lastSeen,
 		stopCh:     make(chan struct{}),
 		httpClient: httpClient,
 		election:   election,
