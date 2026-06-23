@@ -47,11 +47,11 @@ type MaxBankTransaction struct {
 }
 
 type ThresholdFilteredTransfer struct {
-	FromBank      int
-	FromAccount   string
-	PaymentFormat string
-	Amount        float64
-	Timestamp     time.Time
+	FromBank      int     `json:"fromBank"`
+	FromAccount   string  `json:"fromAccount"`
+	PaymentFormat string  `json:"paymentFormat"`
+	Amount        float64 `json:"amount"`
+	Timestamp     int64   `json:"timestamp"`
 }
 type QueryResult struct {
 	QueryID      QueryID

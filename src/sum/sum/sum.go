@@ -6,10 +6,14 @@ import (
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
+
+const LogsUntilCheckpoint = 1 // Se reciben pocos EOFs
 
 type SumConfig struct {
 	Id                   int
@@ -26,13 +30,20 @@ type SumConfig struct {
 	DateFilterAmount     uint8
 }
 
+type CheckpointData struct {
+	EofCounter      map[int64]batch_utils.Set[string] `json:"eofCounter"`
+	FinishedClients batch_utils.Set[int64]            `json:"finishedClients"`
+}
+
 type Sum struct {
 	inputQueue      middleware.Middleware
 	outputExchange  middleware.Middleware
 	controlExchange middleware.Middleware
 	eofCounter      map[int64]batch_utils.Set[string]
+	finishedClients batch_utils.Set[int64] // Sirve para no procesar un eof de un cliente que ya termino
 	config          SumConfig
 	mu              sync.Mutex
+	dataSaver       *datasaver.DataSaver
 }
 
 func NewSum(config SumConfig) (*Sum, error) {
@@ -67,13 +78,33 @@ func NewSum(config SumConfig) (*Sum, error) {
 		outputExchange.Close()
 		return nil, err
 	}
+
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "sum", config.Id), LogsUntilCheckpoint)
+	if err != nil {
+		inputQueue.Close()
+		outputExchange.Close()
+		controlExchange.Close()
+		return nil, err
+	}
 	return &Sum{
 		inputQueue:      inputQueue,
 		outputExchange:  outputExchange,
 		controlExchange: controlExchange,
 		config:          config,
 		eofCounter:      make(map[int64]batch_utils.Set[string]),
+		finishedClients: make(batch_utils.Set[int64]),
+		dataSaver:       dataSaver,
 	}, nil
+}
+
+func (sum *Sum) GetCheckpointData() any {
+	slog.Info("State saved",
+		"eofCounter", sum.eofCounter,
+		"finishedClients", sum.finishedClients)
+	return CheckpointData{
+		EofCounter:      sum.eofCounter,
+		FinishedClients: sum.finishedClients,
+	}
 }
 
 func (sum *Sum) Run() {
@@ -87,39 +118,39 @@ func (sum *Sum) Run() {
 }
 
 func (sum *Sum) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV2(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:     sum.handleEndOfRecordsWrapper,
+			inner.TransactionBatch: sum.handleTransactionBatchWrapper,
+		})
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
-	}
-
-	var processErr error // Variable para atrapar los errores del switch
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		_, sender, err := inner.DeserializeEOR(msg.Data)
-		if err == nil {
-			processErr = sum.handleEndOfRecordMessage(msg.ClientID, sender)
-		} else {
-			processErr = err
-		}
-	case inner.TransactionBatch:
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err == nil {
-			processErr = sum.handleDataMessage(transactions, msg.ClientID)
-		} else {
-			processErr = err
-		}
-	default:
-		processErr = fmt.Errorf("no function could handle this message type")
-	}
-
-	if processErr != nil {
-		slog.Error("Failed to process message", "err", processErr, "clientID", msg.ClientID)
 		nack()
 		return
 	}
 	ack()
+}
+
+func (sum *Sum) handleEndOfRecordsWrapper(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
+	var processErr error
+	if err == nil {
+		processErr = sum.handleEndOfRecordMessage(clientID, sender)
+	} else {
+		processErr = err
+	}
+	return processErr
+}
+
+func (sum *Sum) handleTransactionBatchWrapper(clientID int64, data []interface{}) error {
+	var processErr error
+	transactions, err := inner.DeserializeTransactionBatch(data)
+	if err == nil {
+		processErr = sum.handleDataMessage(transactions, clientID)
+	} else {
+		processErr = err
+	}
+	return processErr
 }
 
 func (sum *Sum) handleEndOfRecordMessage(clientID int64, sender string) error {
@@ -171,41 +202,58 @@ func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, 
 }
 
 func (sum *Sum) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV2(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords: sum.handleControlMessageWrapper,
+		})
 	if err != nil {
-		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
-	_, sender, err := inner.DeserializeEOR(msg.Data)
+	sum.dataSaver.Save(middlewareMsg, sum)
+	ack()
+}
+
+func (sum *Sum) handleControlMessageWrapper(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
-		slog.Error("While deserializing control message", "err", err, "clientID", msg.ClientID)
-		nack()
-		return
+		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
+		return err
+	}
+	sum.mu.Lock()
+	if sum.finishedClients.Contains(clientID) {
+		sum.mu.Unlock()
+		slog.Info("Client has already done", "clientID", clientID)
+		return nil
 	}
 
-	sum.mu.Lock()
-	sum.eofCounter[msg.ClientID].Add(sender)
-	if uint8(sum.eofCounter[msg.ClientID].Size()) != sum.config.DateFilterAmount {
-		slog.Debug("Waiting for remaining EOFs")
-		ack()
-		sum.mu.Unlock()
-		return
+	if _, ok := sum.eofCounter[clientID]; !ok {
+		slog.Info("EOF arrived before client data (or dont save client new arrived for crash), initializing...", "clientID", clientID)
+		sum.eofCounter[clientID] = batch_utils.NewSet[string]()
 	}
-	delete(sum.eofCounter, msg.ClientID)
+
+	sum.eofCounter[clientID].Add(sender)
+	if uint8(sum.eofCounter[clientID].Size()) != sum.config.DateFilterAmount {
+		slog.Debug("Waiting for remaining EOFs")
+		sum.mu.Unlock()
+		return nil
+	}
+	delete(sum.eofCounter, clientID)
+	sum.finishedClients.Add(clientID)
 	sum.mu.Unlock()
 
-	msgToSend, err := inner.SerializeEOR(msg.ClientID, false, fmt.Sprintf("%d", sum.config.Id))
+	msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", sum.config.Id))
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", msg.ClientID)
-		return
+		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		return err
 	}
-	if err := sum.sendToOutputExchange([]string{}, msgToSend); err != nil {
-		slog.Info("While sending EOF message to promediator", "err", err, "clientID", msg.ClientID)
-		return
+	if err = sum.sendToOutputExchange([]string{}, msgToSend); err != nil {
+		slog.Info("While sending EOF message to promediator", "err", err, "clientID", clientID)
+		return err
 	}
-	slog.Info("Sent EOF", "clientID", msg.ClientID)
-	ack()
+	slog.Info("Sent EOF", "clientID", clientID)
+	return nil
 }
 
 func (sum *Sum) sendToOutputExchange(keys []string, message *middleware.Message) error {
@@ -220,4 +268,40 @@ func (sum *Sum) getKeyForExchange(clientID int64, paymentFormat string) string {
 	hash.Write([]byte(fmt.Sprintf("%d-%s", clientID, paymentFormat)))
 	idx := uint8(hash.Sum32()) % sum.config.PromediatorAmount
 	return fmt.Sprintf("%s_%d", sum.config.PromedietorPrefix, idx)
+}
+
+func (sum *Sum) Restaurate() error {
+	var checkpoint CheckpointData
+	thereIsCheckpoint, err := sum.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil {
+		return err
+	}
+
+	if thereIsCheckpoint {
+		slog.Info("Cargando Sum en base a checkpoint")
+		sum.eofCounter = checkpoint.EofCounter
+		sum.finishedClients = checkpoint.FinishedClients
+		slog.Info("State restaured", "eofCounter", checkpoint.EofCounter, "finishedClients", sum.finishedClients)
+	}
+	var savedDataVar middleware.Message
+	var thereIsLogs bool
+	for {
+		thereIsLogs, err = sum.dataSaver.GetDataFromLogs(&savedDataVar)
+		if err != nil {
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+		err = worker.HandleMessageV2(
+			&savedDataVar,
+			worker.MessageHandlerMap{
+				inner.EndOfRecords: sum.handleControlMessageWrapper,
+			},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
