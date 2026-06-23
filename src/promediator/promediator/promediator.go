@@ -164,7 +164,7 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 	slog.Info("Sent EOF message to q3 amount filter", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
-	promediator.deduplicator.RemoveClient(int(clientID))
+	promediator.deduplicator.RemoveClient(clientID)
 	return nil
 }
 

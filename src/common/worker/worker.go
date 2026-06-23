@@ -80,7 +80,7 @@ func HandleMessageV3(
 	}
 
 	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
-	if deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
+	if deduplicator.IsDuplicate(msg.ClientID, batchID) {
 		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID)
 		return nil
 	}

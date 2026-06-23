@@ -21,6 +21,11 @@ func (d *BatchDeduplicator) IsDuplicate(id BatchID) bool {
 	return false
 }
 
+func (d *BatchDeduplicator) Load(id BatchID) {
+	d.discardOldestIfFull()
+	d.add(id)
+}
+
 func (d *BatchDeduplicator) discardOldestIfFull() {
 	if d.Queue.isFull() {
 		oldest := d.Queue.pop()
@@ -35,5 +40,5 @@ func (d *BatchDeduplicator) add(id BatchID) {
 
 // para desencapsular
 func (d *BatchDeduplicator) IsDuplicateNoUpdate(id BatchID) bool {
-	return d.seen.Contains(id)
+	return d.Seen.Contains(id.Hash)
 }
