@@ -1,24 +1,27 @@
 package gateway
 
 import (
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/transaction"
 
 	"tp_distribuidos/clientregistry"
 	"tp_distribuidos/common/messageprotocol/external"
-	"tp_distribuidos/common/messageprotocol/external/safeio"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/serializer"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/messagehandler"
 )
+
+// Tiempo máximo que el gateway espera a que el cliente confirme
+// la recepción de una respuesta antes de nackear el mensaje del MOM.
+const responseAckTimeout = 20 * time.Second
 
 type GatewayConfig struct {
 	InputQueueName      string
@@ -38,7 +41,6 @@ type GatewayConfig struct {
 const MaxBatchSize = 20000
 
 type Gateway struct {
-	batchCounter   int64 // para Info porposes
 	registry       clientregistry.ClientRegistry
 	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
@@ -70,9 +72,9 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	}
 
 	gateway := &Gateway{
-		batchCounter:   0,
-		outputExchange: outputExchange,
+		registry:       clientregistry.NewClientRegistry(),
 		inputQueue:     inputQueue,
+		outputExchange: outputExchange,
 		listener:       listener,
 		config:         config,
 		deduplicator:   batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
@@ -108,15 +110,37 @@ func (gateway *Gateway) Run() error {
 
 		slog.Info("Client connected...")
 
-		handler := messagehandler.NewMessageHandler(eorMap)
-		client := clientregistry.ClientState{Conn: conn, Handler: &handler}
-		gateway.registry.Add(client)
+		clientId, err := gateway.handleClientConnection(conn)
+		slog.Info("UserId assigned", "value", clientId)
+		if err != nil {
+			slog.Error("While client connects")
+			continue
+		}
+		// si el cliente se reconecto solo cambiamos el socket del registro para enviarle las respuestas
+		isAnOldClient := false
+		var client clientregistry.ClientState
+		gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
+			if c, ok := clients[clientId]; ok {
+				c.Conn.Close()
+				c.Conn = conn
+				isAnOldClient = true
+				client = *c
+			}
+		})
 
-		go gateway.handleClientRequest(client)
+		if !isAnOldClient {
+			handler := messagehandler.NewMessageHandler(clientId, eorMap)
+			NewClient := clientregistry.ClientState{Conn: conn, Handler: &handler, AckCh: make(chan struct{}, 1)}
+			gateway.registry.Add(clientId, NewClient)
+			go gateway.handleClientRequest(NewClient)
+		} else {
+			go gateway.handleClientRequest(client)
+		}
+
 	}
 
 	gateway.outputExchange.StopConsuming()
-	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
+	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
 		for _, client := range clients {
 			client.Conn.Close()
 		}
@@ -134,14 +158,12 @@ func (gateway *Gateway) handleSignals() {
 }
 
 func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
-loop:
 	for {
 		msgType, err := external.ReadMsgType(client.Conn)
 		if err != nil {
-			slog.Error("While reading message type", "err", err)
+			slog.Error("While reading message type handling client request", "err", err)
 			return
 		}
-
 		switch msgType {
 		case external.TransactionBatch:
 			if err := gateway.handleTransactionBatchMessage(client); err != nil {
@@ -155,18 +177,46 @@ loop:
 				slog.Info("While handling end of records message", "err", err)
 				return
 			}
-			break loop
+
+		case external.ResponseAck:
+			// El cliente está confirmando la recepción de una respuesta que le
+			// mandamos por handleClientResponse. No es un mensaje "nuevo" que
+			// nosotros debamos volver a ackear: solo despertamos a quien esté
+			// esperando esta confirmación y seguimos leyendo el socket.
+			select {
+			case client.AckCh <- struct{}{}:
+			default:
+				// Nadie estaba esperando (timeout ya venció, o ack duplicado):
+				// lo descartamos para no bloquear el loop de lectura.
+			}
+			continue
 
 		default:
 			slog.Info("Read unexpected message type")
 			return
 		}
+
+		if err := external.WriteAck(client.Conn); err != nil {
+			slog.Info("While writing ACK message", "err", err)
+			return
+		}
+
+	}
+}
+
+// waitForClientAck bloquea hasta que el cliente confirme (via external.ResponseAck)
+// que recibió la última respuesta que le mandamos, o hasta que se cumpla el timeout.
+func (gateway *Gateway) waitForClientAck(client clientregistry.ClientState) error {
+	select {
+	case <-client.AckCh:
+		return nil
+	case <-time.After(responseAckTimeout):
+		return os.ErrDeadlineExceeded
 	}
 }
 
 func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, ack func(), nack func()) {
 	var targetClient clientregistry.ClientState
-	var clientIndex int = -1
 	found := false
 
 	// Deserializamos el mensaje de la cola antes de bloquear nada
@@ -178,25 +228,21 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	}
 
 	// Lock corto: Solo buscamos el cliente idóneo en el registro
-	gateway.registry.WithLock(func(clients []clientregistry.ClientState) {
-		for i, client := range clients {
-			if client.Handler.UserId == msg.ClientID {
-				targetClient = client
-				clientIndex = i
-				found = true
-				break
-			}
+	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
+		if c, ok := clients[msg.ClientID]; ok {
+			targetClient = *c
+			found = true
 		}
 	})
 
 	if !found {
 		slog.Warn("No client handler could process this message", "clientID", msg.ClientID)
-		ack() // Si el cliente se desconectó, descartamos/confirmamos para no trabar la cola
+		ack()
 		return
 	}
 
 	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
-	if gateway.deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
+	if gateway.deduplicator.IsDuplicateNoUpdate(msg.ClientID, batchID) {
 		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
 		ack()
 		return
@@ -206,7 +252,8 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	switch msg.MsgType {
 	case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
 
-		serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), *msg)
+		actualSecuenceNumber := gateway.registry.GetSecuenceNumberToSent(msg.ClientID)
+		serialization, err := serializer.SerializeQueryResponse(uint32(msg.MsgType), actualSecuenceNumber, *msg)
 		if err != nil {
 			slog.Error("While serializing response", "err", err)
 			nack()
@@ -219,6 +266,15 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			return
 		}
 
+		if err := gateway.waitForClientAck(targetClient); err != nil {
+			slog.Error("Client never acked the response, nacking", "clientID", msg.ClientID, "err", err)
+			nack()
+			return
+		}
+
+		gateway.deduplicator.Load(msg.ClientID, batchID)
+		gateway.registry.IncrementSequenceNumberToSent(msg.ClientID)
+
 	case inner.EndOfRecords:
 		slog.Info("Response received from MOM", "query", msg.MsgType, "clientID", msg.ClientID)
 		clientEnded, err := targetClient.Handler.HandleQueryEOR(msg)
@@ -230,12 +286,22 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 
 		if clientEnded {
 			response := serializer.SerializeEOR()
-			_ = gateway.sendResponse(targetClient.Conn, response)
+			if err := gateway.sendResponse(targetClient.Conn, response); err != nil {
+				slog.Error("While sending EOR to client", "err", err)
+				nack()
+				return
+			}
+
+			if err := gateway.waitForClientAck(targetClient); err != nil {
+				slog.Warn("Client never acked the response, nacking", "clientID", msg.ClientID, "err", err)
+				nack()
+				return
+			}
 
 			slog.Info("Client received all result queries, removing from registry", "clientID", msg.ClientID)
 			// Removemos usando el índice detectado previamente
-			gateway.registry.Remove(clientIndex)
-			gateway.deduplicator.RemoveClient(int(msg.ClientID))
+			gateway.registry.Remove(msg.ClientID)
+			gateway.deduplicator.RemoveClient(msg.ClientID)
 		}
 
 	default:
@@ -245,56 +311,4 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	}
 
 	ack()
-}
-
-func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
-	transactions, err := external.ReadTransactionBatch(client.Conn)
-	if err != nil {
-		slog.Info("While reading transaction batch", "err", err)
-		return err
-	}
-	message, err := client.Handler.SerializeDataMessage(*transactions)
-	if err != nil {
-		slog.Info("While serializing data message", "err", err)
-		return err
-	}
-	if err := gateway.outputExchange.Send(*message); err != nil {
-		slog.Info("While sending data message", "err", err)
-		return err
-	}
-	if err := external.WriteAck(client.Conn); err != nil {
-		slog.Info("While writing ACK message", "err", err)
-		return err
-	}
-	gateway.batchCounter += 1
-	return nil
-}
-
-func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientState) error {
-	slog.Info("Received END_OF_RECORDS message")
-	str := fmt.Sprint("batches enviados: ", gateway.batchCounter)
-	slog.Info(str)
-
-	message, err := client.Handler.SerializeEORMessage()
-	if err != nil {
-		slog.Info("While serializing END_OF_RECORDS message", "err", err)
-		return err
-	}
-	if err := gateway.outputExchange.Send(*message); err != nil {
-		slog.Info("While sending eof message", "err", err)
-		return err
-	}
-	if err := external.WriteAck(client.Conn); err != nil {
-		slog.Info("While writing ACK message", "err", err)
-		return err
-	}
-	return nil
-}
-
-func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
-	if err := safeio.WriteAll(socket, data); err != nil {
-		slog.Error("While writing queries result message", "err", err)
-		return fmt.Errorf("While writing queries result message: %w", err)
-	}
-	return nil
 }

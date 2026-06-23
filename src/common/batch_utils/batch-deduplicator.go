@@ -32,3 +32,8 @@ func (d *BatchDeduplicator) add(id BatchID) {
 	d.Queue.push(id)
 	d.Seen.Add(id.Hash)
 }
+
+// para desencapsular
+func (d *BatchDeduplicator) IsDuplicateNoUpdate(id BatchID) bool {
+	return d.seen.Contains(id)
+}

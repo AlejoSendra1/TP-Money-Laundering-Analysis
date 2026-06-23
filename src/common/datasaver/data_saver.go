@@ -11,6 +11,9 @@ import (
 	"tp_distribuidos/common/worker"
 )
 
+// PARA RESTAURAR A UN WORKER CAIDO USAR
+// RESTAURATE=TRUE (creando la lectura de la env var primero)
+
 const RESTORATION_FILE_SUFIX = "_restoration_point" + ".txt"
 
 type DataSaver struct {
@@ -20,6 +23,8 @@ type DataSaver struct {
 	reader              *bufio.Scanner
 	logsUntilCheckpoint int
 	logCounter          int
+	pendingLine         []byte
+	validOffset         int64 // byte offset right after the last successfully parsed line
 }
 
 type RecordType string
@@ -67,6 +72,24 @@ func (ds *DataSaver) Clean() {
 // / ----------------------------------------- FUNCIONES DE GUARDADO ------------------------------------------
 // funciones utilizadas para guardar el estado del nodo previo a una posible caida
 
+// Para que el worker no se preocupe de realizar el checkpoint
+// este se hara cuando el saver detecte cumplimiento de su condicion de creacion
+func (ds *DataSaver) Save(content any, w worker.Worker) {
+	ds.Log(content)      // persistencia de datos
+	Crash(CrashAfterLog) // para testing
+	// gestion del checkpoint
+	ds.logCounter++
+	if ds.logCounter >= ds.logsUntilCheckpoint {
+		slog.Info("Guardando checkpoint")
+		ds.logCounter = 0
+		ds.SaveCheckpoint(w.GetCheckpointData())
+		Crash(CrashAfterCheckpoint) // para testing
+
+	}
+}
+
+// Para mayor control de como se guardan las cosas -----------
+
 // logueo del resultado procesado
 func (ds *DataSaver) Log(v any) error {
 	// wrapp content
@@ -84,7 +107,7 @@ func (ds *DataSaver) Log(v any) error {
 	if _, err := ds.writer.Write(append(jsonData, '\n')); err != nil {
 		return fmt.Errorf("writing transaction batch to disk: %w", err)
 	}
-
+	Crash(CrashBeforeFlush)
 	if err := ds.writer.Flush(); err != nil {
 		return fmt.Errorf("flushing transaction batch buffer: %w", err)
 	}
@@ -93,8 +116,8 @@ func (ds *DataSaver) Log(v any) error {
 }
 
 // SaveCheckpoint debe ser utilizado como opcion de guardado una vez procesadas multiples transacciones
-// para evitar cuellos de botella. cualquier tipo de dato es valido y guardado de forma atomica eliminando
-// logs viejos.
+// para evitar cuellos de botella.
+// Este metodo escribe un checkpoint al comienzo del archivo eliminando logs viejos de forma atomica.
 func (ds *DataSaver) SaveCheckpoint(checkpoint any) error {
 	// wrapps the content
 	payload, err := json.Marshal(checkpoint)
@@ -110,24 +133,8 @@ func (ds *DataSaver) SaveCheckpoint(checkpoint any) error {
 	return ds.writeFile(data)
 }
 
-// Para que el worker no se preocupe de realizar el checkpoint
-// este se hara cuando el saver detecte cumplimiento de su condicion de creacion
-func (ds *DataSaver) Save(content any, w worker.Worker) {
-	ds.Log(content)      // persistencia de datos
-	Crash(CrashAfterLog) // para testing
-	// gestion del checkpoint
-	ds.logCounter++
-	if ds.logCounter >= ds.logsUntilCheckpoint {
-		slog.Info("Guardando checkpoint")
-		ds.logCounter = 0
-		ds.SaveCheckpoint(w.GetCheckpointData())
-	}
-}
-
 // escritura atomica
-// WriteFile writes data to filename+some suffix, then renames it into filename.
-// The perm argument but if the target filename already
-// exists then the target file's attributes and ACLs are preserved. If the target
+// WriteFile escribe los datos en un archivo temporal y pisa el archivo persistente una vez exitosa la escritura.
 // filename already exists but is not a regular file, WriteFile returns an error.
 func (ds *DataSaver) writeFile(data []byte) (err error) {
 	ds.file.Close()
@@ -184,6 +191,11 @@ func (ds *DataSaver) writeFile(data []byte) (err error) {
 
 // / ----------------------------------------- FUNCIONES DE CARGA ------------------------------------------
 // funciones utilizadas para recuperar el estado del nodo postiormente a su recuperacion
+
+// Lee el primer elemento guardado en el archivo
+// En caso de ser un checkpoint y coincidir con el tipo de la variable target la actualizara in place
+// y dejara el escanner en un estado consistente para realizar a continuacion la recuperacion de los logs.
+// en otro caso no hara nada
 func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 	if ds.file == nil {
 		return false, fmt.Errorf("pointer to restoration file is null")
@@ -203,7 +215,7 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 		return false, nil
 	}
 
-	line := scanner.Bytes()
+	line := append([]byte(nil), scanner.Bytes()...)
 	if len(line) == 0 {
 		ds.reader = nil
 		return false, nil
@@ -218,36 +230,43 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 		if err := json.Unmarshal(record.Payload, target); err != nil {
 			return false, fmt.Errorf("failed to unmarshal checkpoint payload: %w", err) //
 		}
+		ds.validOffset = int64(len(line)) + 1 // +1 for the '\n'
 		return true, nil
 	}
 	slog.Info("No se leyo un checkpoint type")
-	ds.reader = nil
+	ds.pendingLine = line // para usar en el caso donde no hay un checkpoint
 	return false, nil
 }
 
-// lee cada batch y lo parsea in place en la variable indicada por parametro
+// lee cada batch y lo parsea in place en la variable pasada por parametro
 func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
-	if ds.reader == nil {
-		scanner := bufio.NewScanner(ds.file)
-		const maxCapacity = 10 * 1024 * 1024 // 10 MB
-		buf := make([]byte, bufio.MaxScanTokenSize)
-		scanner.Buffer(buf, maxCapacity)
-		ds.reader = scanner
+	var line []byte
+	var thereIsMore bool
+	if ds.pendingLine != nil {
+		line = ds.pendingLine
+		ds.pendingLine = nil
+		thereIsMore = true
+	} else {
+		if ds.reader == nil {
+			scanner := bufio.NewScanner(ds.file)
+			const maxCapacity = 10 * 1024 * 1024 // 10 MB
+			buf := make([]byte, bufio.MaxScanTokenSize)
+			scanner.Buffer(buf, maxCapacity)
+			ds.reader = scanner
+		}
+		// Scan through the file line by line
+		thereIsMore = ds.reader.Scan()
+
+		if err := ds.reader.Err(); err != nil {
+			return false, fmt.Errorf("error reading file: %w", err)
+		}
+		if !thereIsMore {
+			ds.reader = nil
+			return false, nil
+		}
+		line = ds.reader.Bytes()
 	}
 
-	// Scan through the file line by line
-	thereIsMore := ds.reader.Scan()
-
-	if err := ds.reader.Err(); err != nil {
-		return false, fmt.Errorf("error reading file: %w", err)
-	}
-
-	if !thereIsMore {
-		ds.reader = nil
-		return false, nil
-	}
-
-	line := ds.reader.Bytes()
 	if len(line) == 0 {
 		ds.reader = nil
 		return false, nil
@@ -255,7 +274,18 @@ func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 
 	var record FileRecord
 	if err := json.Unmarshal(line, &record); err != nil {
-		return false, fmt.Errorf("parsing Log: %w", err)
+		nextScan := ds.reader.Scan()
+		if !nextScan && ds.reader.Err() == nil {
+			slog.Warn("Detected a corrupted log entry at the end of the file. Truncating recovery here.",
+				"error", err.Error(), "truncateOffset", ds.validOffset)
+
+			if err := ds.truncateToValidOffset(); err != nil {
+				return false, fmt.Errorf("truncating corrupted tail: %w", err)
+			}
+			ds.reader = nil
+			return false, nil
+		}
+		return false, fmt.Errorf("parsing Log failed mid-file: %w", err)
 	}
 
 	if record.Type == LogType {
@@ -265,5 +295,18 @@ func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
 
 	}
 
+	ds.validOffset += int64(len(line)) + 1
+	ds.logCounter++
 	return thereIsMore, nil
+}
+
+func (ds *DataSaver) truncateToValidOffset() error {
+	if err := ds.file.Truncate(ds.validOffset); err != nil {
+		return fmt.Errorf("truncating to offset %d: %w", ds.validOffset, err)
+	}
+	if _, err := ds.file.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("seeking to new end: %w", err)
+	}
+	ds.writer = bufio.NewWriter(ds.file) // fresh writer, old one's buffer state is stale
+	return nil
 }

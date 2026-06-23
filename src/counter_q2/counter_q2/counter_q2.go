@@ -20,7 +20,7 @@ import (
 
 const LOGS_UNTIL_CHECKPOINT = 250
 
-//docker compose run q2_counter_0 -e RESTAURATE="TRUE"
+//docker compose run -e RESTAURATE="TRUE" q2_counter_0
 
 type CounterQ2Config struct {
 	ID              int
@@ -251,7 +251,7 @@ func (c *CounterQ2) GetCheckpointData() any {
 		EofCounter:  c.eofCounter,
 	}
 	// agregar log counter asi evitamos que se acumulen mas logs que los indicados
-	// dado q en caso de caida y vuelta se podrian acumular mas logs q los indicados < (guardados + limite)
+	// dado q en caso de caida y vuelta se podrian acumular mas logs q los indicados < (guardados + limite) - a probar
 }
 
 // handleMessage processes messages from the shared input queue.

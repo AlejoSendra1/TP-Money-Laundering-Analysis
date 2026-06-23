@@ -40,7 +40,7 @@ def main():
                     deps[f"{node}_{i}"] = {"condition": "service_started"}
         return deps
 
-    def add_worker(node_name, downstream_nodes, env_vars, volumes=None):
+    def add_worker(node_name, downstream_nodes, env_vars, volumes=["./persistence:/persistence"]):
         """Genera dinamicamente las replicas para un tipo de worker"""
         amount = SCALE.get(node_name, 0)
         for i in range(amount):
@@ -102,13 +102,14 @@ def main():
             "container_name": client_name,
             "depends_on": get_deps(["gateway", "usd_filter", "q5_date_filter"]),
             "environment": [
+                f"ID={idx}"
                 f"BATCH_SIZE={batch_size}", 
                 f"INPUT_FILE={input_file}",
                 f"OUTPUT_FILE=/output/output_{client_name}.csv", 
                 "SERVER_HOST=gateway", 
                 "SERVER_PORT=5678"
             ],
-            "volumes": ["./datasets:/datasets", "./output:/output"]
+            "volumes": ["./datasets:/datasets", "./output:/output", "./persistence:/persistence"]
         }
 
     # ==============================================================================
