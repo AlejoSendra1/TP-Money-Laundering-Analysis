@@ -37,11 +37,8 @@ type DateFilter struct {
 	outputExchanges map[string]middleware.Middleware
 	controlExchange middleware.Middleware
 	eofCounter      map[int64]batch_utils.Set[string]
-	qtyTx           map[int64]map[string]int
 	config          DateFilterConfig
 	mu              sync.Mutex
-	// debug
-	counter int
 }
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
@@ -87,7 +84,6 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		outputExchanges: outputExchanges,
 		controlExchange: controlExchange,
 		eofCounter:      make(map[int64]batch_utils.Set[string]),
-		qtyTx:           make(map[int64]map[string]int),
 		config:          config,
 	}, nil
 }
@@ -160,9 +156,6 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 	if _, ok := dateFilter.eofCounter[clientID]; !ok {
 		slog.Info("New client arrived", "clientID", clientID)
 		dateFilter.eofCounter[clientID] = batch_utils.NewSet[string]()
-		dateFilter.qtyTx[clientID] = make(map[string]int)
-		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic1] = 0
-		dateFilter.qtyTx[clientID][dateFilter.config.OutputTopic2] = 0
 	}
 	topics := map[string][]transaction.Transaction{
 		dateFilter.config.OutputTopic1: {},
@@ -181,7 +174,6 @@ func (dateFilter *DateFilter) handleDataMessage(transactionRecords []transaction
 		if len(transactions) == 0 {
 			continue
 		}
-		dateFilter.qtyTx[clientID][topic] += len(transactions)
 		err := dateFilter.sendOutput(transactions, clientID, topic)
 		if err != nil {
 			return err
@@ -226,17 +218,14 @@ func (dateFilter *DateFilter) handleControlMessage(middlewareMsg *middleware.Mes
 	}
 
 	for topic := range dateFilter.outputExchanges {
-		slog.Info("size transactions sent", "topic", topic, "qtyTx", dateFilter.qtyTx[clientID][topic])
 		err := dateFilter.outputExchanges[topic].Send(*msgEOF)
 		if err != nil {
 			slog.Info("While sending to topics", "topic", topic)
 			nack()
 			return
 		}
-		delete(dateFilter.qtyTx[clientID], topic)
 	}
 	slog.Info("Sent EOF", "clientID", clientID)
-	slog.Info("Cantidad envida topic 1", "val", dateFilter.counter)
 
 	delete(dateFilter.eofCounter, clientID)
 	ack()
