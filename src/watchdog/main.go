@@ -29,10 +29,20 @@ func loadConfig() (watchdogworker.WatchdogConfig, error) {
 		}
 	}
 
+
+	electionExchange := os.Getenv("ELECTION_EXCHANGE")
+	if electionExchange == "" {
+		return watchdogworker.WatchdogConfig{}, errors.New("ELECTION_EXCHANGE environment variable is required")
+	}
+
 	return watchdogworker.WatchdogConfig{
 		ID:      id,
 		MomHost: momHost,
 		MomPort: momPort,
+		ID:               id,
+		MomHost:          momHost,
+		MomPort:          momPort,
+		ElectionExchange: electionExchange,
 	}, nil
 }
 

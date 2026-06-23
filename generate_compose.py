@@ -237,6 +237,7 @@ def main():
                 f"ID={i}",
                 "MOM_HOST=rabbitmq",
                 "MOM_PORT=5672",
+                "ELECTION_EXCHANGE=watchdog_election",
             ],
             "volumes": ["/var/run/docker.sock:/var/run/docker.sock"]
         }

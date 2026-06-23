@@ -41,12 +41,12 @@ const (
 	stateLeader                        // this node is the leader
 )
 
-// LeaderElection implements a simplified Bully algorithm.
+// State implements a simplified Bully algorithm.
 //
 // On startup all nodes trigger an election. Once elected, the leader periodically
 // broadcasts COORDINATOR heartbeats. If a follower stops hearing from the leader
 // for leaderTimeout, it triggers a new election. A higher-ID node always wins.
-type LeaderElection struct {
+type State struct {
 	myID              int
 	exchange          middleware.Middleware
 	mu                sync.Mutex
@@ -57,7 +57,7 @@ type LeaderElection struct {
 	stopCh            chan struct{}
 }
 
-func NewLeaderElection(myID int, connSettings middleware.ConnSettings) (*LeaderElection, error) {
+func NewState(myID int, electionExchangeName string, connSettings middleware.ConnSettings) (*State, error) {
 	queueName := fmt.Sprintf("election_queue_%d", myID)
 	exchange, err := middleware.CreateExchangeMiddleware(
 		electionExchangeName,
@@ -69,7 +69,7 @@ func NewLeaderElection(myID int, connSettings middleware.ConnSettings) (*LeaderE
 		return nil, fmt.Errorf("creating election exchange: %w", err)
 	}
 
-	return &LeaderElection{
+	return &State{
 		myID:     myID,
 		exchange: exchange,
 		state:    stateUnknown,
@@ -78,26 +78,26 @@ func NewLeaderElection(myID int, connSettings middleware.ConnSettings) (*LeaderE
 }
 
 // IsLeader returns whether this instance is currently the elected leader.
-func (le *LeaderElection) IsLeader() bool {
+func (le *State) IsLeader() bool {
 	le.mu.Lock()
 	defer le.mu.Unlock()
 	return le.state == stateLeader
 }
 
 // Run starts the election loop and the message consumer. Non-blocking.
-func (le *LeaderElection) Run() {
+func (le *State) Run() {
 	go le.exchange.StartConsuming(le.handleMessage)
 	go le.mainLoop()
 }
 
 // Stop shuts down the election module.
-func (le *LeaderElection) Stop() {
+func (le *State) Stop() {
 	close(le.stopCh)
 	le.exchange.StopConsuming()
 	le.exchange.Close()
 }
 
-func (le *LeaderElection) mainLoop() {
+func (le *State) mainLoop() {
 	// Leader sends COORDINATOR heartbeats at this rate.
 	leaderTicker := time.NewTicker(leaderHeartbeatInterval)
 	defer leaderTicker.Stop()
@@ -151,7 +151,7 @@ func (le *LeaderElection) mainLoop() {
 }
 
 // startElectionRound begins a new election if one is not already in progress.
-func (le *LeaderElection) startElectionRound(electionTimer *time.Timer) {
+func (le *State) startElectionRound(electionTimer *time.Timer) {
 	le.mu.Lock()
 	if le.state == stateElection {
 		le.mu.Unlock()
@@ -176,7 +176,7 @@ func (le *LeaderElection) startElectionRound(electionTimer *time.Timer) {
 
 // decide is called after electionWindow expires.
 // If this node saw no higher candidate, it declares itself leader.
-func (le *LeaderElection) decide() {
+func (le *State) decide() {
 	le.mu.Lock()
 	defer le.mu.Unlock()
 
@@ -197,7 +197,7 @@ func (le *LeaderElection) decide() {
 	}
 }
 
-func (le *LeaderElection) broadcastElection() {
+func (le *State) broadcastElection() {
 	msg, err := inner.SerializeWatchdogElection(le.myID)
 	if err != nil {
 		slog.Error("election: failed to serialize ELECTION", "err", err)
@@ -208,7 +208,7 @@ func (le *LeaderElection) broadcastElection() {
 	}
 }
 
-func (le *LeaderElection) broadcastCoordinator() {
+func (le *State) broadcastCoordinator() {
 	msg, err := inner.SerializeWatchdogCoordinator(le.myID)
 	if err != nil {
 		slog.Error("election: failed to serialize COORDINATOR", "err", err)
@@ -221,14 +221,14 @@ func (le *LeaderElection) broadcastCoordinator() {
 
 // broadcastCoordinatorLocked must be called with le.mu held.
 // Temporarily releases the lock to avoid deadlock during Send.
-func (le *LeaderElection) broadcastCoordinatorLocked() {
+func (le *State) broadcastCoordinatorLocked() {
 	le.mu.Unlock()
 	le.broadcastCoordinator()
 	le.mu.Lock()
 }
 
 // handleMessage processes incoming ELECTION and COORDINATOR messages.
-func (le *LeaderElection) handleMessage(msg middleware.Message, ack, nack func()) {
+func (le *State) handleMessage(msg middleware.Message, ack, nack func()) {
 	msgClient, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("election: failed to deserialize message", "err", err)

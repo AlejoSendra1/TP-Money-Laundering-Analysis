@@ -29,6 +29,10 @@ type WatchdogConfig struct {
 	ID      int
 	MomHost string
 	MomPort int
+	ID               int
+	MomHost          string
+	MomPort          int
+	ElectionExchange string   // exchange name used for bully leader election
 }
 
 // Watchdog listens to heartbeats from all workers and restarts those that
@@ -40,7 +44,7 @@ type Watchdog struct {
 	mu         sync.Mutex
 	stopCh     chan struct{}
 	httpClient *http.Client
-	election   *LeaderElection
+	election   *State
 	heartbeat  *wd.HeartbeatSender
 }
 
@@ -63,7 +67,7 @@ func NewWatchdog(config WatchdogConfig) (*Watchdog, error) {
 		},
 	}
 
-	election, err := NewLeaderElection(config.ID, connSettings)
+	election, err := NewState(config.ID, config.ElectionExchange, connSettings)
 	if err != nil {
 		input.Close()
 		return nil, fmt.Errorf("creating leader election: %w", err)
