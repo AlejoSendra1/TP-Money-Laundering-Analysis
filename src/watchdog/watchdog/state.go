@@ -11,8 +11,7 @@ import (
 )
 
 const (
-	electionExchangeName = "watchdog_election"
-	electionRoutingKey   = "election"
+	electionRoutingKey = "election"
 
 	// leaderHeartbeatInterval is how often the leader broadcasts COORDINATOR.
 	leaderHeartbeatInterval = 1 * time.Second
