@@ -128,7 +128,6 @@ func (sum *Sum) handleMessage(middlewareMsg *middleware.Message, ack func(), nac
 		nack()
 		return
 	}
-	datasaver.Crash(datasaver.CrashProcessingData)
 	ack()
 }
 

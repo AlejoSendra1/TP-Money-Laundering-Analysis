@@ -33,8 +33,9 @@ type TransactionsSaverConfig struct {
 }
 
 type CheckpointData struct {
-	ClientStates map[int64]*ClientState            `json:"clientStates"`
-	EofCounter   map[int64]batch_utils.Set[string] `json:"eofCounter"`
+	ClientStates    map[int64]*ClientState            `json:"clientStates"`
+	EofCounter      map[int64]batch_utils.Set[string] `json:"eofCounter"`
+	FinishedClients batch_utils.Set[int64]            `json:"finishedClients"`
 }
 
 type TransactionsSaver struct {
@@ -45,6 +46,7 @@ type TransactionsSaver struct {
 	config               TransactionsSaverConfig
 	clientStates         map[int64]*ClientState // Ahora mapea al nuevo tipo State
 	eofCounter           map[int64]batch_utils.Set[string]
+	finishedClients      batch_utils.Set[int64]
 	mu                   sync.Mutex // Protege clientStates y eofCounter
 	muDataSaver          sync.Mutex // Protege el acceso a dataSaver
 	dataSaver            *datasaver.DataSaver
@@ -103,15 +105,21 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		config:               config,
 		clientStates:         make(map[int64]*ClientState),
 		eofCounter:           make(map[int64]batch_utils.Set[string]),
+		finishedClients:      make(batch_utils.Set[int64]),
 		dataSaver:            dataSaver,
 	}, nil
 }
 
 func (transactionsSaver *TransactionsSaver) GetCheckpointData() any {
-	slog.Info("State saved", "clientStates", transactionsSaver.clientStates, "eofCounter", transactionsSaver.eofCounter)
+	slog.Info("State saved",
+		"clientStates", transactionsSaver.clientStates,
+		"eofCounter", transactionsSaver.eofCounter,
+		"finishedClients", transactionsSaver.finishedClients,
+	)
 	return CheckpointData{
-		ClientStates: transactionsSaver.clientStates,
-		EofCounter:   transactionsSaver.eofCounter,
+		ClientStates:    transactionsSaver.clientStates,
+		EofCounter:      transactionsSaver.eofCounter,
+		FinishedClients: transactionsSaver.finishedClients,
 	}
 }
 
@@ -205,6 +213,10 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessageWrapper(cli
 
 	slog.Info("Received notification message", "clientID", clientID)
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
+	if clientState == nil {
+		// Clienta ya finalizado
+		return nil
+	}
 	if !clientState.ShouldStartFlush(transactionsSaver.config.Q3AmountFilterAmount, sender) {
 		slog.Info("Dont flush disk because still waiting for more averages notification",
 			"clientID", clientID,
@@ -250,7 +262,12 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
 		return err
 	}
+
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
+	if clientState == nil {
+		// Clienta ya finalizado
+		return nil
+	}
 	transactionsSaver.mu.Lock()
 	transactionsSaver.eofCounter[clientID].Add(sender)
 	if transactionsSaver.eofCounter[clientID].Size() != transactionsSaver.config.DateFilterAmount {
@@ -291,6 +308,10 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 		return a.Amount > b.Amount
 	})
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
+	if clientState == nil {
+		// Clienta ya finalizado
+		return nil
+	}
 	if clientState.ShouldBuffData() {
 		return clientState.Storage.StoreTransactions(transactions)
 	}
@@ -327,7 +348,10 @@ func (transactionsSaver *TransactionsSaver) sendToOutput(clientID int64, txs []t
 func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int64) *ClientState {
 	transactionsSaver.mu.Lock()
 	defer transactionsSaver.mu.Unlock()
-
+	if _, isDone := transactionsSaver.finishedClients[clientID]; isDone {
+		slog.Info("Client has already done", "clientID", clientID)
+		return nil
+	}
 	if state, exists := transactionsSaver.clientStates[clientID]; exists {
 		return state
 	}
@@ -353,6 +377,7 @@ func (transactionsSaver *TransactionsSaver) cleanupClientState(clientID int64) e
 	}
 	delete(transactionsSaver.clientStates, clientID)
 	delete(transactionsSaver.eofCounter, clientID)
+	transactionsSaver.finishedClients.Add(clientID)
 	slog.Info("Cleanup client completed", "clientID", clientID)
 	return nil
 }
@@ -376,11 +401,12 @@ func (transactionsSaver *TransactionsSaver) Restaurate() error {
 
 		transactionsSaver.eofCounter = checkpoint.EofCounter
 		transactionsSaver.clientStates = checkpoint.ClientStates
+		transactionsSaver.finishedClients = checkpoint.FinishedClients
 
 		for _, state := range transactionsSaver.clientStates {
 			state.Storage = NewStorage(state.StorageFilePath, state.StorageFileName)
 		}
-		slog.Info("State restaured", "clientStates", checkpoint.ClientStates, "eof", checkpoint.EofCounter)
+		slog.Info("State restaured", "clientStates", checkpoint.ClientStates, "eof", checkpoint.EofCounter, "finishedClients", checkpoint.FinishedClients)
 	}
 	var savedDataVar middleware.Message
 	var thereIsLogs bool
