@@ -32,7 +32,6 @@ type USDFilter struct {
 	controlExchange middleware.Middleware
 	config          USDFilterConfig
 	mu              sync.Mutex // mutex para sincronizar la llegada de EOF
-	qtyTx           map[int64]int
 }
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
@@ -62,7 +61,6 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		inputQueue:      inputQueue,
 		outputExchange:  outputExchange,
 		controlExchange: controlExchange,
-		qtyTx:           make(map[int64]int),
 		config:          config,
 	}, nil
 }
@@ -127,10 +125,6 @@ func (usdFilter *USDFilter) handleEndOfRecordMessage(clientID int64, data []inte
 }
 
 func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
-	if _, ok := usdFilter.qtyTx[clientID]; !ok {
-		slog.Info("New client arrived", "clientID", clientID)
-		usdFilter.qtyTx[clientID] = 0
-	}
 	transactions := make([]transaction.Transaction, 0, len(transactionRecords))
 	for _, tr := range transactionRecords {
 		if tr.Currency == USDCurrencyName {
@@ -139,7 +133,6 @@ func (usdFilter *USDFilter) handleDataMessage(transactionRecords []transaction.T
 	}
 
 	if len(transactions) != 0 {
-		usdFilter.qtyTx[clientID] += len(transactions)
 		if err := usdFilter.sendOutput(transactions, clientID); err != nil {
 			return err
 		}
