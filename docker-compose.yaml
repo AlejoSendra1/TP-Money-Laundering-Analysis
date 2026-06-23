@@ -76,7 +76,7 @@ services:
     environment:
     - ID=0
     - BATCH_SIZE=100
-    - INPUT_FILE=/datasets/input_1M.csv
+    - INPUT_FILE=/datasets/input_LI_corto.csv
     - OUTPUT_FILE=/output/output.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway

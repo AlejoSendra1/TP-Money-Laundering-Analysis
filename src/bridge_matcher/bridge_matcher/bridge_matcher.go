@@ -15,7 +15,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 4
+const DestinationThreshold = 5
 const SuspiciousAccountsBatchSize = 100
 
 type BridgeMatcherConfig struct {

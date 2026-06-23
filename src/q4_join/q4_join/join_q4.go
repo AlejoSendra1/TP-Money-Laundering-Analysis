@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"slices"
 
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -12,7 +13,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 4
+const DestinationThreshold = 5
 
 type JoinConfig struct {
 	ID                    int
@@ -30,6 +31,9 @@ type Join struct {
 	config                JoinConfig
 	sourceSinkRegisters   map[int64]map[string]map[string][]string
 	bridgeWorkersNotified map[int64][]string
+	dataSaver             *datasaver.DataSaver
+	mssgHandlers          worker.MessageHandlerMap
+	restoring             bool
 }
 
 func NewJoinWorker(config JoinConfig) (*Join, error) {
@@ -49,13 +53,27 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 		return nil, err
 	}
 
-	return &Join{
+	// para persistir la info ante posibles caidas
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q4_join_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	if err != nil {
+		return nil, err
+	}
+
+	j := &Join{
 		inputQueue:            inputQueue,
 		outputQueue:           outputQueue,
 		config:                config,
 		sourceSinkRegisters:   make(map[int64]map[string]map[string][]string),
 		bridgeWorkersNotified: make(map[int64][]string),
-	}, nil
+		dataSaver:             dataSaver,
+		restoring:             false,
+	}
+	j.mssgHandlers = worker.MessageHandlerMap{
+		inner.EndOfRecords:              j.handleEndOfRecordMessage,
+		inner.PossibleFraudDestinations: j.handlePossibleFraudDestinationsMessage,
+	}
+
+	return j, nil
 }
 
 func (join *Join) Run() {
@@ -65,12 +83,13 @@ func (join *Join) Run() {
 }
 
 func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	worker.HandleMessage(middlewareMsg, ack, nack,
-		worker.MessageHandlerMap{
-			inner.EndOfRecords:              join.handleEndOfRecordMessage,
-			inner.PossibleFraudDestinations: join.handlePossibleFraudDestinationsMessage,
-		},
-	)
+	if err := worker.HandleMessageV2(middlewareMsg, join.mssgHandlers); err != nil {
+		nack()
+		return
+	}
+
+	join.dataSaver.Save(*middlewareMsg, join) // persistencia de datos
+	ack()
 }
 
 func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
@@ -84,6 +103,12 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) e
 
 	join.updateClientEORCondition(clientID, sender)
 	if !join.assertClientEORCondition(clientID) {
+		return nil
+	}
+
+	if join.restoring {
+		// si este mensaje van a enviar EOR cuando este ya fue persistido, no enviamos nada
+		// si esta persisitido ya fue enviado !!
 		return nil
 	}
 
@@ -138,7 +163,9 @@ func (join *Join) updateOriginAccountCondition(clientID int64, source string, br
 		if !slices.Contains(join.sourceSinkRegisters[clientID][source][possibleSink], bridge) {
 			join.sourceSinkRegisters[clientID][source][possibleSink] = append(join.sourceSinkRegisters[clientID][source][possibleSink], bridge)
 		}
-		if len(join.sourceSinkRegisters[clientID][source][possibleSink]) == DestinationThreshold {
+
+		// !join.restoring evita el envio de cosas ya enviadas antes de la caida
+		if len(join.sourceSinkRegisters[clientID][source][possibleSink]) == DestinationThreshold && !join.restoring {
 			msg, _ := inner.SerializeQ4SinkAndSource(clientID, source, possibleSink)
 			join.outputQueue.Send(*msg)
 		}
