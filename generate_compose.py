@@ -210,7 +210,7 @@ def main():
     add_worker("filter_payment_format", ["currencies_cache"], [
         "INPUT_QUEUE=filter_payment_format_queue", "OUTPUT_QUEUE=currencies_cache",
         f"FILTER_AMOUNT={SCALE.get('filter_payment_format', 1)}", f"DATE_FILTER_AMOUNT={SCALE.get('q5_date_filter', 1)}",
-        "FILTER_PAYMENT_CONTROL=filter_payment_control", "BATCH_SIZE=100"
+        "FILTER_PAYMENT_CONTROL=filter_payment_control", "CONTROL_TOPIC=filter_payment_control_topic"
     ])
     add_worker("currencies_cache", ["counter_q5"], [
         "INPUT_QUEUE=currencies_cache", "OUTPUT_PREFIX=counter_q5_queue",
