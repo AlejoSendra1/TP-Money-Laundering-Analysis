@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"tp_distribuidos/common/datasaver"
@@ -35,11 +36,12 @@ type Group struct {
 	controlExchange     middleware.Middleware
 	outputExchange      middleware.ExchangeMiddleware
 	config              GroupConfig
-	eofCounter          map[int64]map[string]int
+	eofCounter          map[int64][]string
 	controlMutex        sync.Mutex
 	precalculatedTopics []string
 	datasaver           *datasaver.DataSaver
 	mssgHandlers        worker.MessageHandlerMap
+	restoring           bool
 }
 
 func NewGroupWorker(config GroupConfig) (*Group, error) {
@@ -53,6 +55,7 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 
 	inputQueue.BindToTopics(config.InputExchangeName, config.InputTopic)
 	myKeyControl := fmt.Sprintf("%s_%d", config.WorkerPrefix, config.ID)
+
 	// input - control (particularmente EOF del cliente)
 	controlExchange, err := middleware.NewExchangeMiddleware(config.ControlExchangeName, []string{FANOUT}, connSettings, myKeyControl) // control
 	if err != nil {
@@ -84,10 +87,11 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		outputExchange:      *outputExchange,
 		controlExchange:     controlExchange,
 		config:              config,
-		eofCounter:          make(map[int64]map[string]int),
+		eofCounter:          make(map[int64][]string),
 		controlMutex:        sync.Mutex{},
 		precalculatedTopics: precalculatedTopics,
 		datasaver:           dataSaver,
+		restoring:           false,
 	}
 	g.mssgHandlers = worker.MessageHandlerMap{ // para no tener q crear el struct en cada recepcion de msg
 		inner.EndOfRecords:     g.handleEndOfRecordMessage,
@@ -98,14 +102,16 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 
 func (groupWorker *Group) Run() {
 	done := make(chan struct{})
-
 	go func() {
-		groupWorker.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		if err := groupWorker.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 			groupWorker.handleMessage(&msg, ack, nack)
-		})
+		}); err != nil {
+			slog.Error("While start consuming from control exchange")
+		}
 		close(done)
 	}()
 
+	slog.Info("consumiendo input")
 	groupWorker.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		groupWorker.handleMessage(&msg, ack, nack)
 	})
@@ -190,17 +196,9 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, data []interf
 	}
 	slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
 
-	myName := fmt.Sprintf("%s_%d", "group", groupWorker.config.ID)
-
-	groupWorker.controlMutex.Lock()
-	if _, ok := groupWorker.eofCounter[clientID]; !ok {
-		groupWorker.eofCounter[clientID] = make(map[string]int)
-	}
-	groupWorker.controlMutex.Unlock()
-
 	if mustPropagate {
 		// EOF viene del date_filter, reenviar por controlExchange sin propagación
-		msg, err := inner.SerializeEOR(clientID, false, myName)
+		msg, err := inner.SerializeEOR(clientID, false, sender)
 		if err != nil {
 			slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 			return err
@@ -227,8 +225,20 @@ func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, data []interf
 func (groupWorker *Group) handleClientFinalization(clientID int64, sender string) error {
 	slog.Info("Received EOF from another group", "clientID", clientID)
 
-	groupWorker.eofCounter[clientID][sender] = 1
-	groupWorker.datasaver.Save(EORdata{CliID: clientID, Sender: sender}, groupWorker) // persistencia de datos
+	groupWorker.controlMutex.Lock()
+	if _, ok := groupWorker.eofCounter[clientID]; !ok {
+		groupWorker.eofCounter[clientID] = make([]string, 0)
+	}
+	groupWorker.controlMutex.Unlock()
+
+	if slices.Contains(groupWorker.eofCounter[clientID], sender) { // en caso de que dicho worker ya haya mandado el EOR
+		return nil
+	}
+
+	groupWorker.eofCounter[clientID] = append(groupWorker.eofCounter[clientID], sender)
+	if !groupWorker.restoring {
+		groupWorker.datasaver.Save(EORdata{CliID: clientID, Sender: sender}, groupWorker) // persistencia de datos
+	}
 
 	currentEOFCount := len(groupWorker.eofCounter[clientID])
 	if currentEOFCount < groupWorker.config.DateFilterAmount {

@@ -8,7 +8,7 @@ const LOGS_UNTIL_CHECKPOINT = 20
 
 // struct usado para el guardado de checkpoints y recuperacion de datos
 type CheckpointData struct {
-	EofCounter map[int64]map[string]int `json:"eofCounter"`
+	EofCounter map[int64][]string `json:"eofCounter"`
 }
 type EORdata struct {
 	CliID  int64  `json:"cli_id"`
@@ -24,6 +24,7 @@ func (g *Group) GetCheckpointData() any {
 func (g *Group) Restaurate() error {
 	// primero restauramos el checkpoint
 	var checkpoint CheckpointData
+	g.restoring = true
 
 	thereIsCheckpoint, err := g.datasaver.GetRestaurationCheckpoint(&checkpoint)
 	if err != nil {
@@ -39,6 +40,7 @@ func (g *Group) Restaurate() error {
 
 	for {
 		thereIsLogs, err = g.datasaver.GetDataFromLogs(&savedDataVar)
+		slog.Info("Dato sacado del log", "val", savedDataVar)
 		if err != nil { // habria q modificar para retrys
 			return err
 		}
@@ -51,5 +53,6 @@ func (g *Group) Restaurate() error {
 		}
 	}
 
+	g.restoring = false
 	return nil
 }

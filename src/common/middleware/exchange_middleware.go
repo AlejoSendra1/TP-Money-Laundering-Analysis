@@ -45,7 +45,7 @@ func NewExchangeMiddleware(exchange string, keys []string, connectionSettings Co
 		queueName, // name
 		durable,   // durability
 		false,     // delete when unused
-		true,      // exclusive
+		false,     // exclusive
 		false,     // no-wait
 		nil,       // arguments
 	)

@@ -19,6 +19,8 @@ services:
     - NEXT_FASE_WORKERS_AMOUNT=2
     - NEXT_FASE_WORKERS_PREFIX=q4_join
     - PYTHONUNBUFFERED=1
+    #- CRASH_AFTER_LOG=550
+    - CRASH_BEFORE_EOF=2
     volumes:
     - ./persistence:/persistence 
   bridge_matcher_1:
@@ -76,7 +78,7 @@ services:
     environment:
     - ID=0
     - BATCH_SIZE=100
-    - INPUT_FILE=/datasets/input_LI_corto.csv
+    - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output.csv
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway

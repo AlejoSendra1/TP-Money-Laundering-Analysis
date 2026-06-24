@@ -15,7 +15,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 5
+const DestinationThreshold = 2
 const SuspiciousAccountsBatchSize = 100
 
 type BridgeMatcherConfig struct {
@@ -114,9 +114,12 @@ func (bm *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack fu
 		return
 	}
 
+	datasaver.Crash(datasaver.CrashAfterLog)
 	bm.dataSaver.Save(*middlewareMsg, bm) // persistencia de datos
 	ack()
 }
+
+// ------------------- EndOfRecords -------------------
 
 func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
 	//slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
@@ -131,6 +134,9 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, dat
 		return nil
 	}
 
+	if bridgeMatcher.restoring { // en caso de restauracion no envio nada dado que ya se ackio -> ya se hizo todo esto
+		return nil
+	}
 	// Por cada cliente va a enviar las cuentas que tenga, al menos "DestinationThreshold" cantidad de cuentas destino
 	bridgeMatcher.sendSuspiciousAccounts(clientID)
 
@@ -143,6 +149,8 @@ func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, dat
 	bridgeMatcher.controlExchange.Send(*readyMsg)
 	return nil
 }
+
+// ------------------- TransactionBatch -------------------
 
 func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64, data []interface{}) error {
 	records, err := inner.DeserializeAccountsMessage(data)
@@ -171,6 +179,8 @@ func (bridgeMatcher *BridgeMatcher) handleTransactionBatchMessage(clientID int64
 
 	return nil
 }
+
+// ------------------- SuspiciousAccount -------------------
 
 func (bridgeMatcher *BridgeMatcher) handleSuspiciousAccountMessage(clientID int64, data []interface{}) error {
 	if bridgeMatcher.Registers[clientID] == nil {
@@ -217,7 +227,7 @@ func (bridgeMatcher *BridgeMatcher) processSuspiciousAccount(clientID int64, ori
 		possibleBridgesAndSinks[possibleBridge] = bridgeMatcher.Registers[clientID][possibleBridge]
 	}
 
-	if bridgeMatcher.restoring {
+	if bridgeMatcher.restoring { // en caso de restauracion no envio nada dado que ya se ackio -> ya se hizo todo esto
 		return nil
 	}
 
@@ -230,8 +240,12 @@ func (bridgeMatcher *BridgeMatcher) processSuspiciousAccount(clientID int64, ori
 	return nil
 }
 
+// ------------------- ReadyForEOR -------------------
+
 func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []interface{}) error {
 	senderID, err := inner.DeserializeReadyForEOR(data)
+	datasaver.Crash(datasaver.CrashBeforeEOF)
+
 	if err != nil {
 		return err
 	}
@@ -257,6 +271,8 @@ func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []int
 	bridgeMatcher.cleanupClient(clientID)
 	return nil
 }
+
+// -------------------------------------- Utils --------------------------------------
 
 // Notifica a todos los pares/copias sobre un batch de cuentas sospechosas
 func (bridgeMatcher *BridgeMatcher) notifAllBatch(clientID int64, batch []inner.SuspiciousAccountBatchEntry) error {
