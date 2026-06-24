@@ -9,6 +9,7 @@ services:
     - q5_date_filter_1
     environment:
     - ID=0
+    - WORKER_ID=client_0
     - BATCH_SIZE=200
     - INPUT_FILE=/datasets/LI-Small_Trans.csv
     - OUTPUT_FILE=/output/output.csv
@@ -69,6 +70,7 @@ services:
         condition: service_healthy
     environment:
     - ID=0
+    - WORKER_ID=q5_date_filter_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=q5_date_filter_queue
@@ -77,7 +79,8 @@ services:
     - OUTPUT_QUEUE=filter_payment_format_queue
     - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=q5_date_filter_control
-
+    volumes:
+    - ./persistence:/persistence 
   q5_date_filter_1:
     build:
       context: ./src/
@@ -88,6 +91,7 @@ services:
         condition: service_healthy
     environment:
     - ID=1
+    - WORKER_ID=q5_date_filter_1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=q5_date_filter_queue
@@ -96,7 +100,8 @@ services:
     - OUTPUT_QUEUE=filter_payment_format_queue
     - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=q5_date_filter_control
-
+    volumes:
+    - ./persistence:/persistence 
   filter_payment_format_0:
     build:
       context: ./src/
@@ -107,6 +112,7 @@ services:
         condition: service_healthy
     environment:
     - ID=0
+    - WORKER_ID=filter_payment_format_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=filter_payment_format_queue
@@ -115,7 +121,6 @@ services:
     - DATE_FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
     - BATCH_SIZE=100
-
   filter_payment_format_1:
     build:
       context: ./src/
@@ -126,6 +131,7 @@ services:
         condition: service_healthy
     environment:
     - ID=1
+    - WORKER_ID=filter_payment_format_1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=filter_payment_format_queue
@@ -134,7 +140,6 @@ services:
     - DATE_FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
     - BATCH_SIZE=100
-
   counter_q5_0:
     build:
       context: ./src/
@@ -145,6 +150,7 @@ services:
         condition: service_healthy
     environment:
     - ID=0
+    - WORKER_ID=counter_q5_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_PREFIX=counter_q5_queue
@@ -152,7 +158,8 @@ services:
     - CACHE_AMOUNT=2
     - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=counter_q5_control
-
+    volumes:
+    - ./persistence:/persistence 
   counter_q5_1:
     build:
       context: ./src/
@@ -163,6 +170,7 @@ services:
         condition: service_healthy
     environment:
     - ID=1
+    - WORKER_ID=counter_q5_1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_PREFIX=counter_q5_queue
@@ -170,7 +178,8 @@ services:
     - CACHE_AMOUNT=2
     - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=counter_q5_control
-
+    volumes:
+    - ./persistence:/persistence 
   currencies_cache_0:
     build:
       context: ./src/
@@ -181,6 +190,7 @@ services:
         condition: service_healthy
     environment:
     - ID=0
+    - WORKER_ID=currencies_cache_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=currencies_cache
@@ -195,7 +205,6 @@ services:
     volumes:
     - ./src/currencies_cache/currency_codes.json:/currency_codes.json
     - ./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json
-
   currencies_cache_1:
     build:
       context: ./src/
@@ -206,6 +215,7 @@ services:
         condition: service_healthy
     environment:
     - ID=1
+    - WORKER_ID=currencies_cache_1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=currencies_cache
