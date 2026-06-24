@@ -3,7 +3,11 @@ package usd_filter
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner/control"
 
 	"tp_distribuidos/common/messageprotocol/inner"
@@ -15,6 +19,7 @@ const USDCurrencyName = "US Dollar"
 
 type USDFilterConfig struct {
 	Id                  int
+	WorkerID            string
 	MomHost             string
 	MomPort             int
 	InputQueue          string
@@ -33,6 +38,7 @@ type USDFilter struct {
 	config          USDFilterConfig
 	mu              sync.Mutex // mutex para sincronizar la llegada de EOF
 	qtyTx           map[int64]int
+	heartbeat       *heatbeat.HeartbeatSender
 }
 
 func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
@@ -58,16 +64,38 @@ func NewUSDFilter(config USDFilterConfig) (*USDFilter, error) {
 		outputExchange.Close()
 		return nil, err
 	}
+
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchange.Close()
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &USDFilter{
 		inputQueue:      inputQueue,
 		outputExchange:  outputExchange,
 		controlExchange: controlExchange,
 		qtyTx:           make(map[int64]int),
 		config:          config,
+		heartbeat:       hb,
 	}, nil
 }
 
+func (usdFilter *USDFilter) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	usdFilter.heartbeat.Stop()
+	usdFilter.inputQueue.StopConsuming()
+	usdFilter.controlExchange.StopConsuming()
+}
+
 func (usdFilter *USDFilter) Run() {
+	go usdFilter.handleSigterm()
+	usdFilter.heartbeat.Start()
 	go usdFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		usdFilter.handleControlMessage(&msg, ack, nack)
 	})
