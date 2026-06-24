@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/q1_amount_filter"
+	"tp_distribuidos/q1_amount_filter/q1_amount_filter"
 )
 
 func loadConfig() (q1_amount_filter.Q1AmountFilterConfig, error) {
@@ -59,8 +60,14 @@ func loadConfig() (q1_amount_filter.Q1AmountFilterConfig, error) {
 		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("USD_FILTER_AMOUNT environment variable is required and must be a number")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return q1_amount_filter.Q1AmountFilterConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return q1_amount_filter.Q1AmountFilterConfig{
 		Id:                id,
+		WorkerID:          workerID,
 		MomHost:           momHost,
 		MomPort:           momPort,
 		InputQueue:        inputQueue,

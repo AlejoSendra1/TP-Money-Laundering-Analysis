@@ -3,8 +3,12 @@ package q1_amount_filter
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
@@ -13,6 +17,7 @@ import (
 
 type Q1AmountFilterConfig struct {
 	Id                int
+	WorkerID          string
 	MomHost           string
 	MomPort           int
 	InputQueue        string
@@ -31,6 +36,7 @@ type Q1AmountFilter struct {
 	eofCounter      map[int64]int
 	config          Q1AmountFilterConfig
 	mu              sync.Mutex
+	heartbeat       *heatbeat.HeartbeatSender
 }
 
 func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
@@ -57,16 +63,38 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		return nil, err
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &Q1AmountFilter{
 		inputQueue:      inputQueue,
 		outputQueue:     outputQueue,
 		controlExchange: controlExchange,
 		config:          config,
 		eofCounter:      make(map[int64]int),
+		heartbeat:       hb,
 	}, nil
 }
 
+func (q1AmountFilter *Q1AmountFilter) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	q1AmountFilter.heartbeat.Stop()
+	q1AmountFilter.inputQueue.StopConsuming()
+	q1AmountFilter.controlExchange.StopConsuming()
+}
+
 func (q1AmountFilter *Q1AmountFilter) Run() {
+	go q1AmountFilter.handleSigterm()
+	q1AmountFilter.heartbeat.Start()
+
 	go q1AmountFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		q1AmountFilter.handleControlMessage(&msg, ack, nack)
 	})
