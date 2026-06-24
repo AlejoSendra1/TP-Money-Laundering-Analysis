@@ -55,11 +55,11 @@ func (client *Client) sendTransactionRecords() error {
 		}
 
 		// wait for recvManager to signal the ACK arrived
-		slog.Info("Esperando ack...")
+		slog.Debug("Esperando ack...")
 		if _, ok := <-client.ackChan; !ok {
 			return fmt.Errorf("ack channel closed unexpectedly")
 		}
-		slog.Info("Ack recibido")
+		slog.Debug("Ack recibido")
 
 		// por cada linea se va a representar un batch enviado,
 		//  osea, batch_size transacciones enviadas de arriba para para abajo

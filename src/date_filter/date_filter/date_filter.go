@@ -3,8 +3,12 @@ package date_filter
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -19,6 +23,7 @@ const DateMaxLaterPeriod = "2022-09-15"
 
 type DateFilterConfig struct {
 	Id                  int
+	WorkerID            string
 	MomHost             string
 	MomPort             int
 	InputQueue          string
@@ -40,6 +45,7 @@ type DateFilter struct {
 	qtyTx           map[int64]map[string]int
 	config          DateFilterConfig
 	mu              sync.Mutex
+	heartbeat       *heatbeat.HeartbeatSender
 	// debug
 	counter int
 }
@@ -77,6 +83,16 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		outputExchangeTopic2.Close()
 		return nil, err
 	}
+
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchangeTopic1.Close()
+		outputExchangeTopic2.Close()
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	outputExchanges := map[string]middleware.Middleware{
 		config.OutputTopic1: outputExchangeTopic1,
 		config.OutputTopic2: outputExchangeTopic2,
@@ -89,10 +105,14 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		eofCounter:      make(map[int64]batch_utils.Set[string]),
 		qtyTx:           make(map[int64]map[string]int),
 		config:          config,
+		heartbeat:       hb,
 	}, nil
 }
 
 func (dateFilter *DateFilter) Run() {
+	go dateFilter.handleSigterm()
+	dateFilter.heartbeat.Start()
+
 	go dateFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		dateFilter.handleControlMessage(&msg, ack, nack)
 	})
@@ -100,6 +120,16 @@ func (dateFilter *DateFilter) Run() {
 	dateFilter.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		dateFilter.handleMessage(&msg, ack, nack)
 	})
+}
+
+func (dateFilter *DateFilter) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	dateFilter.heartbeat.Stop()
+	dateFilter.inputQueue.StopConsuming()
+	dateFilter.controlExchange.StopConsuming()
 }
 
 func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {

@@ -3,8 +3,12 @@ package q4_join
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"slices"
+	"syscall"
 
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -16,6 +20,7 @@ const DestinationThreshold = 5
 
 type JoinConfig struct {
 	ID                    int
+	WorkerID              string
 	WorkerPrefix          string
 	MomHost               string
 	MomPort               int
@@ -30,6 +35,7 @@ type Join struct {
 	config                JoinConfig
 	sourceSinkRegisters   map[int64]map[string]map[string][]string
 	bridgeWorkersNotified map[int64][]string
+	heartbeat             *heatbeat.HeartbeatSender
 }
 
 func NewJoinWorker(config JoinConfig) (*Join, error) {
@@ -49,19 +55,43 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 		return nil, err
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &Join{
 		inputQueue:            inputQueue,
 		outputQueue:           outputQueue,
 		config:                config,
 		sourceSinkRegisters:   make(map[int64]map[string]map[string][]string),
 		bridgeWorkersNotified: make(map[int64][]string),
+		heartbeat:             hb,
 	}, nil
 }
 
+func (join *Join) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	join.heartbeat.Stop()
+	join.inputQueue.StopConsuming()
+}
+
 func (join *Join) Run() {
+	go join.handleSigterm()
+
+	join.heartbeat.Start()
+
 	join.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		join.handleMessage(&msg, ack, nack)
 	})
+
+	join.inputQueue.Close()
+	join.outputQueue.Close()
 }
 
 func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {

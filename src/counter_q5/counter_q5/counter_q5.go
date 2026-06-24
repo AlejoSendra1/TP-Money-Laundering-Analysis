@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/heatbeat"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -16,6 +17,7 @@ import (
 
 type CounterQ5Config struct {
 	ID                  int
+	WorkerID            string // docker-compose service name, used for heartbeat
 	MomHost             string
 	MomPort             int
 	InputPrefix         string // queue prefix from currencies_cache — reads from {InputPrefix}_{ID}
@@ -33,6 +35,7 @@ type CounterQ5 struct {
 	outputQueue    middleware.Middleware
 	controlOutputs []middleware.Middleware
 	controlInput   middleware.Middleware
+	heartbeat      *heatbeat.HeartbeatSender
 
 	mu               sync.Mutex // protege eofCountByClient y countByClient
 	countByClient    map[int64]map[string]int
@@ -85,12 +88,24 @@ func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 		return nil, fmt.Errorf("creating control input exchange: %w", err)
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		controlInput.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &CounterQ5{
 		config:           config,
 		inputQueue:       inputQueue,
 		outputQueue:      outputQueue,
 		controlOutputs:   controlOutputs,
 		controlInput:     controlInput,
+		heartbeat:        hb,
 		countByClient:    make(map[int64]map[string]int),
 		eofCountByClient: make(map[int64]int),
 	}, nil
@@ -98,14 +113,8 @@ func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 
 // Run starts consuming. Returns once processing is done or SIGTERM is received.
 func (counter *CounterQ5) Run() {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		slog.Info("SIGTERM received, stopping consumer")
-		counter.inputQueue.StopConsuming()
-		counter.controlInput.StopConsuming()
-	}()
+	go counter.handleSigterm()
+	counter.heartbeat.Start()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -119,6 +128,16 @@ func (counter *CounterQ5) Run() {
 	counter.controlInput.StopConsuming()
 	wg.Wait()
 	counter.close()
+}
+
+func (counter *CounterQ5) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumer")
+	counter.heartbeat.Stop()
+	counter.inputQueue.StopConsuming()
+	counter.controlInput.StopConsuming()
 }
 
 func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()) {
