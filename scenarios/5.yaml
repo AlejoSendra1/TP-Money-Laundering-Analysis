@@ -5,20 +5,26 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - q5_date_filter_0
-    - q5_date_filter_1
+      rabbitmq:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+      q5_date_filter_0:
+        condition: service_started
+      q5_date_filter_1:
+        condition: service_started
     environment:
     - ID=0
     - BATCH_SIZE=200
     - INPUT_FILE=/datasets/LI-Small_Trans.csv
-    - OUTPUT_FILE=/output/output.csv
-    - PYTHONUNBUFFERED=1
+    - OUTPUT_FILE=/output/output_client_0.csv
+    - WORKER_ID=client_0
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
     - ./output:/output
-    - ./persistence:/persistence 
+    - ./persistence:/persistence
   gateway:
     build:
       context: ./src/
@@ -33,7 +39,6 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=transactions_exchange
     - OUTPUT_TOPIC=transactions_topic
-    - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     - EOF_EXPECTED_BY_QUERY_1=0
@@ -67,16 +72,23 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      filter_payment_format_0:
+        condition: service_started
+      filter_payment_format_1:
+        condition: service_started
     environment:
     - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=q5_date_filter_0
     - INPUT_QUEUE=q5_date_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
     - OUTPUT_QUEUE=filter_payment_format_queue
     - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=q5_date_filter_control
+    volumes:
+    - ./persistence:/persistence
 
   q5_date_filter_1:
     build:
@@ -86,16 +98,23 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      filter_payment_format_0:
+        condition: service_started
+      filter_payment_format_1:
+        condition: service_started
     environment:
     - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=q5_date_filter_1
     - INPUT_QUEUE=q5_date_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
     - OUTPUT_QUEUE=filter_payment_format_queue
     - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=q5_date_filter_control
+    volumes:
+    - ./persistence:/persistence
 
   filter_payment_format_0:
     build:
@@ -105,16 +124,23 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      currencies_cache_0:
+        condition: service_started
+      currencies_cache_1:
+        condition: service_started
     environment:
     - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=filter_payment_format_0
     - INPUT_QUEUE=filter_payment_format_queue
     - OUTPUT_QUEUE=currencies_cache
     - FILTER_AMOUNT=2
     - DATE_FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
-    - BATCH_SIZE=100
+    - CONTROL_TOPIC=filter_payment_control_topic
+    volumes:
+    - ./persistence:/persistence
 
   filter_payment_format_1:
     build:
@@ -124,16 +150,23 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      currencies_cache_0:
+        condition: service_started
+      currencies_cache_1:
+        condition: service_started
     environment:
     - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=filter_payment_format_1
     - INPUT_QUEUE=filter_payment_format_queue
     - OUTPUT_QUEUE=currencies_cache
     - FILTER_AMOUNT=2
     - DATE_FILTER_AMOUNT=2
     - FILTER_PAYMENT_CONTROL=filter_payment_control
-    - BATCH_SIZE=100
+    - CONTROL_TOPIC=filter_payment_control_topic
+    volumes:
+    - ./persistence:/persistence
 
   counter_q5_0:
     build:
@@ -147,11 +180,12 @@ services:
     - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=counter_q5_0
     - INPUT_PREFIX=counter_q5_queue
     - OUTPUT_QUEUE=results_queue
     - CACHE_AMOUNT=2
-    - INSTANCE_AMOUNT=2
-    - CONTROL_EXCHANGE_NAME=counter_q5_control
+    volumes:
+    - ./persistence:/persistence
 
   counter_q5_1:
     build:
@@ -165,11 +199,12 @@ services:
     - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=counter_q5_1
     - INPUT_PREFIX=counter_q5_queue
     - OUTPUT_QUEUE=results_queue
     - CACHE_AMOUNT=2
-    - INSTANCE_AMOUNT=2
-    - CONTROL_EXCHANGE_NAME=counter_q5_control
+    volumes:
+    - ./persistence:/persistence
 
   currencies_cache_0:
     build:
@@ -179,22 +214,28 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      counter_q5_0:
+        condition: service_started
+      counter_q5_1:
+        condition: service_started
     environment:
     - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=currencies_cache_0
     - INPUT_QUEUE=currencies_cache
     - OUTPUT_PREFIX=counter_q5_queue
     - COUNTER_AMOUNT=2
     - FILTER_AMOUNT=2
-    - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=currencies_cache_control
+    - CONTROL_TOPIC=currencies_cache_control_topic
     - CURRENCY_CODES_FILE=/currency_codes.json
     - FALLBACK_RATES_FILE=/bitcoin_usd_rates.json
     - EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v2/rates
     volumes:
     - ./src/currencies_cache/currency_codes.json:/currency_codes.json
     - ./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json
+    - ./persistence:/persistence
 
   currencies_cache_1:
     build:
@@ -204,20 +245,25 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      counter_q5_0:
+        condition: service_started
+      counter_q5_1:
+        condition: service_started
     environment:
     - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - WORKER_ID=currencies_cache_1
     - INPUT_QUEUE=currencies_cache
     - OUTPUT_PREFIX=counter_q5_queue
     - COUNTER_AMOUNT=2
     - FILTER_AMOUNT=2
-    - INSTANCE_AMOUNT=2
     - CONTROL_EXCHANGE_NAME=currencies_cache_control
+    - CONTROL_TOPIC=currencies_cache_control_topic
     - CURRENCY_CODES_FILE=/currency_codes.json
     - FALLBACK_RATES_FILE=/bitcoin_usd_rates.json
     - EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v2/rates
     volumes:
     - ./src/currencies_cache/currency_codes.json:/currency_codes.json
     - ./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json
-
+    - ./persistence:/persistence
