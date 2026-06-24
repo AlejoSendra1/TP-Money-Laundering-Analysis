@@ -32,15 +32,19 @@ func (j *JoinQ2) Restaurate() error {
 	}
 	if thereIsCheckpoint == true {
 		slog.Info("cargando en base a checkpoint")
-		j.topByClient = checkpoint.TopByClient
-		j.eofCountByClient = checkpoint.EofCountByClient
+		if checkpoint.TopByClient != nil {
+			j.topByClient = checkpoint.TopByClient
+		}
+		if checkpoint.EofCountByClient != nil {
+			j.eofCountByClient = checkpoint.EofCountByClient
+		}
 	}
 
 	var savedDataVar middleware.Message // este tipo de dato es lo unico guardado para este worker
 	var thereIsLogs bool
 
 	for {
-		thereIsLogs, err = j.dataSaver.GetDataFromLogs(&savedDataVar)
+		thereIsLogs, err = j.datasaver.GetDataFromLogs(&savedDataVar)
 		if err != nil { // habria q modificar para retrys
 			return err
 		}

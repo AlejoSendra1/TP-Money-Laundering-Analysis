@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -41,8 +42,8 @@ type FileRecord struct {
 }
 
 func NewDataSaver(filename string, logsUntilCheckpoint int) (*DataSaver, error) {
-	// Open the file in Append mode (create it if it doesn't exist)
-	// 0644  gives read/write permissions to the owner
+
+	slog.Info("Creando datasasver")
 	filename = filename + RESTORATION_FILE_SUFIX
 	restorationFile, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -50,6 +51,7 @@ func NewDataSaver(filename string, logsUntilCheckpoint int) (*DataSaver, error) 
 	}
 
 	writer := bufio.NewWriter(restorationFile)
+	slog.Info("datasasver creado")
 
 	return &DataSaver{
 		restorationFileName: filename,
@@ -66,24 +68,20 @@ func (ds *DataSaver) Close() {
 	ds.file.Close()
 }
 
-func (ds *DataSaver) Clean() {
-	ds.file.Truncate(0)
-}
-
 // / ----------------------------------------- FUNCIONES DE GUARDADO ------------------------------------------
 
 // Para que el worker no se preocupe de realizar el checkpoint
 // este se hara cuando el saver detecte cumplimiento de su condicion de creacion
 func (ds *DataSaver) Save(content any, w worker.Worker) {
-	ds.Log(content)      // persistencia de datos
-	Crash(CrashAfterLog) // para testing
+	ds.Log(content) // persistencia de datos
+	//Crash(CrashAfterLog) // para testing
 	// gestion del checkpoint
 	ds.logCounter++
 	if ds.logCounter >= ds.logsUntilCheckpoint {
 		slog.Info("Guardando checkpoint")
 		ds.logCounter = 0
 		ds.SaveCheckpoint(w.GetCheckpointData())
-		Crash(CrashAfterCheckpoint) // para testing
+		//	Crash(CrashAfterCheckpoint) // para testing
 	}
 }
 
@@ -189,7 +187,8 @@ func (ds *DataSaver) writeFile(data []byte) (err error) {
 // En caso de ser un checkpoint y coincidir con el tipo de la variable target la actualizara in place
 // y dejara el decoder en un estado consistente para realizar a continuacion la recuperacion de los logs.
 func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
-	if ds.file == nil {
+	slog.Info("obteniendo checkpoint")
+	if ds.file == nil || !ds.fileExists() {
 		return false, fmt.Errorf("pointer to restoration file is null")
 	}
 
@@ -199,7 +198,7 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 	var record FileRecord
 	if err := decoder.Decode(&record); err != nil {
 		if errors.Is(err, io.EOF) {
-			slog.Info("No hay nada que restaurar")
+			slog.Info("No hay checkpoint que restaurar")
 			return false, nil
 		}
 		return false, fmt.Errorf("reading data file: %w", err)
@@ -221,6 +220,11 @@ func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 
 // lee cada batch y lo parsea in place en la variable pasada por parametro
 func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
+
+	if !ds.fileExists() {
+		return false, nil
+	}
+
 	var record FileRecord
 
 	if ds.pendingRecord != nil {
@@ -272,4 +276,16 @@ func (ds *DataSaver) truncateToValidOffset() error {
 	}
 	ds.writer = bufio.NewWriter(ds.file)
 	return nil
+}
+
+func (ds *DataSaver) fileExists() bool {
+	_, err := os.Stat(ds.file.Name())
+	if err == nil {
+		return true // File exists
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return false // File explicitly does not exist
+	}
+	// File may exist but is inaccessible (e.g., permission denied)
+	return false
 }

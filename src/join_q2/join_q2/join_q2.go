@@ -69,7 +69,7 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 
 	// para persistir la info ante posibles caidas
 	//se podria agregar el nombre de del archivo de restauracion como var de entorno
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q2_counter_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/%s", config.WorkerID), LOGS_UNTIL_CHECKPOINT)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +92,8 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 	}
 
 	j.mssgHandlers = worker.MessageHandlerMap{
-		inner.EndOfRecords:              j.handleEOF,
-		inner.PossibleFraudDestinations: j.processBatch,
+		inner.EndOfRecords:     j.handleEOF,
+		inner.TransactionBatch: j.processBatch,
 	}
 
 	return j, nil
@@ -122,6 +122,7 @@ func (joinQ2 *JoinQ2) handleMessage(msg middleware.Message, ack, nack func()) {
 		return
 	}
 
+	datasaver.Crash(datasaver.CrashAfterLog)
 	joinQ2.datasaver.Save(msg, joinQ2) // persistencia de datos
 	ack()
 }
@@ -155,6 +156,8 @@ func (joinQ2 *JoinQ2) processBatch(clientID int64, data []interface{}) error {
 // handleEOF increments the EOF counter for the client. Once all counter_q2 instances
 // have sent their EOF, flushes the accumulated result to the output queue.
 func (joinQ2 *JoinQ2) handleEOF(clientID int64, data []interface{}) error {
+	datasaver.Crash(datasaver.CrashBeforeEOF)
+
 	_, sender, err := inner.DeserializeEOR(data) // no hace falta el bool dado que se utiliza otro canal para propagar
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
