@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/date_filter"
+	"tp_distribuidos/date_filter/date_filter"
 )
 
 func loadConfig() (date_filter.DateFilterConfig, error) {
@@ -67,8 +68,14 @@ func loadConfig() (date_filter.DateFilterConfig, error) {
 		return date_filter.DateFilterConfig{}, errors.New("USD_FILTER_AMOUNT environment variable is required and must be a number")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return date_filter.DateFilterConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return date_filter.DateFilterConfig{
 		Id:                  id,
+		WorkerID:            workerID,
 		MomHost:             momHost,
 		MomPort:             momPort,
 		InputQueue:          inputQueue,
