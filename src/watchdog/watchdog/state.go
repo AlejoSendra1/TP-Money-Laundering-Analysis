@@ -280,7 +280,7 @@ func (le *State) handleMessage(msg middleware.Message, ack, nack func()) {
 		le.state = stateFollower
 		le.lastLeaderHeard = time.Now()
 		le.mu.Unlock()
-		slog.Info("election: following coordinator", "leader_id", senderID)
+		slog.Debug("election: following coordinator", "leader_id", senderID)
 	}
 
 	ack()
