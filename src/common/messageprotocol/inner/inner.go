@@ -793,7 +793,7 @@ func SerializeMaxBankTransactionMessage(clientId int64, records []transaction.Ma
 	for _, r := range records {
 		data = append(data, []interface{}{r.BankCode, r.Account, r.Amount})
 	}
-	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, MsgType: TransactionBatch, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("serializing max bank transactions: %w", err)
 	}
@@ -802,17 +802,12 @@ func SerializeMaxBankTransactionMessage(clientId int64, records []transaction.Ma
 
 // DeserializeMaxBankTransactionMessage deserializes a batch of MaxBankTransaction records.
 // Row format: [bankCode(0), account(1), amount(2)]
-func DeserializeMaxBankTransactionMessage(message *middleware.Message) (int64, []transaction.MaxBankTransaction, bool, error) {
-	var messageClient MessageClient
-	if err := json.Unmarshal([]byte(message.Body), &messageClient); err != nil {
-		return 0, nil, false, fmt.Errorf("deserializing max bank transaction body: %w", err)
-	}
-
-	records := make([]transaction.MaxBankTransaction, 0, len(messageClient.Data))
-	for _, datum := range messageClient.Data {
+func DeserializeMaxBankTransactionMessage(data []interface{}) ([]transaction.MaxBankTransaction, error) {
+	records := make([]transaction.MaxBankTransaction, 0, len(data))
+	for _, datum := range data {
 		fields, ok := datum.([]interface{})
 		if !ok || len(fields) != 3 {
-			return 0, nil, false, fmt.Errorf("invalid structure inside max bank transaction record")
+			return nil, fmt.Errorf("invalid structure inside max bank transaction record")
 		}
 		records = append(records, transaction.MaxBankTransaction{
 			BankCode: int(fields[0].(float64)),
@@ -821,7 +816,7 @@ func DeserializeMaxBankTransactionMessage(message *middleware.Message) (int64, [
 		})
 	}
 
-	return messageClient.ClientID, records, len(records) == 0, nil
+	return records, nil
 }
 
 func serializeQuery5(qr transaction.QueryResult) ([]interface{}, error) {

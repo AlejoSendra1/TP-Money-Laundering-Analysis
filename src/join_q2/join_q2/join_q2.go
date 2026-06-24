@@ -5,10 +5,13 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/heatbeat"
+	"tp_distribuidos/common/worker"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -42,8 +45,10 @@ type JoinQ2 struct {
 	outputQueue      middleware.Middleware
 	mutex            sync.Mutex
 	topByClient      map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
-	eofCountByClient map[int64]int               // tracks how many counter_q2 EOFs have arrived per client
+	eofCountByClient map[int64][]string          // tracks how many counter_q2 EOFs have arrived per client
+	mssgHandlers     worker.MessageHandlerMap
 	heartbeat        *heatbeat.HeartbeatSender
+	datasaver        *datasaver.DataSaver
 }
 
 func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
@@ -62,6 +67,13 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 		return nil, fmt.Errorf("creating output queue: %w", err)
 	}
 
+	// para persistir la info ante posibles caidas
+	//se podria agregar el nombre de del archivo de restauracion como var de entorno
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/%s", config.WorkerID), LOGS_UNTIL_CHECKPOINT)
+	if err != nil {
+		return nil, err
+	}
+
 	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
 	if err != nil {
 		inputExchange.Close()
@@ -69,14 +81,22 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
 	}
 
-	return &JoinQ2{
+	j := &JoinQ2{
 		config:           config,
 		inputExchange:    inputExchange,
 		outputQueue:      outputQueue,
 		topByClient:      make(map[int64]map[int]bankEntry),
-		eofCountByClient: make(map[int64]int),
+		eofCountByClient: make(map[int64][]string),
 		heartbeat:        hb,
-	}, nil
+		datasaver:        dataSaver,
+	}
+
+	j.mssgHandlers = worker.MessageHandlerMap{
+		inner.EndOfRecords:     j.handleEOF,
+		inner.TransactionBatch: j.processBatch,
+	}
+
+	return j, nil
 }
 
 func (joinQ2 *JoinQ2) Run() {
@@ -97,29 +117,23 @@ func (joinQ2 *JoinQ2) Run() {
 }
 
 func (joinQ2 *JoinQ2) handleMessage(msg middleware.Message, ack, nack func()) {
-	clientID, records, isEof, err := inner.DeserializeMaxBankTransactionMessage(&msg)
-	if err != nil {
-		slog.Error("Deserializing input message", "err", err)
+	if err := worker.HandleMessageV2(&msg, joinQ2.mssgHandlers); err != nil {
 		nack()
 		return
 	}
 
-	if isEof {
-		if err := joinQ2.handleEOF(clientID); err != nil {
-			slog.Error("Handling EOF", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
-		ack()
-		return
-	}
-
-	joinQ2.processBatch(clientID, records)
+	datasaver.Crash(datasaver.CrashAfterLog)
+	joinQ2.datasaver.Save(msg, joinQ2) // persistencia de datos
 	ack()
 }
 
 // processBatch updates in-memory state: keeps max-amount entry per bank.
-func (joinQ2 *JoinQ2) processBatch(clientID int64, records []transaction.MaxBankTransaction) {
+func (joinQ2 *JoinQ2) processBatch(clientID int64, data []interface{}) error {
+	records, err := inner.DeserializeMaxBankTransactionMessage(data)
+	if err != nil {
+		slog.Error("Deserializing input message", "err", err)
+		return err
+	}
 	joinQ2.mutex.Lock()
 	defer joinQ2.mutex.Unlock()
 	banks, ok := joinQ2.topByClient[clientID]
@@ -134,19 +148,35 @@ func (joinQ2 *JoinQ2) processBatch(clientID int64, records []transaction.MaxBank
 			//slog.Info("New top", "client_id", clientID, "bank", record.BankCode, "amount", record.Amount, "account", record.Account)
 		}
 	}
+	return nil
 }
+
+// ---------------------------- EOR ----------------------------
 
 // handleEOF increments the EOF counter for the client. Once all counter_q2 instances
 // have sent their EOF, flushes the accumulated result to the output queue.
-func (joinQ2 *JoinQ2) handleEOF(clientID int64) error {
+func (joinQ2 *JoinQ2) handleEOF(clientID int64, data []interface{}) error {
+	datasaver.Crash(datasaver.CrashBeforeEOF)
+
+	_, sender, err := inner.DeserializeEOR(data) // no hace falta el bool dado que se utiliza otro canal para propagar
+	if err != nil {
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
+		return err
+	}
+
 	joinQ2.mutex.Lock()
-	joinQ2.eofCountByClient[clientID]++
-	count := joinQ2.eofCountByClient[clientID]
+	if joinQ2.eofCountByClient[clientID] == nil {
+		joinQ2.eofCountByClient[clientID] = make([]string, 0)
+	}
+	if slices.Contains(joinQ2.eofCountByClient[clientID], sender) {
+		return nil
+	}
+	joinQ2.eofCountByClient[clientID] = append(joinQ2.eofCountByClient[clientID], sender)
 	joinQ2.mutex.Unlock()
 
-	slog.Info("EOF received", "client_id", clientID, "count", count, "total", joinQ2.config.CounterAmount)
+	slog.Info("EOF received", "client_id", clientID, "count", len(joinQ2.eofCountByClient[clientID]), "total", joinQ2.config.CounterAmount)
 
-	if count >= joinQ2.config.CounterAmount {
+	if len(joinQ2.eofCountByClient[clientID]) >= joinQ2.config.CounterAmount {
 		return joinQ2.flushClient(clientID)
 	}
 	return nil
