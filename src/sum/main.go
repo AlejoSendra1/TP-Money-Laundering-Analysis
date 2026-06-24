@@ -24,6 +24,11 @@ func loadConfig() (sum.SumConfig, error) {
 		return sum.SumConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return sum.SumConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	inputQueue := os.Getenv("INPUT_QUEUE")
 	if inputQueue == "" {
 		return sum.SumConfig{}, errors.New("INPUT_QUEUE environment variable is required")
@@ -71,6 +76,7 @@ func loadConfig() (sum.SumConfig, error) {
 
 	return sum.SumConfig{
 		Id:                   id,
+		WorkerID:             workerID,
 		MomHost:              momHost,
 		MomPort:              momPort,
 		InputQueue:           inputQueue,

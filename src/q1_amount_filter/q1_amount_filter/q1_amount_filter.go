@@ -3,9 +3,13 @@ package q1_amount_filter
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/datasaver"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -16,6 +20,7 @@ const LogsUntilCheckpoint = 1
 
 type Q1AmountFilterConfig struct {
 	Id                int
+	WorkerID          string
 	MomHost           string
 	MomPort           int
 	InputQueue        string
@@ -35,6 +40,7 @@ type Q1AmountFilter struct {
 	finishedClients batch_utils.Set[int64] // Sirve para no procesar un eof de un cliente que ya termino
 	config          Q1AmountFilterConfig
 	mu              sync.Mutex
+	heartbeat       *heatbeat.HeartbeatSender
 	dataSaver       *datasaver.DataSaver
 }
 
@@ -66,6 +72,15 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		outputQueue.Close()
 		return nil, err
 	}
+
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "q1_amount_filter", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputQueue.Close()
@@ -81,7 +96,18 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		eofCounter:      make(map[int64]batch_utils.Set[string]),
 		finishedClients: make(batch_utils.Set[int64]),
 		dataSaver:       dataSaver,
+		heartbeat:       hb,
 	}, nil
+}
+
+func (q1AmountFilter *Q1AmountFilter) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	q1AmountFilter.heartbeat.Stop()
+	q1AmountFilter.inputQueue.StopConsuming()
+	q1AmountFilter.controlExchange.StopConsuming()
 }
 
 func (q1AmountFilter *Q1AmountFilter) GetCheckpointData() any {
@@ -95,6 +121,9 @@ func (q1AmountFilter *Q1AmountFilter) GetCheckpointData() any {
 }
 
 func (q1AmountFilter *Q1AmountFilter) Run() {
+	go q1AmountFilter.handleSigterm()
+	q1AmountFilter.heartbeat.Start()
+
 	go q1AmountFilter.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		q1AmountFilter.handleControlMessage(&msg, ack, nack)
 	})
@@ -118,7 +147,6 @@ func (q1AmountFilter *Q1AmountFilter) handleMessage(middlewareMsg *middleware.Me
 		nack()
 		return
 	}
-	datasaver.Crash(datasaver.CrashProcessingData)
 	ack()
 }
 
@@ -205,7 +233,6 @@ func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Messa
 		nack()
 		return
 	}
-	datasaver.Crash(datasaver.CrashBeforeCheckpoint)
 	q1AmountFilter.dataSaver.Save(msg, q1AmountFilter)
 	ack()
 }

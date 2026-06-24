@@ -29,6 +29,9 @@ const (
 	PaymentFormatAverage
 	ThresholdFilteredTransfer
 	NotificationAverage
+	Heartbeat
+	WatchdogElection    // "I am a candidate" — carries sender ID
+	WatchdogCoordinator // "I am the leader"  — carries sender ID
 )
 
 type MessageClient struct {
@@ -870,6 +873,59 @@ func SerializeQueryResultMessage(clientId int64, queryResult transaction.QueryRe
 	}
 	message := middleware.Message{Body: string(body)}
 	return &message, nil
+}
+
+// SerializeHeartbeat crea un mensaje de heartbeat con el ID del worker.
+// El workerID debe coincidir con el nombre del servicio en docker-compose.
+func SerializeHeartbeat(workerID string) (*middleware.Message, error) {
+	data := []interface{}{workerID}
+	body, err := SerializeJson(MessageClient{ClientID: 0, MsgType: Heartbeat, Data: data})
+	if err != nil {
+		return nil, fmt.Errorf("serializing heartbeat: %w", err)
+	}
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+// DeserializeHeartbeat extrae el workerID de un mensaje de heartbeat.
+func DeserializeHeartbeat(data []interface{}) (string, error) {
+	if len(data) == 0 {
+		return "", fmt.Errorf("heartbeat: empty data")
+	}
+	workerID, ok := data[0].(string)
+	if !ok {
+		return "", fmt.Errorf("heartbeat: expected string workerID, got %T", data[0])
+	}
+	return workerID, nil
+}
+
+// SerializeWatchdogElection creates an election message carrying the sender's watchdog ID.
+func SerializeWatchdogElection(senderID int) (*middleware.Message, error) {
+	body, err := SerializeJson(MessageClient{ClientID: 0, MsgType: WatchdogElection, Data: []interface{}{senderID}})
+	if err != nil {
+		return nil, fmt.Errorf("serializing watchdog election: %w", err)
+	}
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+// SerializeWatchdogCoordinator creates a coordinator message carrying the leader's watchdog ID.
+func SerializeWatchdogCoordinator(senderID int) (*middleware.Message, error) {
+	body, err := SerializeJson(MessageClient{ClientID: 0, MsgType: WatchdogCoordinator, Data: []interface{}{senderID}})
+	if err != nil {
+		return nil, fmt.Errorf("serializing watchdog coordinator: %w", err)
+	}
+	return &middleware.Message{Body: string(body)}, nil
+}
+
+// DeserializeWatchdogID extracts the watchdog ID from an election or coordinator message.
+func DeserializeWatchdogID(data []interface{}) (int, error) {
+	if len(data) == 0 {
+		return 0, fmt.Errorf("watchdog message: empty data")
+	}
+	id, ok := data[0].(float64) // JSON numbers decode as float64
+	if !ok {
+		return 0, fmt.Errorf("watchdog message: expected numeric ID, got %T", data[0])
+	}
+	return int(id), nil
 }
 
 func SerializeQueryEOR(clientID int64, queryID transaction.QueryID, sender string) (*middleware.Message, error) {

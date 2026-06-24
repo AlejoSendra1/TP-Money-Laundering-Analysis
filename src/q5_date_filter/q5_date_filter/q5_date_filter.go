@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -19,6 +20,7 @@ const DateMaxEarlyPeriod = "2022-09-06"
 
 type Q5DateFilterConfig struct {
 	ID                  int
+	WorkerID            string
 	MomHost             string
 	MomPort             int
 	InputQueue          string
@@ -36,6 +38,7 @@ type Q5DateFilter struct {
 	controlInput   middleware.Middleware
 	config         Q5DateFilterConfig
 	mu             sync.Mutex
+	heartbeat      *heatbeat.HeartbeatSender
 }
 
 func NewQ5DateFilter(config Q5DateFilterConfig) (*Q5DateFilter, error) {
@@ -88,24 +91,40 @@ func NewQ5DateFilter(config Q5DateFilterConfig) (*Q5DateFilter, error) {
 		return nil, fmt.Errorf("creating control input: %w", err)
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		controlInput.Close()
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &Q5DateFilter{
 		inputQueue:     inputQueue,
 		outputQueue:    outputQueue,
 		controlOutputs: controlOutputs,
 		controlInput:   controlInput,
 		config:         config,
+		heartbeat:      hb,
 	}, nil
 }
 
-func (f *Q5DateFilter) Run() {
+func (f *Q5DateFilter) handleSigterm() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		slog.Info("SIGTERM received")
-		f.inputQueue.StopConsuming()
-		f.controlInput.StopConsuming()
-	}()
+	<-sigCh
+	slog.Info("SIGTERM received")
+	f.heartbeat.Stop()
+	f.inputQueue.StopConsuming()
+	f.controlInput.StopConsuming()
+}
+
+func (f *Q5DateFilter) Run() {
+	go f.handleSigterm()
+	f.heartbeat.Start()
 
 	var wg sync.WaitGroup
 	wg.Add(1)

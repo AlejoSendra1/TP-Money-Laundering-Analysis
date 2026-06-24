@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -36,6 +37,7 @@ type frankfurterAPIRate struct {
 
 type CurrenciesCacheConfig struct {
 	ID                  int
+	WorkerID            string
 	MomHost             string
 	MomPort             int
 	InputQueue          string
@@ -65,6 +67,7 @@ type CurrenciesCache struct {
 	apiMutex           sync.RWMutex
 	mu                 sync.Mutex // protege eofCountByClient
 	eofCountByClient   map[int64]int
+	heartbeat          *heatbeat.HeartbeatSender
 }
 
 // fetchRatesForDate fetches exchange rates from Frankfurter API for a specific date.
@@ -165,6 +168,20 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		bitcoinRates[date] = rates["BTC"]
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		// close previously opened resources
+		inputQueue.Close()
+		for _, q := range outputQueues {
+			q.Close()
+		}
+		for _, c := range controlOutputs {
+			c.Close()
+		}
+		controlInput.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &CurrenciesCache{
 		config:             config,
 		inputQueue:         inputQueue,
@@ -175,19 +192,14 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		bitcoinRates:       bitcoinRates,
 		apiRatesByDate:     make(map[string]map[string]float64),
 		eofCountByClient:   make(map[int64]int),
+		heartbeat:          hb,
 	}, nil
 }
 
 // Run starts consuming. Returns once processing is done or SIGTERM is received.
 func (currencyCache *CurrenciesCache) Run() {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		slog.Info("SIGTERM received, stopping consumer")
-		currencyCache.inputQueue.StopConsuming()
-		currencyCache.controlInput.StopConsuming()
-	}()
+	go currencyCache.handleSigterm()
+	currencyCache.heartbeat.Start()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -201,6 +213,16 @@ func (currencyCache *CurrenciesCache) Run() {
 	currencyCache.controlInput.StopConsuming()
 	wg.Wait()
 	currencyCache.close()
+}
+
+func (currencyCache *CurrenciesCache) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumer")
+	currencyCache.heartbeat.Stop()
+	currencyCache.inputQueue.StopConsuming()
+	currencyCache.controlInput.StopConsuming()
 }
 
 func (currencyCache *CurrenciesCache) handleMessage(msg middleware.Message, ack, nack func()) {

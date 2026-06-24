@@ -57,8 +57,14 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		}
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return filter_payment_format.FilterPaymentFormatConfig{
 		ID:                   id,
+		WorkerID:             workerID,
 		MomHost:              momHost,
 		MomPort:              momPort,
 		InputQueue:           inputQueue,

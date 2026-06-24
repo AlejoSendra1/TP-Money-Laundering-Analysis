@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/datasaver"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -17,6 +21,7 @@ const LogsUntilCheckpoint = 1 // Se reciben pocos EOFs
 
 type SumConfig struct {
 	Id                   int
+	WorkerID             string
 	MomHost              string
 	MomPort              int
 	InputQueue           string
@@ -44,6 +49,7 @@ type Sum struct {
 	config          SumConfig
 	mu              sync.Mutex
 	dataSaver       *datasaver.DataSaver
+	heartbeat       *heatbeat.HeartbeatSender
 }
 
 func NewSum(config SumConfig) (*Sum, error) {
@@ -86,6 +92,15 @@ func NewSum(config SumConfig) (*Sum, error) {
 		controlExchange.Close()
 		return nil, err
 	}
+
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchange.Close()
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &Sum{
 		inputQueue:      inputQueue,
 		outputExchange:  outputExchange,
@@ -94,6 +109,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 		eofCounter:      make(map[int64]batch_utils.Set[string]),
 		finishedClients: make(batch_utils.Set[int64]),
 		dataSaver:       dataSaver,
+		heartbeat:       hb,
 	}, nil
 }
 
@@ -107,7 +123,19 @@ func (sum *Sum) GetCheckpointData() any {
 	}
 }
 
+func (sum *Sum) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	sum.heartbeat.Stop()
+	sum.inputQueue.StopConsuming()
+	sum.controlExchange.StopConsuming()
+}
+
 func (sum *Sum) Run() {
+	go sum.handleSigterm()
+	sum.heartbeat.Start()
 	go sum.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		sum.handleMessage(&msg, ack, nack)
 	})

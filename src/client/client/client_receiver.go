@@ -83,10 +83,10 @@ func (client *Client) recvManager() error {
 		switch inner.MsgType(msgType) {
 
 		case inner.MsgType(external.Ack):
-			slog.Info("Notificando a la otra go rutine de la llegada del ack...")
+			slog.Debug("Notificando a la otra go rutine de la llegada del ack...")
 			client.ackChan <- struct{}{}
 			// Avisamos al otro hilo que puede considerar el msg como recibido.
-			slog.Info("Go rutine de envio notificada")
+			slog.Debug("Go rutine de envio notificada")
 			continue
 
 		case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:

@@ -3,9 +3,13 @@ package q3_amount_filter
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/datasaver"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -14,6 +18,7 @@ import (
 
 type Q3AmountFilterConfig struct {
 	Id                       int
+	WorkerID                 string
 	MomHost                  string
 	MomPort                  int
 	InputPromediatorExchange string
@@ -49,6 +54,7 @@ type Q3AmountFilter struct {
 	mu                   sync.Mutex
 	dataSaver            *datasaver.DataSaver
 	muDataSaver          sync.Mutex
+	heartbeat            *heatbeat.HeartbeatSender
 }
 
 func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
@@ -100,6 +106,16 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		controlExchange.Close()
 		return nil, err
 	}
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputPromediator.Close()
+		inputTransactionSaver.Close()
+		outputQueue.Close()
+		notificationExchange.Close()
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &Q3AmountFilter{
 		promediatorExchange:  inputPromediator,
 		inputQueue:           inputTransactionSaver,
@@ -111,6 +127,7 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		eofCounterTs:         make(map[int64]batch_utils.Set[string]),
 		config:               config,
 		dataSaver:            dataSaver,
+		heartbeat:            hb,
 	}, nil
 }
 
@@ -126,7 +143,21 @@ func (q3AmountFilter *Q3AmountFilter) GetCheckpointData() any {
 	}
 }
 
+func (q3AmountFilter *Q3AmountFilter) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	q3AmountFilter.heartbeat.Stop()
+	q3AmountFilter.inputQueue.StopConsuming()
+	q3AmountFilter.promediatorExchange.StopConsuming()
+	q3AmountFilter.controlExchange.StopConsuming()
+}
+
 func (q3AmountFilter *Q3AmountFilter) Run() {
+	go q3AmountFilter.handleSigterm()
+	q3AmountFilter.heartbeat.Start()
+
 	go q3AmountFilter.promediatorExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		q3AmountFilter.handlePromediatorMessage(&msg, ack, nack)
 	})

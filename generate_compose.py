@@ -20,6 +20,7 @@ def main():
             config = yaml.safe_load(f)
             SCALE = config.get("scale", {})
             CLIENTS = config.get("clients", [])
+            WATCHDOG_AMOUNT = config.get("watchdog_amount", 3)
     except FileNotFoundError:
         print("Error: No se encontró 'config.yaml'.")
         sys.exit(1)
@@ -44,7 +45,7 @@ def main():
         """Genera dinamicamente las replicas para un tipo de worker"""
         amount = SCALE.get(node_name, 0)
         for i in range(amount):
-            env = [f"ID={i}", "MOM_HOST=rabbitmq", "MOM_PORT=5672"] + env_vars
+            env = [f"ID={i}", "MOM_HOST=rabbitmq", "MOM_PORT=5672", f"WORKER_ID={node_name}_{i}"] + env_vars
             service = {
                 "build": {"context": "./src/", "dockerfile": f"{node_name}/Dockerfile"},
                 "container_name": f"{node_name}_{i}",
@@ -62,6 +63,7 @@ def main():
         "build": {"context": "./src/rabbitmq", "dockerfile": "Dockerfile"},
         "container_name": "rabbitmq",
         "environment": ["RABBITMQ_LOG_LEVELS=error"],
+        "logging": {"driver": "none"},
         "healthcheck": {
             "test": "rabbitmq-diagnostics check_port_connectivity",
             "interval": "5s", 
@@ -103,10 +105,11 @@ def main():
             "depends_on": get_deps(["gateway", "usd_filter", "q5_date_filter"]),
             "environment": [
                 f"ID={idx}",
-                f"BATCH_SIZE={batch_size}", 
+                f"BATCH_SIZE={batch_size}",
                 f"INPUT_FILE={input_file}",
-                f"OUTPUT_FILE=/output/output_{client_name}.csv", 
-                "SERVER_HOST=gateway", 
+                f"OUTPUT_FILE=/output/output_{client_name}.csv",
+                f"WORKER_ID={client_name}",
+                "SERVER_HOST=gateway",
                 "SERVER_PORT=5678"
             ],
             "volumes": ["./datasets:/datasets", "./output:/output", "./persistence:/persistence"]
@@ -223,7 +226,35 @@ def main():
     ])
 
     # ==============================================================================
-    # 6. ESCRITURA OUTPUT
+    # 6. WATCHDOGS
+    # ==============================================================================
+    # Build the full list of worker IDs that watchdogs must monitor: workers + clients + watchdog
+    all_worker_ids = []
+    for node_name, amount in SCALE.items():
+        for i in range(amount):
+            all_worker_ids.append(f"{node_name}_{i}")
+    for i in range(WATCHDOG_AMOUNT):
+        all_worker_ids.append(f"watchdog_{i}")
+
+    worker_ids_env = ",".join(all_worker_ids)
+
+    for i in range(WATCHDOG_AMOUNT):
+        services[f"watchdog_{i}"] = {
+            "build": {"context": "./src/", "dockerfile": "watchdog/Dockerfile"},
+            "container_name": f"watchdog_{i}",
+            "depends_on": {"rabbitmq": {"condition": "service_healthy"}},
+            "environment": [
+                f"ID={i}",
+                "MOM_HOST=rabbitmq",
+                "MOM_PORT=5672",
+                f"WORKER_IDS={worker_ids_env}",
+                "ELECTION_EXCHANGE=watchdog_election",
+            ],
+            "volumes": ["/var/run/docker.sock:/var/run/docker.sock"]
+        }
+
+    # ==============================================================================
+    # 7. ESCRITURA OUTPUT
     # ==============================================================================
     compose_dict = {"services": services}
     with open(output_filename, "w") as f:

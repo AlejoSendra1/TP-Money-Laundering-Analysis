@@ -50,8 +50,14 @@ func loadConfig() (counter_q5.CounterQ5Config, error) {
 		return counter_q5.CounterQ5Config{}, errors.New("CONTROL_EXCHANGE_NAME is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return counter_q5.CounterQ5Config{}, errors.New("WORKER_ID is required")
+	}
+
 	return counter_q5.CounterQ5Config{
 		ID:                  id,
+		WorkerID:            workerID,
 		MomHost:             momHost,
 		MomPort:             momPort,
 		InputPrefix:         inputPrefix,

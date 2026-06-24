@@ -4,9 +4,13 @@ import (
 	"hash"
 	"hash/fnv"
 	"log/slog"
+	"os"
+	"os/signal"
 	"slices"
 	"strconv"
+	"syscall"
 
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/worker"
@@ -18,6 +22,7 @@ const SuspiciousAccountsBatchSize = 100
 
 type BridgeMatcherConfig struct {
 	ID                    int
+	WorkerID              string
 	WorkerPrefix          string
 	MomHost               string
 	MomPort               int
@@ -41,6 +46,7 @@ type BridgeMatcher struct {
 	groupWorkersNotified map[int64][]string
 	bridgesReadyForEOR   map[int64][]int // tracks which peers sent ReadyForEOF
 	hasher               hash.Hash32
+	heartbeat            *heatbeat.HeartbeatSender
 }
 
 func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) {
@@ -69,6 +75,12 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		return nil, err
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		return nil, err
+	}
+
 	return &BridgeMatcher{
 		inputQueue:           inputQueue,
 		outputExchange:       *outputExchange,
@@ -78,13 +90,25 @@ func NewBridgeMatcherWorker(config BridgeMatcherConfig) (*BridgeMatcher, error) 
 		config:               config,
 		bridgesReadyForEOR:   make(map[int64][]int),
 		hasher:               fnv.New32a(),
+		heartbeat:            hb,
 	}, nil
 }
 
 func (bridgeMatcher *BridgeMatcher) Run() {
+	go bridgeMatcher.handleSigterm()
+	bridgeMatcher.heartbeat.Start()
 	bridgeMatcher.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		bridgeMatcher.handleMessage(&msg, ack, nack)
 	})
+}
+
+func (bridgeMatcher *BridgeMatcher) handleSigterm() {
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGTERM)
+	<-signalChannel
+	slog.Info("SIGTERM received, stopping consumers")
+	bridgeMatcher.heartbeat.Stop()
+	bridgeMatcher.inputQueue.StopConsuming()
 }
 
 func (bm *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
