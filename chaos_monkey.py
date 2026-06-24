@@ -21,8 +21,13 @@ def load_config(config_path="chaos_config.yaml"):
         print(f"{get_timestamp()} Error al leer el YAML: {e}")
         sys.exit(1)
 
-def get_running_workers(excluded_containers):
-    """Obtiene la lista de contenedores corriendo, excluyendo los especificados."""
+def get_running_workers(excluded_containers, target_containers):    
+    """
+    Obtiene los contenedores corriendo
+    1. Descarta los excluidos
+    2. Si 'target_containers' tiene elementos, devuelve solo los que coincidan
+       Si esta vacío, devuelve todos los que quedaron
+    """    
     try:
         result = subprocess.run(
             ['docker', 'ps', '--format', '{{.Names}}'], 
@@ -30,17 +35,26 @@ def get_running_workers(excluded_containers):
         )
         all_containers = result.stdout.strip().split('\n')
         
-        workers = []
+        valid_workers = []
         for container in all_containers:
             if not container:
                 continue
             
-            # Filtramos los contenedores que contengan las palabras clave excluidas
-            is_excluded = any(container_name in container for container_name in excluded_containers)
-            if not is_excluded:
-                workers.append(container)
+            # Filtramos los excluidos
+            is_excluded = any(excl_name in container for excl_name in excluded_containers)
+            if is_excluded:
+                continue
                 
-        return workers
+            # Si la lista de targets no está vacía, chequeamos si el contenedor es un target
+            if target_containers:
+                is_target = any(target_name in container for target_name in target_containers)
+                if is_target:
+                    valid_workers.append(container)
+            else:
+                # Si no hay targets definidos, todos los que no están excluidos son víctimas
+                valid_workers.append(container)
+                
+        return valid_workers
     except Exception as e:
         print(f"{get_timestamp()} Error al comunicarse con Docker: {e}")
         return []
@@ -57,14 +71,20 @@ def main():
     config = load_config()
     attack_interval = config.get("attack_interval", 20)
     excluded_containers = config.get("excluded_containers", ["rabbitmq", "gateway", "client"])
-    
+    target_containers = config.get("target_containers", [])
+    if target_containers is None:
+        target_containers = []
+    if target_containers:
+        print(f"Atacando SOLO a: {target_containers}")
+    else:
+        print(f"Atacando a cualquier contenedor disponible")
     print(f"Intervalo de ataque: {attack_interval}s")
     print(f"Ignorando contenedores {excluded_containers}")
     print("Presiona Ctrl+C para detener la ejecución.\n")
     
     try:
         while True:
-            workers = get_running_workers(excluded_containers)
+            workers = get_running_workers(excluded_containers, target_containers)
             
             if not workers:
                 # Caso muy extremo
@@ -72,13 +92,10 @@ def main():
                 time.sleep(5)
                 continue
                 
-            # 1. Seleccionar nodo al azar de los que estan activos en este momento
             victim = random.choice(workers)
             
-            # 2. Atacar
             kill_container(victim)
             
-            # 3. Esperar antes del próximo ataque
             print(f"{get_timestamp()} Esperando {attack_interval} segundos...\n")
             time.sleep(attack_interval)
             
