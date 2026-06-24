@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -20,6 +21,7 @@ var allowedPaymentFormats = map[string]bool{
 
 type FilterPaymentFormatConfig struct {
 	ID                   int
+	WorkerID             string
 	MomHost              string
 	MomPort              int
 	InputQueue           string
@@ -33,12 +35,12 @@ type FilterPaymentFormatConfig struct {
 // FilterPaymentFormat filters transactions by payment format (Wire, ACH) and
 // routes approved transactions to the appropriate downstream exchange.
 type FilterPaymentFormat struct {
-	config         FilterPaymentFormatConfig
-	inputQueue     middleware.Middleware
-	outputQueue    middleware.Middleware // cola compartida hacia currencies_cache
-	controlOutputs []middleware.Middleware
-	controlInput   middleware.Middleware
-
+	config           FilterPaymentFormatConfig
+	inputQueue       middleware.Middleware
+	outputQueue      middleware.Middleware
+	controlOutputs   []middleware.Middleware
+	controlInput     middleware.Middleware
+	heartbeat        *heatbeat.HeartbeatSender
 	mutex            sync.Mutex
 	bufferByClient   map[int64]map[string][]transaction.PaymentRecord
 	eofCountByClient map[int64]int
@@ -52,14 +54,12 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 		return nil, fmt.Errorf("creating input queue: %w", err)
 	}
 
-	// Cola compartida de salida hacia currencies_cache (competing consumers)
 	outputQueue, err := middleware.CreateQueueMiddleware(config.OutputQueue, connSettings)
 	if err != nil {
 		inputQueue.Close()
 		return nil, fmt.Errorf("creating output queue: %w", err)
 	}
 
-	// Control output exchanges — one per peer (all filter instances except self)
 	var controlOutputs []middleware.Middleware
 	for i := 0; i < config.FilterAmount; i++ {
 		if i == config.ID {
@@ -89,12 +89,24 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 		return nil, fmt.Errorf("creating control input exchange: %w", err)
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		controlInput.Close()
+		for _, controlOutput := range controlOutputs {
+			controlOutput.Close()
+		}
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &FilterPaymentFormat{
 		config:           config,
 		inputQueue:       inputQueue,
 		outputQueue:      outputQueue,
 		controlOutputs:   controlOutputs,
 		controlInput:     controlInput,
+		heartbeat:        hb,
 		bufferByClient:   make(map[int64]map[string][]transaction.PaymentRecord),
 		eofCountByClient: make(map[int64]int),
 	}, nil
@@ -102,14 +114,8 @@ func NewFilterPaymentFormat(config FilterPaymentFormatConfig) (*FilterPaymentFor
 
 // Run starts the worker. Returns once processing finishes or SIGTERM is received.
 func (filter *FilterPaymentFormat) Run() {
-	signalChannel := make(chan os.Signal, 1)
-	signal.Notify(signalChannel, syscall.SIGTERM)
-	go func() {
-		<-signalChannel
-		slog.Info("SIGTERM received, stopping consumers")
-		filter.inputQueue.StopConsuming()
-		filter.controlInput.StopConsuming()
-	}()
+	go filter.handleSigterm()
+	filter.heartbeat.Start()
 
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(1)
@@ -120,11 +126,19 @@ func (filter *FilterPaymentFormat) Run() {
 
 	filter.inputQueue.StartConsuming(filter.handleMessage)
 
-	// Once the main input is done, stop the control consumer too
 	filter.controlInput.StopConsuming()
 	waitGroup.Wait()
-
 	filter.close()
+}
+
+func (filter *FilterPaymentFormat) handleSigterm() {
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGTERM)
+	<-signalChannel
+	slog.Info("SIGTERM received, stopping consumers")
+	filter.heartbeat.Stop()
+	filter.inputQueue.StopConsuming()
+	filter.controlInput.StopConsuming()
 }
 
 // handleMessage processes messages from the shared input queue.
