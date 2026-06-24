@@ -53,8 +53,14 @@ func loadConfig() (join_q2.JoinQ2Config, error) {
 		}
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return join_q2.JoinQ2Config{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return join_q2.JoinQ2Config{
 		ID:            id,
+		WorkerID:      workerID,
 		MomHost:       momHost,
 		MomPort:       momPort,
 		InputPrefix:   inputPrefix,
