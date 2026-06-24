@@ -156,6 +156,13 @@ func (promediator *Promediator) handleEndOfRecords(clientID int64, data []interf
 func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender string) error {
 	// Verifico si ya recibi todos los EOFs que faltaban
 	slog.Info("Received End Of Records message", "clientID", clientID)
+	if _, ok := promediator.eofCounter[clientID]; !ok {
+		slog.Info(
+			"Received EOF for unknown client; client may have already finished or never sent any data",
+			"clientID", clientID,
+		)
+		return nil
+	}
 	promediator.eofCounter[clientID].Add(sender)
 	if uint8(promediator.eofCounter[clientID].Size()) != promediator.config.SumAmount {
 		slog.Debug("Waiting for remaining EOFs")
@@ -192,6 +199,7 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
 	promediator.deduplicator.RemoveClient(clientID)
+	slog.Info("Cleanup client and finished", "clientID", clientID)
 	return nil
 }
 
