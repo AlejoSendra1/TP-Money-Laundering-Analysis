@@ -36,9 +36,10 @@ type Q3AmountFilterConfig struct {
 const LogsUntilCheckpoint = 1
 
 type CheckpointData struct {
-	EofCounterAvg map[int64]batch_utils.Set[string] `json:"eofCounterAvg"`
-	EofCounterTs  map[int64]batch_utils.Set[string] `json:"eofCounterTs"`
-	Averages      map[int64]map[string]float64      `json:"averages"`
+	EofCounterAvg   map[int64]batch_utils.Set[string] `json:"eofCounterAvg"`
+	EofCounterTs    map[int64]batch_utils.Set[string] `json:"eofCounterTs"`
+	Averages        map[int64]map[string]float64      `json:"averages"`
+	FinishedClients batch_utils.Set[int64]            `json:"finishedClients"`
 }
 
 type Q3AmountFilter struct {
@@ -49,6 +50,7 @@ type Q3AmountFilter struct {
 	controlExchange      middleware.Middleware
 	eofCounterAvg        map[int64]batch_utils.Set[string]
 	eofCounterTs         map[int64]batch_utils.Set[string]
+	finishedClients      batch_utils.Set[int64] // Sirve para no procesar un eof de un cliente que ya termino
 	averages             map[int64]map[string]float64
 	config               Q3AmountFilterConfig
 	mu                   sync.Mutex
@@ -125,6 +127,7 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		averages:             make(map[int64]map[string]float64),
 		eofCounterAvg:        make(map[int64]batch_utils.Set[string]),
 		eofCounterTs:         make(map[int64]batch_utils.Set[string]),
+		finishedClients:      batch_utils.NewSet[int64](),
 		config:               config,
 		dataSaver:            dataSaver,
 		heartbeat:            hb,
@@ -135,11 +138,14 @@ func (q3AmountFilter *Q3AmountFilter) GetCheckpointData() any {
 	slog.Info("State saved",
 		"eofCounterAvg", q3AmountFilter.eofCounterAvg,
 		"eofCounterTs", q3AmountFilter.eofCounterTs,
-		"averages", q3AmountFilter.averages)
+		"averages", q3AmountFilter.averages,
+		"finishedClients", q3AmountFilter.finishedClients,
+	)
 	return CheckpointData{
-		EofCounterAvg: q3AmountFilter.eofCounterAvg,
-		EofCounterTs:  q3AmountFilter.eofCounterTs,
-		Averages:      q3AmountFilter.averages,
+		EofCounterAvg:   q3AmountFilter.eofCounterAvg,
+		EofCounterTs:    q3AmountFilter.eofCounterTs,
+		Averages:        q3AmountFilter.averages,
+		FinishedClients: q3AmountFilter.finishedClients,
 	}
 }
 
@@ -248,6 +254,11 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 	slog.Info("Averages EOF arrived from promediator", "clientID", clientID)
 	needNotify := false
 	q3AmountFilter.mu.Lock()
+	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
+		slog.Info("Client has already done", "clientID", clientID)
+		q3AmountFilter.mu.Unlock()
+		return nil
+	}
 	_, ok := q3AmountFilter.eofCounterAvg[clientID]
 	q3AmountFilter.mu.Unlock()
 
@@ -285,6 +296,11 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) {
 	// Ensure initialization happens under lock to avoid races
 	q3AmountFilter.mu.Lock()
+	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
+		slog.Info("Client has already done", "clientID", clientID)
+		q3AmountFilter.mu.Unlock()
+		return
+	}
 	if _, ok := q3AmountFilter.averages[clientID]; !ok {
 		slog.Info("New average arrived from promediator", "clientID", clientID)
 		q3AmountFilter.averages[clientID] = make(map[string]float64)
@@ -304,12 +320,17 @@ func (q3AmountFilter *Q3AmountFilter) handleControlEndOfRecodsWrapper(clientID i
 		return err
 	}
 	q3AmountFilter.mu.Lock()
+	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
+		slog.Info("Client has already done", "clientID", clientID)
+		q3AmountFilter.mu.Unlock()
+		return nil
+	}
 	_, ok := q3AmountFilter.eofCounterTs[clientID]
 	q3AmountFilter.mu.Unlock()
 
 	if !ok {
 		// Si me llego un EOF de un cliente que no tengo registro, es porque me mando tarde la data
-		slog.Warn("New client arrived from control message, but , wont process", "clientID", clientID)
+		slog.Warn("New client arrived from control message, but dont have data, wont process", "clientID", clientID)
 		return nil
 	}
 	shouldSendEOF := false
@@ -397,6 +418,11 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverDataMessage(transact
 
 func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []transaction.ThresholdFilteredTransfer, clientID int64) error {
 	q3AmountFilter.mu.Lock()
+	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
+		slog.Info("Client has already done", "clientID", clientID)
+		q3AmountFilter.mu.Unlock()
+		return nil
+	}
 	clientAverages, ok := q3AmountFilter.averages[clientID]
 	if !ok {
 		q3AmountFilter.mu.Unlock()
@@ -428,8 +454,6 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 	}
 
 	if len(transactions) > 0 {
-		q3AmountFilter.mu.Lock()
-		q3AmountFilter.mu.Unlock()
 		batch_utils.SortBatch(transactions, func(a, b transaction.ThresholdFilteredTransfer) bool {
 			if a.Timestamp != b.Timestamp {
 				return a.Timestamp < b.Timestamp
@@ -453,6 +477,7 @@ func (q3AmountFilter *Q3AmountFilter) cleanupClient(clientID int64) {
 	delete(q3AmountFilter.averages, clientID)
 	delete(q3AmountFilter.eofCounterAvg, clientID)
 	delete(q3AmountFilter.eofCounterTs, clientID)
+	q3AmountFilter.finishedClients.Add(clientID)
 }
 
 func (q3AmountFilter *Q3AmountFilter) sendOutput(queryResult transaction.QueryResult, clientID int64) error {
@@ -481,10 +506,12 @@ func (q3AmountFilter *Q3AmountFilter) Restaurate() error {
 		q3AmountFilter.eofCounterAvg = checkpoint.EofCounterAvg
 		q3AmountFilter.eofCounterTs = checkpoint.EofCounterTs
 		q3AmountFilter.averages = checkpoint.Averages
+		q3AmountFilter.finishedClients = checkpoint.FinishedClients
 		slog.Info("State restaurated",
 			"eofCounterAvg", q3AmountFilter.eofCounterAvg,
 			"eofCounterTs", q3AmountFilter.eofCounterTs,
 			"averages", q3AmountFilter.averages,
+			"finishedClients", q3AmountFilter.finishedClients,
 		)
 	}
 
