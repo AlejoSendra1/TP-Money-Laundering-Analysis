@@ -68,13 +68,23 @@ func run() int {
 		return 1
 	}
 
-	server, err := q4_join.NewJoinWorker(config)
+	join, err := q4_join.NewJoinWorker(config)
 	if err != nil {
 		slog.Error("While initializing", "err", err)
 		return 1
 	}
 
-	server.Run()
+	slog.Info("leyendo flag restaurate", "value", os.Getenv("RESTAURATE"))
+	if os.Getenv("RESTAURATE") == "TRUE" {
+		slog.Info("restaurando")
+		if err := join.Restaurate(); err != nil {
+			slog.Error("While restoring state", "err", err)
+			return 1
+		}
+		slog.Info("restaurado todo piola")
+	}
+
+	join.Run()
 	return 0
 }
 

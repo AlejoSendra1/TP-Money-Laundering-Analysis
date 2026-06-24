@@ -118,7 +118,6 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientSt
 }
 
 func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
-	slog.Debug("Enviando algo al cliente")
 	if err := safeio.WriteAll(socket, data); err != nil {
 		slog.Error("While writing queries result message", "err", err)
 		return fmt.Errorf("While writing queries result message: %w", err)
