@@ -215,10 +215,10 @@ def main():
     add_worker("currencies_cache", ["counter_q5"], [
         "INPUT_QUEUE=currencies_cache", "OUTPUT_PREFIX=counter_q5_queue",
         f"COUNTER_AMOUNT={SCALE.get('counter_q5', 1)}", f"FILTER_AMOUNT={SCALE.get('filter_payment_format', 1)}",
-        f"INSTANCE_AMOUNT={SCALE.get('currencies_cache', 1)}", "CONTROL_EXCHANGE_NAME=currencies_cache_control",
+        "CONTROL_EXCHANGE_NAME=currencies_cache_control", "CONTROL_TOPIC=currencies_cache_control_topic",
         "CURRENCY_CODES_FILE=/currency_codes.json", "FALLBACK_RATES_FILE=/bitcoin_usd_rates.json",
         "EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v2/rates"
-    ], volumes=["./src/currencies_cache/currency_codes.json:/currency_codes.json", "./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json"])
+    ], volumes=["./src/currencies_cache/currency_codes.json:/currency_codes.json", "./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json", "./persistence:/persistence"])
     add_worker("counter_q5", [], [
         "INPUT_PREFIX=counter_q5_queue", "OUTPUT_QUEUE=results_queue",
         f"CACHE_AMOUNT={SCALE.get('currencies_cache', 1)}", f"INSTANCE_AMOUNT={SCALE.get('counter_q5', 1)}",
