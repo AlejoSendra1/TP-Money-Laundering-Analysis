@@ -23,7 +23,6 @@ type ClientConfig struct {
 	ServerPort string
 	InputFile  string
 	OutputFile string
-	Restorate  bool
 	ID         int
 }
 
