@@ -16,7 +16,7 @@ import (
 )
 
 const LogsUntilCheckpoint = 250
-const MaxBatchSize = 1000
+const MaxBatchSize = 10000
 
 type PromediatorConfig struct {
 	Id                 int
