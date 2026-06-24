@@ -221,8 +221,7 @@ def main():
     ], volumes=["./src/currencies_cache/currency_codes.json:/currency_codes.json", "./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json", "./persistence:/persistence"])
     add_worker("counter_q5", [], [
         "INPUT_PREFIX=counter_q5_queue", "OUTPUT_QUEUE=results_queue",
-        f"CACHE_AMOUNT={SCALE.get('currencies_cache', 1)}", f"INSTANCE_AMOUNT={SCALE.get('counter_q5', 1)}",
-        "CONTROL_EXCHANGE_NAME=counter_q5_control"
+        f"CACHE_AMOUNT={SCALE.get('currencies_cache', 1)}"
     ])
 
     # ==============================================================================
