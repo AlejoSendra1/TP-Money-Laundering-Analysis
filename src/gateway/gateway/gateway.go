@@ -38,6 +38,8 @@ type GatewayConfig struct {
 	EofExpectedByQuery5 int
 }
 
+const MaxBatchSize = 20000
+
 type Gateway struct {
 	registry       clientregistry.ClientRegistry
 	inputQueue     middleware.Middleware
@@ -75,7 +77,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		outputExchange: outputExchange,
 		listener:       listener,
 		config:         config,
-		deduplicator:   batch_utils.NewMultiClientDeduplicator(1000),
+		deduplicator:   batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
 	}
 	gateway.running.Store(true)
 	return gateway, nil

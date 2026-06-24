@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/transaction"
 )
 
@@ -41,13 +42,17 @@ func (storage *Storage) StoreTransactions(transactions []transaction.ThresholdFi
 	if err != nil {
 		return fmt.Errorf("marshaling transaction batch to json: %w", err)
 	}
-	if _, err := writer.Write(append(jsonData, '\n')); err != nil {
+	if _, err = writer.Write(append(jsonData, '\n')); err != nil {
 		return fmt.Errorf("writing transaction batch to disk: %w", err)
 	}
-
-	if err := writer.Flush(); err != nil {
+	if err = writer.Flush(); err != nil {
 		return fmt.Errorf("flushing transaction batch buffer: %w", err)
 	}
+
+	if err = file.Sync(); err != nil {
+		return fmt.Errorf("syncing file to disk: %w", err)
+	}
+
 	return nil
 }
 
@@ -89,13 +94,25 @@ func (storage *Storage) readAndSendFromFile(clientID int64, send SendTransaction
 	// Ojo si el batch es muy grande, scanner puede fallar en ese caso.
 
 	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
 		var txs []transaction.ThresholdFilteredTransfer
-		if err := json.Unmarshal(scanner.Bytes(), &txs); err != nil {
-			return fmt.Errorf("unmarshaling transaction batch from disk stream: %w", err)
+		if err := json.Unmarshal(line, &txs); err != nil {
+			slog.Warn("Line corrupted", "err", err, "filePath", storage.filePath)
+			continue
 		}
 		if len(txs) == 0 {
 			continue
 		}
+		batch_utils.SortBatch(txs, func(a, b transaction.ThresholdFilteredTransfer) bool {
+			if a.Timestamp != b.Timestamp {
+				return a.Timestamp < b.Timestamp
+			}
+			return a.Amount > b.Amount
+		})
 		if err := send(clientID, txs); err != nil {
 			return err
 		}
@@ -110,26 +127,20 @@ func (storage *Storage) readAndSendFromFile(clientID int64, send SendTransaction
 func (storage *Storage) RemoveFile() error {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	// 1. Validar ruta vacía
 	if storage.filePath == "" {
 		return nil
 	}
 
-	// 2. Intentar borrar el archivo
 	err := os.Remove(storage.filePath)
 	if err == nil {
-		// Éxito rotundo: El archivo existía y se borró
 		slog.Debug("Temporary client file deleted from disk successfully", "path", storage.filePath)
 		return nil
 	}
 
-	// 3. Evaluar el error si falló os.Remove
 	if !errors.Is(err, os.ErrNotExist) {
-		// Error real: Problema de permisos, disco bloqueado, etc.
 		slog.Error("Failed to delete temporary file from disk", "path", storage.filePath, "err", err)
 		return err
 	}
 
-	// Si el error fue que no existía (os.ErrNotExist), no hace nada y termina limpio.
 	return nil
 }

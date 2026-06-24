@@ -103,7 +103,10 @@ func run() int {
 		slog.Error("While initializing sum", "err", err)
 		return 1
 	}
-
+	if err = server.Restaurate(); err != nil {
+		slog.Error("While restoring state", "err", err)
+		return 1
+	}
 	server.Run()
 	return 0
 }

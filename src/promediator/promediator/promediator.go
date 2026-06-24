@@ -7,11 +7,16 @@ import (
 	"os/signal"
 	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
+
+const LogsUntilCheckpoint = 250
+const MaxBatchSize = 1000
 
 type PromediatorConfig struct {
 	Id                 int
@@ -25,6 +30,12 @@ type PromediatorConfig struct {
 	PromediatorPrefix  string
 }
 
+type CheckpointData struct {
+	PaymentFormatAverage map[int64]map[string]transaction.PaymentFormatAverage `json:"topByClient"`
+	EofCounter           map[int64]batch_utils.Set[string]                     `json:"eofCounter"`
+	Deduplicator         *batch_utils.MultiClientDeduplicator                  `json:"deduplicator"`
+}
+
 type Promediator struct {
 	inputExchange    middleware.Middleware
 	outputExchange   middleware.Middleware
@@ -32,6 +43,7 @@ type Promediator struct {
 	eofCounter       map[int64]batch_utils.Set[string]
 	config           PromediatorConfig
 	deduplicator     *batch_utils.MultiClientDeduplicator
+	dataSaver        *datasaver.DataSaver
 	heartbeat        *heatbeat.HeartbeatSender
 }
 
@@ -48,6 +60,10 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		inputExchange.Close()
 		return nil, err
 	}
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", config.PromediatorPrefix, config.Id), LogsUntilCheckpoint)
+	if err != nil {
+		return nil, err
+	}
 
 	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
 	if err != nil {
@@ -62,9 +78,18 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		paymentFormatAvg: make(map[int64]map[string]transaction.PaymentFormatAverage),
 		eofCounter:       make(map[int64]batch_utils.Set[string]),
 		config:           config,
-		deduplicator:     batch_utils.NewMultiClientDeduplicator(1000),
+		deduplicator:     batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
+		dataSaver:        dataSaver,
 		heartbeat:        hb,
 	}, nil
+}
+
+func (promediator *Promediator) GetCheckpointData() any {
+	return CheckpointData{
+		PaymentFormatAverage: promediator.paymentFormatAvg,
+		EofCounter:           promediator.eofCounter,
+		Deduplicator:         promediator.deduplicator,
+	}
 }
 
 func (promediator *Promediator) handleSigterm() {
@@ -85,51 +110,47 @@ func (promediator *Promediator) Run() {
 	})
 }
 func (promediator *Promediator) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV3(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:     promediator.handleEndOfRecords,
+			inner.TransactionBatch: promediator.handleTransactionBatch,
+		},
+		promediator.deduplicator,
+	)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
-	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
-	if promediator.deduplicator.IsDuplicate(int64(int(msg.ClientID)), batchID) {
-		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID)
-		ack()
-		return
-	}
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		slog.Info("Received msg", "type", "EOF")
-		_, sender, err := inner.DeserializeEOR(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing EOR msg", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-
-		if err := promediator.handleEndOfRecordMessage(msg.ClientID, sender); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		ack()
-		return
-	case inner.TransactionBatch:
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		if err := promediator.handleDataMessage(transactions, msg.ClientID); err != nil {
-			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-	default:
-		slog.Error("Unexpected msg type received", "err", err, "clientID", msg.ClientID)
-	}
+	promediator.dataSaver.Save(middlewareMsg, promediator) // persistencia de datos
 	ack()
+}
+
+func (promediator *Promediator) handleTransactionBatch(clientID int64, data []interface{}) error {
+	transactions, err := inner.DeserializeTransactionBatch(data)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err, "clientID", clientID)
+		return err
+	}
+	if err = promediator.handleDataMessage(transactions, clientID); err != nil {
+		slog.Error("While handling data message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
+}
+
+func (promediator *Promediator) handleEndOfRecords(clientID int64, data []interface{}) error {
+	slog.Info("Received msg", "type", "EOF")
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
+		return err
+	}
+	if err = promediator.handleEndOfRecordMessage(clientID, sender); err != nil {
+		slog.Error("While handling end of record message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
 }
 
 func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender string) error {
@@ -157,8 +178,8 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 		slog.Info("Dont send anything", "clientID", clientID)
 	}
 
-	// Envio el EOF
-	msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%s_%d", promediator.config.PromediatorPrefix, promediator.config.Id))
+	// Envio la notificacion a q3 amount filter
+	msgToSend, err := inner.SerializeNotificationAvg(clientID, false, fmt.Sprintf("%s_%d", promediator.config.PromediatorPrefix, promediator.config.Id))
 	if err != nil {
 		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
@@ -170,7 +191,7 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 	slog.Info("Sent EOF message to q3 amount filter", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
-	promediator.deduplicator.RemoveClient(int64(int(clientID)))
+	promediator.deduplicator.RemoveClient(clientID)
 	return nil
 }
 
@@ -209,4 +230,46 @@ func (promediator *Promediator) getPaymentFormats(clientID int64) []transaction.
 		result = append(result, avg)
 	}
 	return result
+}
+
+func (promediator *Promediator) Restaurate() error {
+	// primero restauramos el checkpoint
+	var checkpoint CheckpointData
+
+	thereIsCheckpoint, err := promediator.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil { // habria q agregar retrys?
+		return err
+	}
+	if thereIsCheckpoint == true {
+		slog.Info("cargando en base a checkpoint")
+		promediator.paymentFormatAvg = checkpoint.PaymentFormatAverage
+		promediator.eofCounter = checkpoint.EofCounter
+		promediator.deduplicator = checkpoint.Deduplicator
+	}
+
+	var savedDataVar middleware.Message
+	var thereIsLogs bool
+
+	for {
+		thereIsLogs, err = promediator.dataSaver.GetDataFromLogs(&savedDataVar)
+		if err != nil { // habria q modificar para retrys
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+		err = worker.HandleMessageV3(
+			&savedDataVar,
+			worker.MessageHandlerMap{
+				inner.EndOfRecords:     promediator.handleEndOfRecords,
+				inner.TransactionBatch: promediator.handleTransactionBatch,
+			},
+			promediator.deduplicator,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

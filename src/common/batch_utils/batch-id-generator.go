@@ -3,8 +3,8 @@ package batch_utils
 import "hash/fnv"
 
 type BatchID struct {
-	Hash   uint64
-	Length int
+	Hash   uint64 `json:"hash"`
+	Length int    `json:"length"`
 }
 
 func GenerateBatchID(body []byte) BatchID {
