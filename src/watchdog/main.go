@@ -41,12 +41,24 @@ func loadConfig() (watchdogworker.WatchdogConfig, error) {
 		return watchdogworker.WatchdogConfig{}, errors.New("ELECTION_EXCHANGE environment variable is required")
 	}
 
+	dockerSock := os.Getenv("DOCKER_SOCK")
+	if dockerSock == "" {
+		dockerSock = watchdogworker.DefaultDockerSockPath
+	}
+
+	dockerAPIVersion := os.Getenv("DOCKER_API_VERSION")
+	if dockerAPIVersion == "" {
+		dockerAPIVersion = watchdogworker.DefaultDockerAPIVersion
+	}
+
 	return watchdogworker.WatchdogConfig{
 		ID:               id,
 		MomHost:          momHost,
 		MomPort:          momPort,
 		WorkerIDs:        workerIDs,
 		ElectionExchange: electionExchange,
+		DockerSockPath:   dockerSock,
+		DockerAPIVersion: dockerAPIVersion,
 	}, nil
 }
 

@@ -21,8 +21,9 @@ import (
 const workerIDFmt = "watchdog_%d"
 
 const (
-	dockerSockPath    = "/var/run/docker.sock"
-	dockerStartURLFmt = "http://localhost/v1.45/containers/%s/start"
+	DefaultDockerSockPath   = "/var/run/docker.sock"
+	DefaultDockerAPIVersion = "v1.45"
+	dockerStartURLFmt       = "http://localhost/%s/containers/%s/start"
 )
 
 type WatchdogConfig struct {
@@ -31,6 +32,8 @@ type WatchdogConfig struct {
 	MomPort          int
 	WorkerIDs        []string // all expected worker IDs, including other watchdogs
 	ElectionExchange string   // exchange name used for bully leader election
+	DockerSockPath   string   // path to Docker Unix socket (default: /var/run/docker.sock)
+	DockerAPIVersion string   // Docker API version to use (default: v1.45)
 }
 
 // Watchdog listens to heartbeats from all workers and restarts those that
@@ -60,7 +63,7 @@ func NewWatchdog(config WatchdogConfig) (*Watchdog, error) {
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "unix", dockerSockPath)
+				return (&net.Dialer{}).DialContext(ctx, "unix", config.DockerSockPath)
 			},
 		},
 	}
@@ -198,7 +201,7 @@ func (w *Watchdog) restartDeadWorkers(dead []string) {
 
 // restartWorker calls the Docker HTTP API via Unix socket to start the container.
 func (w *Watchdog) restartWorker(workerID string) error {
-	url := fmt.Sprintf(dockerStartURLFmt, workerID)
+	url := fmt.Sprintf(dockerStartURLFmt, w.config.DockerAPIVersion, workerID)
 
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
