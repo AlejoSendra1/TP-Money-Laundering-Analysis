@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -13,6 +16,7 @@ import (
 
 type TransactionsSaverConfig struct {
 	Id                       int
+	WorkerID                 string
 	MomHost                  string
 	MomPort                  int
 	StorageDir               string
@@ -37,6 +41,7 @@ type TransactionsSaver struct {
 	clientStates         map[int64]*ClientState // Ahora mapea al nuevo tipo State
 	eofCounter           map[int64]batch_utils.Set[string]
 	mu                   sync.Mutex // Protege clientStates y eofCounter
+	heartbeat            *heatbeat.HeartbeatSender
 }
 
 func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, error) {
@@ -75,6 +80,16 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		controlExchange.Close()
 		return nil, err
 	}
+
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		controlExchange.Close()
+		notificationExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &TransactionsSaver{
 		inputQueue:           inputQueue,
 		outputQueue:          outputQueue,
@@ -83,10 +98,24 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		config:               config,
 		clientStates:         make(map[int64]*ClientState),
 		eofCounter:           make(map[int64]batch_utils.Set[string]),
+		heartbeat:            hb,
 	}, nil
 }
 
+func (transactionsSaver *TransactionsSaver) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	transactionsSaver.heartbeat.Stop()
+	transactionsSaver.inputQueue.StopConsuming()
+	transactionsSaver.notificationExchange.StopConsuming()
+	transactionsSaver.controlExchange.StopConsuming()
+}
+
 func (transactionsSaver *TransactionsSaver) Run() {
+	go transactionsSaver.handleSigterm()
+	transactionsSaver.heartbeat.Start()
 	go transactionsSaver.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		transactionsSaver.handleMessage(&msg, ack, nack)
 	})

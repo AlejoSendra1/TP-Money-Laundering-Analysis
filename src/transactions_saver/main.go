@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/transactions_saver"
+	"tp_distribuidos/transactions_saver/transactions_saver"
 )
 
 func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
@@ -22,6 +23,11 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
 		return transactions_saver.TransactionsSaverConfig{}, errors.New("MOM_HOST environment variable is required")
+	}
+
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return transactions_saver.TransactionsSaverConfig{}, errors.New("WORKER_ID environment variable is required")
 	}
 
 	storageDir := os.Getenv("STORAGE_DIR")
@@ -80,6 +86,7 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 
 	return transactions_saver.TransactionsSaverConfig{
 		Id:                       id,
+		WorkerID:                 workerID,
 		MomHost:                  momHost,
 		MomPort:                  momPort,
 		StorageDir:               storageDir,
