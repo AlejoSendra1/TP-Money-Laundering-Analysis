@@ -102,7 +102,7 @@ def main():
             "container_name": client_name,
             "depends_on": get_deps(["gateway", "usd_filter", "q5_date_filter"]),
             "environment": [
-                f"ID={idx}"
+                f"ID={idx}",
                 f"BATCH_SIZE={batch_size}", 
                 f"INPUT_FILE={input_file}",
                 f"OUTPUT_FILE=/output/output_{client_name}.csv", 
