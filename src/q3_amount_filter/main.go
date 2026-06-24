@@ -74,8 +74,14 @@ func loadConfig() (q3_amount_filter.Q3AmountFilterConfig, error) {
 		return q3_amount_filter.Q3AmountFilterConfig{}, errors.New("CONTROL_TOPIC_NAME environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return q3_amount_filter.Q3AmountFilterConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return q3_amount_filter.Q3AmountFilterConfig{
 		Id:                       id,
+		WorkerID:                 workerID,
 		MomHost:                  momHost,
 		MomPort:                  momPort,
 		InputPromediatorExchange: inputPromediatorExchange,
