@@ -3,9 +3,13 @@ package q4_join
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"slices"
+	"syscall"
 
 	"tp_distribuidos/common/datasaver"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -17,6 +21,7 @@ const DestinationThreshold = 2
 
 type JoinConfig struct {
 	ID                    int
+	WorkerID              string
 	WorkerPrefix          string
 	MomHost               string
 	MomPort               int
@@ -34,6 +39,7 @@ type Join struct {
 	dataSaver             *datasaver.DataSaver
 	mssgHandlers          worker.MessageHandlerMap
 	restoring             bool
+	heartbeat             *heatbeat.HeartbeatSender
 }
 
 func NewJoinWorker(config JoinConfig) (*Join, error) {
@@ -58,6 +64,12 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 	if err != nil {
 		return nil, err
 	}
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
 
 	j := &Join{
 		inputQueue:            inputQueue,
@@ -67,6 +79,7 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 		bridgeWorkersNotified: make(map[int64][]string),
 		dataSaver:             dataSaver,
 		restoring:             false,
+		heartbeat:             hb,
 	}
 	j.mssgHandlers = worker.MessageHandlerMap{
 		inner.EndOfRecords:              j.handleEndOfRecordMessage,
@@ -76,10 +89,26 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 	return j, nil
 }
 
+func (join *Join) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	join.heartbeat.Stop()
+	join.inputQueue.StopConsuming()
+}
+
 func (join *Join) Run() {
+	go join.handleSigterm()
+
+	join.heartbeat.Start()
+
 	join.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		join.handleMessage(&msg, ack, nack)
 	})
+
+	join.inputQueue.Close()
+	join.outputQueue.Close()
 }
 
 func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {

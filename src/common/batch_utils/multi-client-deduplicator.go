@@ -3,15 +3,15 @@ package batch_utils
 import "sync"
 
 type MultiClientDeduplicator struct {
-	deduplicatorByClient map[int64]*BatchDeduplicator
-	maxBatchSize         int
-	mutex                sync.Mutex
+	DeduplicatorByClient map[int64]*BatchDeduplicator `json:"batchDeduplicator"`
+	MaxBatchSize         int                          `json:"maxBatchSize"`
+	mutex                sync.Mutex                   `json:"-"`
 }
 
 func NewMultiClientDeduplicator(maxBatchSize int) *MultiClientDeduplicator {
 	return &MultiClientDeduplicator{
-		deduplicatorByClient: make(map[int64]*BatchDeduplicator),
-		maxBatchSize:         maxBatchSize,
+		DeduplicatorByClient: make(map[int64]*BatchDeduplicator),
+		MaxBatchSize:         maxBatchSize,
 	}
 }
 
@@ -30,14 +30,14 @@ func (m *MultiClientDeduplicator) Load(clientID int64, id BatchID) {
 func (m *MultiClientDeduplicator) RemoveClient(clientID int64) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	delete(m.deduplicatorByClient, clientID)
+	delete(m.DeduplicatorByClient, clientID)
 }
 
 func (m *MultiClientDeduplicator) getOrCreate(clientID int64) *BatchDeduplicator {
-	if _, exists := m.deduplicatorByClient[clientID]; !exists {
-		m.deduplicatorByClient[clientID] = NewBatchDeduplicator(m.maxBatchSize)
+	if _, exists := m.DeduplicatorByClient[clientID]; !exists {
+		m.DeduplicatorByClient[clientID] = NewBatchDeduplicator(m.MaxBatchSize)
 	}
-	return m.deduplicatorByClient[clientID]
+	return m.DeduplicatorByClient[clientID]
 }
 
 // para desencapsular

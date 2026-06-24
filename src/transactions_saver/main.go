@@ -24,6 +24,11 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 		return transactions_saver.TransactionsSaverConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return transactions_saver.TransactionsSaverConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	storageDir := os.Getenv("STORAGE_DIR")
 	if storageDir == "" {
 		return transactions_saver.TransactionsSaverConfig{}, errors.New("STORAGE_DIR environment variable is required")
@@ -80,6 +85,7 @@ func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {
 
 	return transactions_saver.TransactionsSaverConfig{
 		Id:                       id,
+		WorkerID:                 workerID,
 		MomHost:                  momHost,
 		MomPort:                  momPort,
 		StorageDir:               storageDir,
@@ -108,7 +114,10 @@ func run() int {
 		slog.Error("While initializing transactions saver", "err", err)
 		return 1
 	}
-
+	if err = server.Restaurate(); err != nil {
+		slog.Error("While restoring state", "err", err)
+		return 1
+	}
 	server.Run()
 	return 0
 }

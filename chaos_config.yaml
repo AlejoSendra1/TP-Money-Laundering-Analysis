@@ -1,8 +1,51 @@
 chaos_monkey:
   # Segundos que se espera antes de elegir al siguiente contenedor
-  attack_interval: 20
-  
+  attack_interval: 10
+
+  # Contenedores especificos a atacar
+  # Si esta vacia la lista, atacará a cualquier contenedor (que no esté excluido)
+  target_containers:
+   - "promediator"
+   - "q3_amount_filter"
+   - "transactions_saver"
+   - "sum"
+
   # Contenedores que se ignoran
   excluded_containers:
     - "rabbitmq"
     - "gateway"
+
+# Ejemplos para atacar contenedores especificos:
+# Filters en comun:
+# target_containers:
+#   - "usd_filter"
+#   - "date_filter"
+
+# Query 1:
+# target_containers:
+#   - "q1_amount_filter"
+
+# Query 2:
+# target_containers:
+#   - "counter_q2"
+#   - "join_q2"
+
+# Query 3:
+# target_containers:
+#   - "promediator"
+#   - "q3_amount_filter"
+#   - "transactions_saver"
+#   - "sum"
+
+# Query 4:
+# target_containers:
+#   - "group"
+#   - "bridge_matcher"
+#   - "q4_join"
+
+# Query 5:
+# target_containers:
+#   - "q5_date_filter"
+#   - "filter_payment_format"
+#   - "currencies_cache"
+#   - "counter_q5"

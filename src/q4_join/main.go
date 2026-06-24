@@ -44,8 +44,14 @@ func loadConfig() (q4_join.JoinConfig, error) {
 		return q4_join.JoinConfig{}, errors.New("PREV_FASE_WORKERS_AMOUNT environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return q4_join.JoinConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return q4_join.JoinConfig{
 		ID:                    id,
+		WorkerID:              workerID,
 		WorkerPrefix:          workerPrefix,
 		MomHost:               momHost,
 		MomPort:               momPort,

@@ -21,11 +21,11 @@ type DataSaver struct {
 	restorationFileName string
 	file                *os.File
 	writer              *bufio.Writer
-	reader              *json.Decoder // replaces *bufio.Scanner — handles arbitrarily large JSON objects
+	reader              *json.Decoder
 	logsUntilCheckpoint int
 	logCounter          int
-	pendingRecord       *FileRecord // replaces pendingLine — avoids re-encoding bytes back into a struct
-	validOffset         int64       // byte offset right after the last successfully parsed record
+	pendingRecord       *FileRecord
+	validOffset         int64 // byte offset right after the last successfully parsed record
 }
 
 type RecordType string

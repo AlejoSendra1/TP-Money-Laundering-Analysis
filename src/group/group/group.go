@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"os"
+	"os/signal"
 	"slices"
 	"sync"
+	"syscall"
 
 	"tp_distribuidos/common/datasaver"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -18,6 +22,7 @@ const FANOUT = ""
 
 type GroupConfig struct {
 	ID                    int
+	WorkerID              string
 	WorkerPrefix          string
 	MomHost               string
 	MomPort               int
@@ -42,6 +47,7 @@ type Group struct {
 	datasaver           *datasaver.DataSaver
 	mssgHandlers        worker.MessageHandlerMap
 	restoring           bool
+	heartbeat           *heatbeat.HeartbeatSender
 }
 
 func NewGroupWorker(config GroupConfig) (*Group, error) {
@@ -82,6 +88,13 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		return nil, err
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	g := &Group{
 		inputQueue:          inputQueue,
 		outputExchange:      *outputExchange,
@@ -90,6 +103,7 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 		eofCounter:          make(map[int64][]string),
 		controlMutex:        sync.Mutex{},
 		precalculatedTopics: precalculatedTopics,
+		heartbeat:           hb,
 		datasaver:           dataSaver,
 		restoring:           false,
 	}
@@ -101,6 +115,9 @@ func NewGroupWorker(config GroupConfig) (*Group, error) {
 }
 
 func (groupWorker *Group) Run() {
+	go groupWorker.handleSigterm()
+	groupWorker.heartbeat.Start()
+
 	done := make(chan struct{})
 	go func() {
 		if err := groupWorker.controlExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
@@ -117,6 +134,16 @@ func (groupWorker *Group) Run() {
 	})
 
 	<-done
+}
+
+func (groupWorker *Group) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumers")
+	groupWorker.heartbeat.Stop()
+	groupWorker.inputQueue.StopConsuming()
+	groupWorker.controlExchange.StopConsuming()
 }
 
 func (g *Group) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {

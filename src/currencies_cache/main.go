@@ -106,12 +106,18 @@ func loadConfig() (currencies_cache.CurrenciesCacheConfig, error) {
 		return currencies_cache.CurrenciesCacheConfig{}, errors.New("loading fallback rates file: " + err.Error())
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return currencies_cache.CurrenciesCacheConfig{}, errors.New("WORKER_ID is required")
+	}
+
 	// Optional: exchange binding for the input queue
 	inputExchange := os.Getenv("INPUT_EXCHANGE_NAME")
 	inputTopic := os.Getenv("INPUT_TOPIC")
 
 	return currencies_cache.CurrenciesCacheConfig{
 		ID:                  id,
+		WorkerID:            workerID,
 		MomHost:             momHost,
 		MomPort:             momPort,
 		InputQueue:          inputQueue,

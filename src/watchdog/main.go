@@ -1,0 +1,87 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+
+	watchdogworker "tp_distribuidos/watchdog"
+)
+
+func loadConfig() (watchdogworker.WatchdogConfig, error) {
+	momHost := os.Getenv("MOM_HOST")
+	if momHost == "" {
+		return watchdogworker.WatchdogConfig{}, errors.New("MOM_HOST environment variable is required")
+	}
+
+	momPort := 5672
+	if p := os.Getenv("MOM_PORT"); p != "" {
+		if _, err := fmt.Sscanf(p, "%d", &momPort); err != nil {
+			return watchdogworker.WatchdogConfig{}, errors.New("MOM_PORT must be a number")
+		}
+	}
+
+	id := 0
+	if v := os.Getenv("ID"); v != "" {
+		if _, err := fmt.Sscanf(v, "%d", &id); err != nil {
+			return watchdogworker.WatchdogConfig{}, errors.New("ID must be a number")
+		}
+	}
+
+	workerIDsRaw := os.Getenv("WORKER_IDS")
+	if workerIDsRaw == "" {
+		return watchdogworker.WatchdogConfig{}, errors.New("WORKER_IDS environment variable is required")
+	}
+	workerIDs := strings.Split(workerIDsRaw, ",")
+
+	electionExchange := os.Getenv("ELECTION_EXCHANGE")
+	if electionExchange == "" {
+		return watchdogworker.WatchdogConfig{}, errors.New("ELECTION_EXCHANGE environment variable is required")
+	}
+
+	dockerSock := os.Getenv("DOCKER_SOCK")
+	if dockerSock == "" {
+		dockerSock = watchdogworker.DefaultDockerSockPath
+	}
+
+	dockerAPIVersion := os.Getenv("DOCKER_API_VERSION")
+	if dockerAPIVersion == "" {
+		dockerAPIVersion = watchdogworker.DefaultDockerAPIVersion
+	}
+
+	return watchdogworker.WatchdogConfig{
+		ID:               id,
+		MomHost:          momHost,
+		MomPort:          momPort,
+		WorkerIDs:        workerIDs,
+		ElectionExchange: electionExchange,
+		DockerSockPath:   dockerSock,
+		DockerAPIVersion: dockerAPIVersion,
+	}, nil
+}
+
+func run() int {
+	config, err := loadConfig()
+	if err != nil {
+		slog.Error("loading config", "err", err)
+		return 1
+	}
+
+	w, err := watchdogworker.NewWatchdog(config)
+	if err != nil {
+		slog.Error("initializing heatbeat", "err", err)
+		return 1
+	}
+
+	w.Run()
+	return 0
+}
+
+func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+	os.Exit(run())
+}

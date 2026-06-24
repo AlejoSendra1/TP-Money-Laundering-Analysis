@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/heatbeat"
 
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
@@ -16,6 +17,7 @@ import (
 
 type JoinQ2Config struct {
 	ID            int
+	WorkerID      string
 	MomHost       string
 	MomPort       int
 	InputPrefix   string
@@ -41,6 +43,7 @@ type JoinQ2 struct {
 	mutex            sync.Mutex
 	topByClient      map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
 	eofCountByClient map[int64]int               // tracks how many counter_q2 EOFs have arrived per client
+	heartbeat        *heatbeat.HeartbeatSender
 }
 
 func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
@@ -59,12 +62,20 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 		return nil, fmt.Errorf("creating output queue: %w", err)
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputExchange.Close()
+		outputQueue.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &JoinQ2{
 		config:           config,
 		inputExchange:    inputExchange,
 		outputQueue:      outputQueue,
 		topByClient:      make(map[int64]map[int]bankEntry),
 		eofCountByClient: make(map[int64]int),
+		heartbeat:        hb,
 	}, nil
 }
 
@@ -74,9 +85,11 @@ func (joinQ2 *JoinQ2) Run() {
 	go func() {
 		<-signalChannel
 		slog.Info("SIGTERM received, stopping consumer")
+		joinQ2.heartbeat.Stop()
 		joinQ2.inputExchange.StopConsuming()
 	}()
 
+	joinQ2.heartbeat.Start()
 	joinQ2.inputExchange.StartConsuming(joinQ2.handleMessage)
 
 	joinQ2.inputExchange.Close()

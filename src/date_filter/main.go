@@ -67,8 +67,14 @@ func loadConfig() (date_filter.DateFilterConfig, error) {
 		return date_filter.DateFilterConfig{}, errors.New("USD_FILTER_AMOUNT environment variable is required and must be a number")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return date_filter.DateFilterConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return date_filter.DateFilterConfig{
 		Id:                  id,
+		WorkerID:            workerID,
 		MomHost:             momHost,
 		MomPort:             momPort,
 		InputQueue:          inputQueue,
@@ -95,7 +101,10 @@ func run() int {
 		slog.Error("While initializing date filter", "err", err)
 		return 1
 	}
-
+	if err = server.Restaurate(); err != nil {
+		slog.Error("While restoring state", "err", err)
+		return 1
+	}
 	server.Run()
 	return 0
 }

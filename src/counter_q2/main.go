@@ -74,8 +74,15 @@ func loadConfig() (counter_q2.CounterQ2Config, error) {
 	if err != nil {
 		return counter_q2.CounterQ2Config{}, errors.New("USD_FILTER_AMOUNT environment variable is required and must be a number")
 	}
+
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return counter_q2.CounterQ2Config{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return counter_q2.CounterQ2Config{
 		ID:              id,
+		WorkerID:        workerID,
 		MomHost:         momHost,
 		MomPort:         momPort,
 		InputQueue:      inputQueue,

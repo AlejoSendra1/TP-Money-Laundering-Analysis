@@ -45,8 +45,14 @@ func loadConfig() (promediator.PromediatorConfig, error) {
 		return promediator.PromediatorConfig{}, errors.New("OUTPUT_TOPIC_NAME environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return promediator.PromediatorConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return promediator.PromediatorConfig{
 		Id:                 id,
+		WorkerID:           workerID,
 		MomHost:            momHost,
 		MomPort:            momPort,
 		InputExchangeName:  inputExchangeName,
@@ -69,7 +75,10 @@ func run() int {
 		slog.Error("While initializing Promediator", "err", err)
 		return 1
 	}
-
+	if err = server.Restaurate(); err != nil {
+		slog.Error("While restoring state", "err", err)
+		return 1
+	}
 	server.Run()
 	return 0
 }
