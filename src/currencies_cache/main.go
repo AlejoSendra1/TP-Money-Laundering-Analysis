@@ -70,14 +70,14 @@ func loadConfig() (currencies_cache.CurrenciesCacheConfig, error) {
 		return currencies_cache.CurrenciesCacheConfig{}, errors.New("FILTER_AMOUNT is required and must be a number")
 	}
 
-	instanceAmount, err := strconv.Atoi(os.Getenv("INSTANCE_AMOUNT"))
-	if err != nil {
-		return currencies_cache.CurrenciesCacheConfig{}, errors.New("INSTANCE_AMOUNT is required and must be a number")
-	}
-
 	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
 	if controlExchangeName == "" {
 		return currencies_cache.CurrenciesCacheConfig{}, errors.New("CONTROL_EXCHANGE_NAME is required")
+	}
+
+	controlTopic := os.Getenv("CONTROL_TOPIC")
+	if controlTopic == "" {
+		return currencies_cache.CurrenciesCacheConfig{}, errors.New("CONTROL_TOPIC is required")
 	}
 
 	apiURL := os.Getenv("EXCHANGE_RATE_API_URL")
@@ -126,8 +126,8 @@ func loadConfig() (currencies_cache.CurrenciesCacheConfig, error) {
 		OutputPrefix:        outputPrefix,
 		CounterAmount:       counterAmount,
 		FilterAmount:        filterAmount,
-		InstanceAmount:      instanceAmount,
 		ControlExchangeName: controlExchangeName,
+		ControlTopic:        controlTopic,
 		ExchangeRateAPIURL:  apiURL,
 		CurrencyNameToCode:  currencyNameToCode,
 		FallbackRates:       fallbackRates,
