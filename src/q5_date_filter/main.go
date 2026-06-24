@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/q5_date_filter"
+	"tp_distribuidos/q5_date_filter/q5_date_filter"
 )
 
 func loadConfig() (q5_date_filter.Q5DateFilterConfig, error) {
@@ -22,6 +23,11 @@ func loadConfig() (q5_date_filter.Q5DateFilterConfig, error) {
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
 		return q5_date_filter.Q5DateFilterConfig{}, errors.New("MOM_HOST environment variable is required")
+	}
+
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return q5_date_filter.Q5DateFilterConfig{}, errors.New("WORKER_ID environment variable is required")
 	}
 
 	inputQueue := os.Getenv("INPUT_QUEUE")
@@ -56,6 +62,7 @@ func loadConfig() (q5_date_filter.Q5DateFilterConfig, error) {
 
 	return q5_date_filter.Q5DateFilterConfig{
 		ID:                  id,
+		WorkerID:            workerID,
 		MomHost:             momHost,
 		MomPort:             momPort,
 		InputQueue:          inputQueue,
