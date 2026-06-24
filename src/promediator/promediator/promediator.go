@@ -3,7 +3,11 @@ package promediator
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
@@ -11,6 +15,7 @@ import (
 
 type PromediatorConfig struct {
 	Id                 int
+	WorkerID           string
 	MomHost            string
 	MomPort            int
 	InputExchangeName  string
@@ -27,6 +32,7 @@ type Promediator struct {
 	eofCounter       map[int64]batch_utils.Set[string]
 	config           PromediatorConfig
 	deduplicator     *batch_utils.MultiClientDeduplicator
+	heartbeat        *heatbeat.HeartbeatSender
 }
 
 func NewPromediator(config PromediatorConfig) (*Promediator, error) {
@@ -43,6 +49,13 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		return nil, err
 	}
 
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputExchange.Close()
+		outputExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
 	return &Promediator{
 		inputExchange:    inputExchange,
 		outputExchange:   outputExchange,
@@ -50,10 +63,23 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		eofCounter:       make(map[int64]batch_utils.Set[string]),
 		config:           config,
 		deduplicator:     batch_utils.NewMultiClientDeduplicator(1000),
+		heartbeat:        hb,
 	}, nil
 }
 
+func (promediator *Promediator) handleSigterm() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("SIGTERM received, stopping consumer")
+	promediator.heartbeat.Stop()
+	promediator.inputExchange.StopConsuming()
+}
+
 func (promediator *Promediator) Run() {
+	go promediator.handleSigterm()
+	promediator.heartbeat.Start()
+
 	promediator.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		promediator.handleMessage(&msg, ack, nack)
 	})
@@ -66,7 +92,7 @@ func (promediator *Promediator) handleMessage(middlewareMsg *middleware.Message,
 		return
 	}
 	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
-	if promediator.deduplicator.IsDuplicate(int(msg.ClientID), batchID) {
+	if promediator.deduplicator.IsDuplicate(int64(int(msg.ClientID)), batchID) {
 		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID)
 		ack()
 		return
@@ -144,7 +170,7 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 	slog.Info("Sent EOF message to q3 amount filter", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
-	promediator.deduplicator.RemoveClient(int(clientID))
+	promediator.deduplicator.RemoveClient(int64(int(clientID)))
 	return nil
 }
 

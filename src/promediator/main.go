@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/promediator"
+	"tp_distribuidos/promediator/promediator"
 )
 
 func loadConfig() (promediator.PromediatorConfig, error) {
@@ -45,8 +46,14 @@ func loadConfig() (promediator.PromediatorConfig, error) {
 		return promediator.PromediatorConfig{}, errors.New("OUTPUT_TOPIC_NAME environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return promediator.PromediatorConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return promediator.PromediatorConfig{
 		Id:                 id,
+		WorkerID:           workerID,
 		MomHost:            momHost,
 		MomPort:            momPort,
 		InputExchangeName:  inputExchangeName,
