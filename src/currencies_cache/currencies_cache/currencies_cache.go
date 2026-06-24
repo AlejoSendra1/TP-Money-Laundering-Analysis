@@ -14,11 +14,16 @@ import (
 	"syscall"
 	"time"
 
+	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/heatbeat"
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
+
+const LogsUntilCheckpoint = 250
 
 // getOutputIndex shards by payment_format using the same MD5-based routing as filter_payment_format.
 func getOutputIndex(paymentFormat string, counterAmount int) int {
@@ -45,12 +50,17 @@ type CurrenciesCacheConfig struct {
 	InputTopic          string
 	OutputPrefix        string
 	CounterAmount       int
-	FilterAmount        int    // total de EOFs esperados (uno por instancia de filter_payment_format)
-	InstanceAmount      int    // número de instancias de currencies_cache (para control entre peers)
-	ControlExchangeName string // exchange para mensajes de control entre peers
+	FilterAmount        int
+	ControlExchangeName string
+	ControlTopic        string
 	ExchangeRateAPIURL  string
 	CurrencyNameToCode  map[string]string
 	FallbackRates       map[string]map[string]float64
+}
+
+type CheckpointData struct {
+	EofCountByClient map[int64]int          `json:"eofCountByClient"`
+	FinishedClients  batch_utils.Set[int64] `json:"finishedClients"`
 }
 
 // CurrenciesCache converts PaymentRecord amounts to USD using live exchange rates,
@@ -59,15 +69,16 @@ type CurrenciesCache struct {
 	config             CurrenciesCacheConfig
 	inputQueue         middleware.Middleware
 	outputQueues       []middleware.Middleware
-	controlOutputs     []middleware.Middleware
-	controlInput       middleware.Middleware
+	controlExchange    middleware.Middleware
 	currencyNameToCode map[string]string
 	bitcoinRates       map[string]float64
 	apiRatesByDate     map[string]map[string]float64
 	apiMutex           sync.RWMutex
-	mu                 sync.Mutex // protege eofCountByClient
+	mu                 sync.Mutex
 	eofCountByClient   map[int64]int
+	finishedClients    batch_utils.Set[int64]
 	heartbeat          *heatbeat.HeartbeatSender
+	dataSaver          *datasaver.DataSaver
 }
 
 // fetchRatesForDate fetches exchange rates from Frankfurter API for a specific date.
@@ -128,39 +139,41 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		outputQueues[i] = q
 	}
 
-	// Control output exchanges — uno por peer (todas las instancias excepto self)
-	var controlOutputs []middleware.Middleware
-	for i := 0; i < config.InstanceAmount; i++ {
-		if i == config.ID {
-			continue
-		}
-		key := fmt.Sprintf("%s_%d", config.ControlExchangeName, i)
-		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings, "")
-		if err != nil {
-			inputQueue.Close()
-			for _, q := range outputQueues {
-				q.Close()
-			}
-			for _, c := range controlOutputs {
-				c.Close()
-			}
-			return nil, fmt.Errorf("creating control output exchange for peer %d: %w", i, err)
-		}
-		controlOutputs = append(controlOutputs, exchange)
-	}
-
-	// Control input exchange — recibe notificaciones EOF de los peers
-	myControlKey := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings, myControlKey)
+	// Exchange broadcast: igual al patron de date_filter / filter_payment_format.
+	// Todos los instances subscriben al mismo topic, incluyendo el que envia.
+	myControlQueue := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
+	controlExchange, err := middleware.CreateExchangeMiddleware(
+		config.ControlExchangeName,
+		[]string{config.ControlTopic},
+		connSettings,
+		myControlQueue,
+	)
 	if err != nil {
 		inputQueue.Close()
 		for _, q := range outputQueues {
 			q.Close()
 		}
-		for _, c := range controlOutputs {
-			c.Close()
+		return nil, fmt.Errorf("creating control exchange: %w", err)
+	}
+
+	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		for _, q := range outputQueues {
+			q.Close()
 		}
-		return nil, fmt.Errorf("creating control input exchange: %w", err)
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/currencies_cache_%d", config.ID), LogsUntilCheckpoint)
+	if err != nil {
+		inputQueue.Close()
+		for _, q := range outputQueues {
+			q.Close()
+		}
+		controlExchange.Close()
+		return nil, fmt.Errorf("creating data saver: %w", err)
 	}
 
 	bitcoinRates := make(map[string]float64)
@@ -168,35 +181,58 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		bitcoinRates[date] = rates["BTC"]
 	}
 
-	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
-	if err != nil {
-		// close previously opened resources
-		inputQueue.Close()
-		for _, q := range outputQueues {
-			q.Close()
-		}
-		for _, c := range controlOutputs {
-			c.Close()
-		}
-		controlInput.Close()
-		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
-	}
-
 	return &CurrenciesCache{
 		config:             config,
 		inputQueue:         inputQueue,
 		outputQueues:       outputQueues,
-		controlOutputs:     controlOutputs,
-		controlInput:       controlInput,
+		controlExchange:    controlExchange,
 		currencyNameToCode: config.CurrencyNameToCode,
 		bitcoinRates:       bitcoinRates,
 		apiRatesByDate:     make(map[string]map[string]float64),
 		eofCountByClient:   make(map[int64]int),
+		finishedClients:    make(batch_utils.Set[int64]),
 		heartbeat:          hb,
+		dataSaver:          dataSaver,
 	}, nil
 }
 
-// Run starts consuming. Returns once processing is done or SIGTERM is received.
+func (currencyCache *CurrenciesCache) GetCheckpointData() any {
+	return CheckpointData{
+		EofCountByClient: currencyCache.eofCountByClient,
+		FinishedClients:  currencyCache.finishedClients,
+	}
+}
+
+func (currencyCache *CurrenciesCache) Restaurate() error {
+	var checkpoint CheckpointData
+	thereIsCheckpoint, err := currencyCache.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil {
+		return err
+	}
+	if thereIsCheckpoint {
+		slog.Info("Restaurating currencies_cache from checkpoint")
+		currencyCache.eofCountByClient = checkpoint.EofCountByClient
+		currencyCache.finishedClients = checkpoint.FinishedClients
+	}
+
+	var savedMsg middleware.Message
+	for {
+		hasLogs, err := currencyCache.dataSaver.GetDataFromLogs(&savedMsg)
+		if err != nil {
+			return err
+		}
+		if !hasLogs {
+			break
+		}
+		if err := worker.HandleMessageV2(&savedMsg, worker.MessageHandlerMap{
+			inner.EndOfRecords: currencyCache.handleEOFLogic,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (currencyCache *CurrenciesCache) Run() {
 	go currencyCache.handleSigterm()
 	currencyCache.heartbeat.Start()
@@ -205,12 +241,12 @@ func (currencyCache *CurrenciesCache) Run() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		currencyCache.controlInput.StartConsuming(currencyCache.handleControlMessage)
+		currencyCache.controlExchange.StartConsuming(currencyCache.handleControlMessage)
 	}()
 
 	currencyCache.inputQueue.StartConsuming(currencyCache.handleMessage)
 
-	currencyCache.controlInput.StopConsuming()
+	currencyCache.controlExchange.StopConsuming()
 	wg.Wait()
 	currencyCache.close()
 }
@@ -222,7 +258,7 @@ func (currencyCache *CurrenciesCache) handleSigterm() {
 	slog.Info("SIGTERM received, stopping consumer")
 	currencyCache.heartbeat.Stop()
 	currencyCache.inputQueue.StopConsuming()
-	currencyCache.controlInput.StopConsuming()
+	currencyCache.controlExchange.StopConsuming()
 }
 
 func (currencyCache *CurrenciesCache) handleMessage(msg middleware.Message, ack, nack func()) {
@@ -234,25 +270,11 @@ func (currencyCache *CurrenciesCache) handleMessage(msg middleware.Message, ack,
 	}
 
 	if isEof {
-		slog.Info("Direct EOF received from filter, notifying peers", "client_id", clientID)
+		slog.Info("EOF received from upstream, broadcasting to control", "client_id", clientID)
 		if err := currencyCache.sendControlEOF(clientID); err != nil {
-			slog.Error("Sending control EOF to peers", "err", err, "client_id", clientID)
+			slog.Error("Broadcasting control EOF", "err", err, "client_id", clientID)
 			nack()
 			return
-		}
-
-		currencyCache.mu.Lock()
-		currencyCache.eofCountByClient[clientID]++
-		count := currencyCache.eofCountByClient[clientID]
-		currencyCache.mu.Unlock()
-
-		slog.Info("EOF accumulated", "client_id", clientID, "count", count, "expected", currencyCache.config.FilterAmount)
-		if count >= currencyCache.config.FilterAmount {
-			if err := currencyCache.forwardEOF(clientID); err != nil {
-				slog.Error("Forwarding EOF to counters", "err", err, "client_id", clientID)
-				nack()
-				return
-			}
 		}
 		ack()
 		return
@@ -270,59 +292,54 @@ func (currencyCache *CurrenciesCache) handleMessage(msg middleware.Message, ack,
 	ack()
 }
 
-// sendControlEOF notifica a todos los peers que esta instancia recibió un EOF para clientID.
 func (currencyCache *CurrenciesCache) sendControlEOF(clientID int64) error {
-	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
+	msg, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", currencyCache.config.ID))
 	if err != nil {
 		return fmt.Errorf("serializing control EOF: %w", err)
 	}
-	for i, controlOutput := range currencyCache.controlOutputs {
-		if err := controlOutput.Send(*msg); err != nil {
-			return fmt.Errorf("sending control EOF to peer %d: %w", i, err)
-		}
-	}
-	slog.Info("Control EOF sent to all peers", "client_id", clientID)
-	return nil
+	return currencyCache.controlExchange.Send(*msg)
 }
 
-// handleControlMessage procesa notificaciones EOF de peers.
-// Acumula y hace forwardEOF cuando se alcanzan todos los EOFs esperados.
+func (currencyCache *CurrenciesCache) handleEOFLogic(clientID int64, data []interface{}) error {
+	if currencyCache.finishedClients.Contains(clientID) {
+		slog.Info("Client already finished, ignoring EOF", "client_id", clientID)
+		return nil
+	}
+	currencyCache.eofCountByClient[clientID]++
+	count := currencyCache.eofCountByClient[clientID]
+	slog.Info("EOF accumulated", "client_id", clientID, "count", count, "expected", currencyCache.config.FilterAmount)
+	if count < currencyCache.config.FilterAmount {
+		return nil
+	}
+	delete(currencyCache.eofCountByClient, clientID)
+	currencyCache.finishedClients.Add(clientID)
+	return currencyCache.forwardEOF(clientID)
+}
+
 func (currencyCache *CurrenciesCache) handleControlMessage(msg middleware.Message, ack, nack func()) {
-	clientID, _, _, err := inner.DeserializePaymentRecordMessage(&msg)
+	currencyCache.mu.Lock()
+	defer currencyCache.mu.Unlock()
+	err := worker.HandleMessageV2(
+		&msg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords: currencyCache.handleEOFLogic,
+		},
+	)
 	if err != nil {
 		slog.Error("Deserializing control message", "err", err)
 		nack()
 		return
 	}
-	slog.Info("Control EOF received from peer", "client_id", clientID)
-
-	currencyCache.mu.Lock()
-	currencyCache.eofCountByClient[clientID]++
-	count := currencyCache.eofCountByClient[clientID]
-	currencyCache.mu.Unlock()
-
-	slog.Info("Control EOF accumulated", "client_id", clientID, "count", count, "expected", currencyCache.config.FilterAmount)
-	if count >= currencyCache.config.FilterAmount {
-		if err := currencyCache.forwardEOF(clientID); err != nil {
-			slog.Error("Forwarding EOF to counters from control", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
-	}
+	currencyCache.dataSaver.Save(&msg, currencyCache)
 	ack()
 }
 
-// sendConvertedRecords shards converted records by payment_format and sends each shard
-// to the appropriate counter_q5 output queue.
 func (currencyCache *CurrenciesCache) sendConvertedRecords(clientID int64, converted []transaction.PaymentRecord) error {
-	// Group converted records by target counter shard
 	shards := make(map[int][]transaction.PaymentRecord, currencyCache.config.CounterAmount)
 	for _, r := range converted {
 		idx := getOutputIndex(r.PaymentFormat, currencyCache.config.CounterAmount)
 		shards[idx] = append(shards[idx], r)
 	}
-
-	// Send each shard to its corresponding counter
 	for idx, batch := range shards {
 		outMsg, err := inner.SerializePaymentRecordMessage(clientID, batch)
 		if err != nil {
@@ -335,8 +352,6 @@ func (currencyCache *CurrenciesCache) sendConvertedRecords(clientID int64, conve
 	return nil
 }
 
-// convertBatch converts every record in the batch to USD.
-// Records with unknown currencies are skipped with a warning.
 func (currencyCache *CurrenciesCache) convertBatch(clientID int64, records []transaction.PaymentRecord) []transaction.PaymentRecord {
 	result := make([]transaction.PaymentRecord, 0, len(records))
 	for _, r := range records {
@@ -369,7 +384,6 @@ func (currencyCache *CurrenciesCache) getBitcoinRate(date string) (float64, erro
 // getRatesForDate returns exchange rates from API for a specific date.
 // Only used for non-Bitcoin currencies. Bitcoin uses hardcoded rates.
 func (currencyCache *CurrenciesCache) getRatesForDate(date string) (map[string]float64, error) {
-	// Check API cache with read lock
 	currencyCache.apiMutex.RLock()
 	rates, exists := currencyCache.apiRatesByDate[date]
 	currencyCache.apiMutex.RUnlock()
@@ -442,9 +456,7 @@ func (currencyCache *CurrenciesCache) toUSD(currencyName string, amount float64,
 	return amount / rate, nil
 }
 
-// forwardEOF sends a generic EOF to all counter_q5 output queues once all formats are done.
 func (currencyCache *CurrenciesCache) forwardEOF(clientID int64) error {
-	delete(currencyCache.eofCountByClient, clientID)
 	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
 	if err != nil {
 		return err
@@ -454,17 +466,14 @@ func (currencyCache *CurrenciesCache) forwardEOF(clientID int64) error {
 			return fmt.Errorf("sending EOF to output queue %d: %w", i, err)
 		}
 	}
-	slog.Info("Generic EOF forwarded to all counters", "client_id", clientID)
+	slog.Info("EOF forwarded to all counters", "client_id", clientID)
 	return nil
 }
 
 func (currencyCache *CurrenciesCache) close() {
 	currencyCache.inputQueue.Close()
-	currencyCache.controlInput.Close()
+	currencyCache.controlExchange.Close()
 	for _, q := range currencyCache.outputQueues {
 		q.Close()
-	}
-	for _, c := range currencyCache.controlOutputs {
-		c.Close()
 	}
 }

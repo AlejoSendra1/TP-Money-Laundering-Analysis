@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/heatbeat"
 
 	"tp_distribuidos/common/messageprotocol/inner"
@@ -15,31 +15,36 @@ import (
 	"tp_distribuidos/common/transaction"
 )
 
+const LOGS_UNTIL_CHECKPOINT = 250
+
 type CounterQ5Config struct {
-	ID                  int
-	WorkerID            string // docker-compose service name, used for heartbeat
-	MomHost             string
-	MomPort             int
-	InputPrefix         string // queue prefix from currencies_cache — reads from {InputPrefix}_{ID}
-	OutputQueue         string // final results queue
-	CacheAmount         int    // total de EOFs esperados (uno por instancia de currencies_cache)
-	InstanceAmount      int    // número de instancias de counter_q5 (para control entre peers)
-	ControlExchangeName string // exchange para mensajes de control entre peers
+	ID          int
+	WorkerID    string
+	MomHost     string
+	MomPort     int
+	InputPrefix string
+	OutputQueue string
+	CacheAmount int // EOFs esperados (uno por instancia de currencies_cache)
+}
+
+type CheckpointData struct {
+	CountByClient    map[int64]map[string]int `json:"countByClient"`
+	EofCountByClient map[int64]int            `json:"eofCountByClient"`
+	FinishedClients  batch_utils.Set[int64]   `json:"finishedClients"`
 }
 
 // CounterQ5 reads USD-converted PaymentRecords from currencies_cache,
 // counts records with amount < 1 per payment format, and flushes results on EOF.
 type CounterQ5 struct {
-	config         CounterQ5Config
-	inputQueue     middleware.Middleware
-	outputQueue    middleware.Middleware
-	controlOutputs []middleware.Middleware
-	controlInput   middleware.Middleware
-	heartbeat      *heatbeat.HeartbeatSender
+	config      CounterQ5Config
+	inputQueue  middleware.Middleware
+	outputQueue middleware.Middleware
+	heartbeat   *heatbeat.HeartbeatSender
+	dataSaver   *datasaver.DataSaver
 
-	mu               sync.Mutex // protege eofCountByClient y countByClient
 	countByClient    map[int64]map[string]int
 	eofCountByClient map[int64]int
+	finishedClients  batch_utils.Set[int64]
 }
 
 func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
@@ -57,76 +62,82 @@ func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 		return nil, fmt.Errorf("creating output queue: %w", err)
 	}
 
-	// Control output exchanges — uno por peer (todas las instancias excepto self)
-	var controlOutputs []middleware.Middleware
-	for i := 0; i < config.InstanceAmount; i++ {
-		if i == config.ID {
-			continue
-		}
-		key := fmt.Sprintf("%s_%d", config.ControlExchangeName, i)
-		exchange, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{key}, connSettings, "")
-		if err != nil {
-			inputQueue.Close()
-			outputQueue.Close()
-			for _, c := range controlOutputs {
-				c.Close()
-			}
-			return nil, fmt.Errorf("creating control output exchange for peer %d: %w", i, err)
-		}
-		controlOutputs = append(controlOutputs, exchange)
-	}
-
-	// Control input exchange — recibe notificaciones EOF de los peers
-	myControlKey := fmt.Sprintf("%s_%d", config.ControlExchangeName, config.ID)
-	controlInput, err := middleware.CreateExchangeMiddleware(config.ControlExchangeName, []string{myControlKey}, connSettings, myControlKey)
-	if err != nil {
-		inputQueue.Close()
-		outputQueue.Close()
-		for _, c := range controlOutputs {
-			c.Close()
-		}
-		return nil, fmt.Errorf("creating control input exchange: %w", err)
-	}
-
 	hb, err := heatbeat.NewHeartbeatSender(config.WorkerID, connSettings)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()
-		for _, c := range controlOutputs {
-			c.Close()
-		}
-		controlInput.Close()
 		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
+	ds, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/counter_q5_%d", config.ID), LOGS_UNTIL_CHECKPOINT)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		return nil, fmt.Errorf("creating data saver: %w", err)
 	}
 
 	return &CounterQ5{
 		config:           config,
 		inputQueue:       inputQueue,
 		outputQueue:      outputQueue,
-		controlOutputs:   controlOutputs,
-		controlInput:     controlInput,
 		heartbeat:        hb,
+		dataSaver:        ds,
 		countByClient:    make(map[int64]map[string]int),
 		eofCountByClient: make(map[int64]int),
+		finishedClients:  make(batch_utils.Set[int64]),
 	}, nil
+}
+
+func (counter *CounterQ5) GetCheckpointData() any {
+	return CheckpointData{
+		CountByClient:    counter.countByClient,
+		EofCountByClient: counter.eofCountByClient,
+		FinishedClients:  counter.finishedClients,
+	}
+}
+
+func (counter *CounterQ5) Restaurate() error {
+	var checkpoint CheckpointData
+	thereIsCheckpoint, err := counter.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil {
+		return err
+	}
+	if thereIsCheckpoint {
+		slog.Info("Restaurating counter_q5 from checkpoint")
+		counter.countByClient = checkpoint.CountByClient
+		counter.eofCountByClient = checkpoint.EofCountByClient
+		counter.finishedClients = checkpoint.FinishedClients
+	}
+
+	var savedMsg middleware.Message
+	for {
+		hasLogs, err := counter.dataSaver.GetDataFromLogs(&savedMsg)
+		if err != nil {
+			return err
+		}
+		if !hasLogs {
+			break
+		}
+		clientID, records, isEof, err := inner.DeserializePaymentRecordMessage(&savedMsg)
+		if err != nil {
+			return err
+		}
+		if isEof {
+			if err := counter.handleEOFLogic(clientID); err != nil {
+				return err
+			}
+		} else {
+			counter.countRecords(clientID, records)
+		}
+	}
+	return nil
 }
 
 // Run starts consuming. Returns once processing is done or SIGTERM is received.
 func (counter *CounterQ5) Run() {
 	go counter.handleSigterm()
 	counter.heartbeat.Start()
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		counter.controlInput.StartConsuming(counter.handleControlMessage)
-	}()
-
 	counter.inputQueue.StartConsuming(counter.handleMessage)
-
-	counter.controlInput.StopConsuming()
-	wg.Wait()
 	counter.close()
 }
 
@@ -137,7 +148,6 @@ func (counter *CounterQ5) handleSigterm() {
 	slog.Info("SIGTERM received, stopping consumer")
 	counter.heartbeat.Stop()
 	counter.inputQueue.StopConsuming()
-	counter.controlInput.StopConsuming()
 }
 
 func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()) {
@@ -149,50 +159,44 @@ func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()
 	}
 
 	if isEof {
-		slog.Info("Direct EOF received from cache", "client_id", clientID)
-
-		counter.mu.Lock()
-		counter.eofCountByClient[clientID]++
-		count := counter.eofCountByClient[clientID]
-		counter.mu.Unlock()
-
-		slog.Info("EOF accumulated", "client_id", clientID, "count", count, "expected", counter.config.CacheAmount)
-		if count >= counter.config.CacheAmount {
-			if err := counter.flushClient(clientID); err != nil {
-				slog.Error("Flushing client", "err", err, "client_id", clientID)
-				nack()
-				return
-			}
+		slog.Info("EOF received from cache", "client_id", clientID)
+		if err := counter.handleEOFLogic(clientID); err != nil {
+			slog.Error("Handling EOF", "err", err, "client_id", clientID)
+			nack()
+			return
 		}
-		ack()
-		return
+	} else {
+		counter.countRecords(clientID, records)
 	}
 
-	// Proteger el conteo de records con mutex para evitar RC con EOFs de control
-	counter.mu.Lock()
-	counter.countRecords(clientID, records)
-	counter.mu.Unlock()
+	counter.dataSaver.Save(msg, counter)
 	ack()
 }
 
-// sendControlEOF notifica a todos los peers que esta instancia recibió un EOF para clientID.
-func (counter *CounterQ5) sendControlEOF(clientID int64) error {
-	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
-	if err != nil {
-		return fmt.Errorf("serializing control EOF: %w", err)
+// handleEOFLogic incrementa el contador y hace flush cuando se recibieron todos los EOFs.
+// Usado en handleMessage y durante Restaurate.
+func (counter *CounterQ5) handleEOFLogic(clientID int64) error {
+	if counter.finishedClients.Contains(clientID) {
+		slog.Info("Client already finished, ignoring EOF", "client_id", clientID)
+		return nil
 	}
-	for i, controlOutput := range counter.controlOutputs {
-		if err := controlOutput.Send(*msg); err != nil {
-			return fmt.Errorf("sending control EOF to peer %d: %w", i, err)
-		}
-	}
-	slog.Info("Control EOF sent to all peers", "client_id", clientID)
-	return nil
-}
 
-// handleControlMessage: no-op — counter_q5 usa queues dedicadas, no necesita coordinación entre peers.
-func (counter *CounterQ5) handleControlMessage(msg middleware.Message, ack, nack func()) {
-	ack()
+	counter.eofCountByClient[clientID]++
+	eofCount := counter.eofCountByClient[clientID]
+	slog.Info("EOF accumulated", "client_id", clientID, "eofCount", eofCount, "expected", counter.config.CacheAmount)
+	if eofCount < counter.config.CacheAmount {
+		return nil
+	}
+
+	counts := counter.countByClient[clientID]
+	delete(counter.countByClient, clientID)
+	delete(counter.eofCountByClient, clientID)
+	counter.finishedClients.Add(clientID)
+
+	if err := counter.sendData(clientID, counts); err != nil {
+		return err
+	}
+	return counter.sendEOF(clientID)
 }
 
 func (counter *CounterQ5) countRecords(clientID int64, records []transaction.PaymentRecord) {
@@ -209,19 +213,6 @@ func (counter *CounterQ5) countRecords(clientID int64, records []transaction.Pay
 				"amount_usd", r.Amount, "total", counts[r.PaymentFormat])
 		}
 	}
-}
-
-func (counter *CounterQ5) flushClient(clientID int64) error {
-	counter.mu.Lock()
-	counts := counter.countByClient[clientID]
-	delete(counter.countByClient, clientID)
-	delete(counter.eofCountByClient, clientID)
-	counter.mu.Unlock()
-
-	if err := counter.sendData(clientID, counts); err != nil {
-		return err
-	}
-	return counter.sendEOF(clientID)
 }
 
 func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error {
@@ -246,7 +237,6 @@ func (counter *CounterQ5) sendData(clientID int64, counts map[string]int) error 
 	if err := counter.outputQueue.Send(*msg); err != nil {
 		return fmt.Errorf("sending count results: %w", err)
 	}
-	//slog.Info("Sent count results", "client_id", clientID, "payment_formats", len(records), "data", records)
 	return nil
 }
 
@@ -265,8 +255,4 @@ func (counter *CounterQ5) sendEOF(clientID int64) error {
 func (counter *CounterQ5) close() {
 	counter.inputQueue.Close()
 	counter.outputQueue.Close()
-	counter.controlInput.Close()
-	for _, c := range counter.controlOutputs {
-		c.Close()
-	}
 }

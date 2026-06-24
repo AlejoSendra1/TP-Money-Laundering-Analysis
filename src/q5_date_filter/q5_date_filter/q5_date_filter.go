@@ -12,6 +12,7 @@ import (
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
 
 // Segun el enunciado, early period es de [2022-09-01, 2022-09-05], pero en la notebook usa los de abajo...
@@ -141,72 +142,64 @@ func (f *Q5DateFilter) Run() {
 }
 
 func (f *Q5DateFilter) handleMessage(middlewareMsg middleware.Message, ack, nack func()) {
-	msg, err := inner.DeserializeMessage(&middlewareMsg)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	err := worker.HandleMessageV2(
+		&middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:     f.handleEndOfRecords,
+			inner.TransactionBatch: f.handleTransactionBatch,
+		},
+	)
 	if err != nil {
-		slog.Error("Deserializing message", "err", err)
 		nack()
 		return
 	}
+	ack()
+}
 
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		slog.Info("EOF received from upstream, notifying peers and forwarding", "clientID", msg.ClientID)
-		if err := f.sendControlEOF(msg.ClientID); err != nil {
-			slog.Error("Sending control EOF to peers", "err", err)
-			nack()
-			return
-		}
-		f.mu.Lock()
-		if err := f.sendEOF(msg.ClientID); err != nil {
-			f.mu.Unlock()
-			slog.Error("Forwarding EOF downstream", "err", err)
-			nack()
-			return
-		}
-		f.mu.Unlock()
-		ack()
-
-	case inner.TransactionBatch:
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("Deserializing transactions", "err", err)
-			nack()
-			return
-		}
-		f.mu.Lock()
-		err = f.handleDataMessage(transactions, msg.ClientID)
-		f.mu.Unlock()
-		if err != nil {
-			slog.Error("Handling data message", "err", err)
-			nack()
-			return
-		}
-		ack()
+func (f *Q5DateFilter) handleEndOfRecords(clientID int64, data []interface{}) error {
+	slog.Info("EOF received from upstream, notifying peers and forwarding", "clientID", clientID)
+	if err := f.sendControlEOF(clientID); err != nil {
+		slog.Error("Sending control EOF to peers", "err", err)
+		return err
 	}
+	return f.sendEOF(clientID)
+}
+
+func (f *Q5DateFilter) handleTransactionBatch(clientID int64, data []interface{}) error {
+	transactions, err := inner.DeserializeTransactionBatch(data)
+	if err != nil {
+		slog.Error("Deserializing transactions", "err", err, "clientID", clientID)
+		return err
+	}
+	return f.handleDataMessage(transactions, clientID)
 }
 
 // handleControlMessage: un peer recibió el EOF del upstream. Enviamos nuestro propio EOF.
 func (f *Q5DateFilter) handleControlMessage(msg middleware.Message, ack, nack func()) {
-	innerMsg, err := inner.DeserializeMessage(&msg)
-	if err != nil {
-		slog.Error("Deserializing control message", "err", err)
-		nack()
-		return
-	}
-	slog.Info("Control EOF from peer — sending own EOF", "clientID", innerMsg.ClientID)
 	f.mu.Lock()
-	if err := f.sendEOF(innerMsg.ClientID); err != nil {
-		f.mu.Unlock()
-		slog.Error("Sending own EOF on control signal", "err", err)
+	defer f.mu.Unlock()
+	err := worker.HandleMessageV2(
+		&msg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords: f.handleControlEOF,
+		},
+	)
+	if err != nil {
 		nack()
 		return
 	}
-	f.mu.Unlock()
 	ack()
 }
 
+func (f *Q5DateFilter) handleControlEOF(clientID int64, data []interface{}) error {
+	slog.Info("Control EOF from peer — sending own EOF", "clientID", clientID)
+	return f.sendEOF(clientID)
+}
+
 func (f *Q5DateFilter) sendControlEOF(clientID int64) error {
-	msg, err := inner.SerializeMessage(clientID, []transaction.Transaction{})
+	msg, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", f.config.ID))
 	if err != nil {
 		return fmt.Errorf("serializing control EOF: %w", err)
 	}
@@ -242,7 +235,7 @@ func (f *Q5DateFilter) sendOutput(records []transaction.Transaction, clientID in
 }
 
 func (f *Q5DateFilter) sendEOF(clientID int64) error {
-	message, err := inner.SerializeMessage(clientID, []transaction.Transaction{})
+	message, err := inner.SerializeEOR(clientID, true, fmt.Sprintf("%d", f.config.ID))
 	if err != nil {
 		return err
 	}
