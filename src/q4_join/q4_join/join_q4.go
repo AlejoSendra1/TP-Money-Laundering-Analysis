@@ -88,12 +88,15 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 		return
 	}
 
+	datasaver.Crash(datasaver.CrashAfterLog)
 	join.dataSaver.Save(*middlewareMsg, join) // persistencia de datos
 	ack()
 }
 
 func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
 	slog.Info("Received msg", "type", "EOF")
+	datasaver.Crash(datasaver.CrashBeforeEOF)
+
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
@@ -107,8 +110,8 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) e
 	}
 
 	if join.restoring {
-		// si este mensaje van a enviar EOR cuando este ya fue persistido, no enviamos nada
-		// si esta persisitido ya fue enviado !!
+		// si este mensaje va a enviar EOR cuando este ya fue persistido, no enviamos nada
+		// si esta persistido, ya fue enviado !!
 		return nil
 	}
 

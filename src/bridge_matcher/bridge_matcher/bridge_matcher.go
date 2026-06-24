@@ -114,7 +114,6 @@ func (bm *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack fu
 		return
 	}
 
-	datasaver.Crash(datasaver.CrashAfterLog)
 	bm.dataSaver.Save(*middlewareMsg, bm) // persistencia de datos
 	ack()
 }
@@ -244,7 +243,6 @@ func (bridgeMatcher *BridgeMatcher) processSuspiciousAccount(clientID int64, ori
 
 func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []interface{}) error {
 	senderID, err := inner.DeserializeReadyForEOR(data)
-	datasaver.Crash(datasaver.CrashBeforeEOF)
 
 	if err != nil {
 		return err
