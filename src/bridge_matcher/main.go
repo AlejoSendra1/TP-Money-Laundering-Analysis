@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/bridge_matcher"
+	"tp_distribuidos/bridge_matcher/bridge_matcher"
 )
 
 func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
@@ -64,8 +65,14 @@ func loadConfig() (bridge_matcher.BridgeMatcherConfig, error) {
 		return bridge_matcher.BridgeMatcherConfig{}, errors.New("PREV_FASE_WORKERS_AMOUNT environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return bridge_matcher.BridgeMatcherConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return bridge_matcher.BridgeMatcherConfig{
 		ID:                    id,
+		WorkerID:              workerID,
 		WorkerPrefix:          workerPrefix,
 		MomHost:               momHost,
 		MomPort:               momPort,
