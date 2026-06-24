@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/transactions_saver"
-	"tp_distribuidos/transactions_saver/transactions_saver"
 )
 
 func loadConfig() (transactions_saver.TransactionsSaverConfig, error) {

@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/group"
-	"tp_distribuidos/group/group"
 )
 
 func loadConfig() (group.GroupConfig, error) {

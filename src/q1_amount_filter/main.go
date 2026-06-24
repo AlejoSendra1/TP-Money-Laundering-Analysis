@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/q1_amount_filter"
-	"tp_distribuidos/q1_amount_filter/q1_amount_filter"
 )
 
 func loadConfig() (q1_amount_filter.Q1AmountFilterConfig, error) {

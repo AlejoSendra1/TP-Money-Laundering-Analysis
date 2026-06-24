@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/sum"
-	"tp_distribuidos/sum/sum"
 )
 
 func loadConfig() (sum.SumConfig, error) {

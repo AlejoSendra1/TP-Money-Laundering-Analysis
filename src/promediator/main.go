@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/promediator"
-	"tp_distribuidos/promediator/promediator"
 )
 
 func loadConfig() (promediator.PromediatorConfig, error) {

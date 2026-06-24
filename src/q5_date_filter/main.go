@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/q5_date_filter"
-	"tp_distribuidos/q5_date_filter/q5_date_filter"
 )
 
 func loadConfig() (q5_date_filter.Q5DateFilterConfig, error) {

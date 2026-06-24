@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/date_filter"
-	"tp_distribuidos/date_filter/date_filter"
 )
 
 func loadConfig() (date_filter.DateFilterConfig, error) {
