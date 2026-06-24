@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/sum"
+	"tp_distribuidos/sum/sum"
 )
 
 func loadConfig() (sum.SumConfig, error) {
@@ -22,6 +23,11 @@ func loadConfig() (sum.SumConfig, error) {
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
 		return sum.SumConfig{}, errors.New("MOM_HOST environment variable is required")
+	}
+
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return sum.SumConfig{}, errors.New("WORKER_ID environment variable is required")
 	}
 
 	inputQueue := os.Getenv("INPUT_QUEUE")
@@ -71,6 +77,7 @@ func loadConfig() (sum.SumConfig, error) {
 
 	return sum.SumConfig{
 		Id:                   id,
+		WorkerID:             workerID,
 		MomHost:              momHost,
 		MomPort:              momPort,
 		InputQueue:           inputQueue,
