@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"tp_distribuidos/group"
+	"tp_distribuidos/group/group"
 )
 
 func loadConfig() (group.GroupConfig, error) {
@@ -69,8 +70,14 @@ func loadConfig() (group.GroupConfig, error) {
 		return group.GroupConfig{}, errors.New("DATE_FILTER_AMOUNT environment variable is required")
 	}
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		return group.GroupConfig{}, errors.New("WORKER_ID environment variable is required")
+	}
+
 	return group.GroupConfig{
 		ID:                    id,
+		WorkerID:              workerID,
 		WorkerPrefix:          workerPrefix,
 		MomHost:               momHost,
 		MomPort:               momPort,
