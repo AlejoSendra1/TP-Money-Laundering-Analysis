@@ -104,8 +104,8 @@ def main():
             "container_name": client_name,
             "depends_on": get_deps(["gateway", "usd_filter", "q5_date_filter"]),
             "environment": [
-                f"ID={idx}"
-                f"BATCH_SIZE={batch_size}", 
+                f"ID={idx}",
+                f"BATCH_SIZE={batch_size}",
                 f"INPUT_FILE={input_file}",
                 f"OUTPUT_FILE=/output/output_{client_name}.csv",
                 f"WORKER_ID={client_name}",
@@ -233,8 +233,6 @@ def main():
     for node_name, amount in SCALE.items():
         for i in range(amount):
             all_worker_ids.append(f"{node_name}_{i}")
-    for idx in range(len(CLIENTS)):
-        all_worker_ids.append(f"client_{idx}")
     for i in range(WATCHDOG_AMOUNT):
         all_worker_ids.append(f"watchdog_{i}")
 
