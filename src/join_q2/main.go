@@ -84,6 +84,7 @@ func run() int {
 		return 1
 	}
 
+	worker.Restaurate()
 	worker.Run()
 	return 0
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strconv"
 	"sync"
 	"syscall"
 	"tp_distribuidos/common/heatbeat"
@@ -282,7 +283,6 @@ func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), 
 func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
 	slog.Info("EOF received, notifying peers and flushing", "client_id", clientID)
 
-	// habria q hacer q el coso guarde por sender en lugar de contar
 	_, sender, err := inner.DeserializeEOR(data) // no hace falta el bool dado que se utiliza otro canal para propagar
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
@@ -354,7 +354,6 @@ func (counter *CounterQ2) handleControlMessage(middlewareMsg middleware.Message,
 
 // sendControlEOF notifies all peer pods that this pod received an EOF for clientID.
 func (counter *CounterQ2) sendControlEOF(clientID int64, sender string) error {
-	//msg, err := inner.SerializeMaxBankTransactionMessage(clientID, []transaction.MaxBankTransaction{})
 	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		return err
@@ -434,7 +433,7 @@ func (counter *CounterQ2) sendData(clientID int64, banks map[int]bankEntry) erro
 
 // sendEOF forwards an EOF marker to every joiner exchange.
 func (counter *CounterQ2) sendEOF(clientID int64) error {
-	msg, err := inner.SerializeMaxBankTransactionMessage(clientID, []transaction.MaxBankTransaction{})
+	msg, err := inner.SerializeEOR(clientID, true, "q2Counter_"+strconv.Itoa(counter.config.ID))
 	if err != nil {
 		return fmt.Errorf("serializing EOF: %w", err)
 	}
