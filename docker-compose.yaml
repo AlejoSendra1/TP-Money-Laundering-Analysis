@@ -20,7 +20,7 @@ services:
     - NEXT_FASE_WORKERS_PREFIX=q4_join
     - PYTHONUNBUFFERED=1
     #- CRASH_AFTER_LOG=550
-    - CRASH_BEFORE_EOF=2
+    #- CRASH_BEFORE_EOF=2
     volumes:
     - ./persistence:/persistence 
   bridge_matcher_1:

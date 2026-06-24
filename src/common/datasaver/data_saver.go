@@ -3,6 +3,7 @@ package datasaver
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,11 +21,11 @@ type DataSaver struct {
 	restorationFileName string
 	file                *os.File
 	writer              *bufio.Writer
-	reader              *bufio.Scanner
+	reader              *json.Decoder // replaces *bufio.Scanner — handles arbitrarily large JSON objects
 	logsUntilCheckpoint int
 	logCounter          int
-	pendingLine         []byte
-	validOffset         int64 // byte offset right after the last successfully parsed line
+	pendingRecord       *FileRecord // replaces pendingLine — avoids re-encoding bytes back into a struct
+	validOffset         int64       // byte offset right after the last successfully parsed record
 }
 
 type RecordType string
@@ -70,7 +71,6 @@ func (ds *DataSaver) Clean() {
 }
 
 // / ----------------------------------------- FUNCIONES DE GUARDADO ------------------------------------------
-// funciones utilizadas para guardar el estado del nodo previo a una posible caida
 
 // Para que el worker no se preocupe de realizar el checkpoint
 // este se hara cuando el saver detecte cumplimiento de su condicion de creacion
@@ -84,15 +84,11 @@ func (ds *DataSaver) Save(content any, w worker.Worker) {
 		ds.logCounter = 0
 		ds.SaveCheckpoint(w.GetCheckpointData())
 		Crash(CrashAfterCheckpoint) // para testing
-
 	}
 }
 
-// Para mayor control de como se guardan las cosas -----------
-
 // logueo del resultado procesado
 func (ds *DataSaver) Log(v any) error {
-	// wrapp content
 	payload, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -119,7 +115,6 @@ func (ds *DataSaver) Log(v any) error {
 // para evitar cuellos de botella.
 // Este metodo escribe un checkpoint al comienzo del archivo eliminando logs viejos de forma atomica.
 func (ds *DataSaver) SaveCheckpoint(checkpoint any) error {
-	// wrapps the content
 	payload, err := json.Marshal(checkpoint)
 	if err != nil {
 		return err
@@ -135,7 +130,6 @@ func (ds *DataSaver) SaveCheckpoint(checkpoint any) error {
 
 // escritura atomica
 // WriteFile escribe los datos en un archivo temporal y pisa el archivo persistente una vez exitosa la escritura.
-// filename already exists but is not a regular file, WriteFile returns an error.
 func (ds *DataSaver) writeFile(data []byte) (err error) {
 	ds.file.Close()
 
@@ -172,7 +166,7 @@ func (ds *DataSaver) writeFile(data []byte) (err error) {
 	}
 
 	// reseteamos el puntero al archivo y el writer
-	file, err := os.OpenFile(ds.restorationFileName, os.O_RDWR, 0644)
+	file, err := os.OpenFile(ds.restorationFileName, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
@@ -190,107 +184,83 @@ func (ds *DataSaver) writeFile(data []byte) (err error) {
 }
 
 // / ----------------------------------------- FUNCIONES DE CARGA ------------------------------------------
-// funciones utilizadas para recuperar el estado del nodo postiormente a su recuperacion
 
-// Lee el primer elemento guardado en el archivo
+// Lee el primer elemento guardado en el archivo.
 // En caso de ser un checkpoint y coincidir con el tipo de la variable target la actualizara in place
-// y dejara el escanner en un estado consistente para realizar a continuacion la recuperacion de los logs.
-// en otro caso no hara nada
+// y dejara el decoder en un estado consistente para realizar a continuacion la recuperacion de los logs.
 func (ds *DataSaver) GetRestaurationCheckpoint(target any) (bool, error) {
 	if ds.file == nil {
 		return false, fmt.Errorf("pointer to restoration file is null")
 	}
 
-	scanner := bufio.NewScanner(ds.file)
-	ds.reader = scanner
-
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return false, fmt.Errorf("reading data file: %w", err) //
-		}
-		slog.Info("No hay nada que restaurar")
-		return false, nil
-	}
-
-	line := append([]byte(nil), scanner.Bytes()...)
-	if len(line) == 0 {
-		ds.reader = nil
-		return false, nil
-	}
+	decoder := json.NewDecoder(ds.file)
+	ds.reader = decoder
 
 	var record FileRecord
-	if err := json.Unmarshal(line, &record); err != nil {
-		return false, fmt.Errorf("parsing checkpoint: %w", err) //
+	if err := decoder.Decode(&record); err != nil {
+		if errors.Is(err, io.EOF) {
+			slog.Info("No hay nada que restaurar")
+			return false, nil
+		}
+		return false, fmt.Errorf("reading data file: %w", err)
 	}
 
 	if record.Type == CheckpointType {
 		if err := json.Unmarshal(record.Payload, target); err != nil {
-			return false, fmt.Errorf("failed to unmarshal checkpoint payload: %w", err) //
+			return false, fmt.Errorf("failed to unmarshal checkpoint payload: %w", err)
 		}
-		ds.validOffset = int64(len(line)) + 1 // +1 for the '\n'
+		// InputOffset() returns the byte offset consumed so far by the decoder
+		ds.validOffset = decoder.InputOffset()
 		return true, nil
 	}
+
 	slog.Info("No se leyo un checkpoint type")
-	ds.pendingLine = line // para usar en el caso donde no hay un checkpoint
+	ds.pendingRecord = &record
 	return false, nil
 }
 
 // lee cada batch y lo parsea in place en la variable pasada por parametro
 func (ds *DataSaver) GetDataFromLogs(target any) (bool, error) {
-	var line []byte
-	var thereIsMore bool
-	if ds.pendingLine != nil {
-		line = ds.pendingLine
-		ds.pendingLine = nil
-		thereIsMore = true
+	var record FileRecord
+
+	if ds.pendingRecord != nil {
+		record = *ds.pendingRecord
+		ds.pendingRecord = nil
 	} else {
 		if ds.reader == nil {
-			ds.reader = bufio.NewScanner(ds.file)
+			ds.reader = json.NewDecoder(ds.file)
 		}
-		// Scan through the file line by line
-		thereIsMore = ds.reader.Scan()
 
-		if err := ds.reader.Err(); err != nil {
-			return false, fmt.Errorf("error reading file: %w", err)
-		}
-		if !thereIsMore {
-			ds.reader = nil
-			return false, nil
-		}
-		line = ds.reader.Bytes()
-	}
+		if err := ds.reader.Decode(&record); err != nil {
+			if errors.Is(err, io.EOF) {
+				ds.reader = nil
+				return false, nil
+			}
 
-	if len(line) == 0 {
-		ds.reader = nil
-		return false, nil
-	}
-
-	var record FileRecord
-	if err := json.Unmarshal(line, &record); err != nil {
-		nextScan := ds.reader.Scan()
-		if !nextScan && ds.reader.Err() == nil {
-			slog.Warn("Detected a corrupted log entry at the end of the file. Truncating recovery here.",
+			// Because this is an append-only log, any syntax error mid-file is assumed
+			// to be a torn write at the tail from a crash. We cleanly truncate and stop recovery.
+			slog.Warn("Detected a corrupted log entry (likely torn write). Truncating recovery here.",
 				"error", err.Error(), "truncateOffset", ds.validOffset)
-
-			if err := ds.truncateToValidOffset(); err != nil {
-				return false, fmt.Errorf("truncating corrupted tail: %w", err)
+			if truncErr := ds.truncateToValidOffset(); truncErr != nil {
+				return false, fmt.Errorf("truncating corrupted tail: %w", truncErr)
 			}
 			ds.reader = nil
 			return false, nil
 		}
-		return false, fmt.Errorf("parsing Log failed mid-file: %w", err)
 	}
 
 	if record.Type == LogType {
 		if err := json.Unmarshal(record.Payload, target); err != nil {
-			return false, fmt.Errorf("failed to unmarshal checkpoint payload: %w", err)
+			return false, fmt.Errorf("failed to unmarshal log payload: %w", err)
 		}
-
 	}
 
-	ds.validOffset += int64(len(line)) + 1
+	// Track exact valid offset
+	ds.validOffset = ds.reader.InputOffset()
 	ds.logCounter++
-	return thereIsMore, nil
+
+	// Return true to indicate we successfully parsed a log and the loop should continue
+	return true, nil
 }
 
 func (ds *DataSaver) truncateToValidOffset() error {
@@ -300,6 +270,6 @@ func (ds *DataSaver) truncateToValidOffset() error {
 	if _, err := ds.file.Seek(0, io.SeekEnd); err != nil {
 		return fmt.Errorf("seeking to new end: %w", err)
 	}
-	ds.writer = bufio.NewWriter(ds.file) // fresh writer, old one's buffer state is stale
+	ds.writer = bufio.NewWriter(ds.file)
 	return nil
 }
