@@ -71,6 +71,8 @@ func (client *Client) recvManager() error {
 	defer close(client.ackChan)
 
 	for {
+		datasaver.Crash(datasaver.CrashAfterLog)
+
 		msgType, err := external.ReadMsgType(client.conn)
 		if err != nil {
 			// Si cerramos la conexión por diseño, salimos limpio

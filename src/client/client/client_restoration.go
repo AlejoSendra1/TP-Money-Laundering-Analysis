@@ -37,8 +37,17 @@ func (client *Client) GetCheckpointData() any {
 func (client *Client) restaurateState() error {
 	var checkpoint CheckpointData
 	thereIsCheckpoint, err := client.dataSaver.GetRestaurationCheckpoint(&checkpoint)
-	if err != nil || !thereIsCheckpoint {
+	if err != nil {
 		return err
+	}
+	if !thereIsCheckpoint {
+		id, err := sendConnectMsg(client.conn) // para obtener el id en caso de requerir reconexion
+		if err != nil {
+			return err
+		}
+		client.assignedID = id
+		slog.Info("Connection was succefull", "Id assigned", client.assignedID)
+		return nil
 	}
 
 	slog.Info("Checkpoint levantado", "values", checkpoint)
@@ -56,6 +65,16 @@ func (client *Client) restaurateState() error {
 		}
 		client.BatchesSecNum++
 	}
+
+	if err := client.restaurateResultsState(); err != nil { // restauramos la fase de envio
+		return err
+	}
+	slog.Info("cargando en base a checkpoint")
+	err = sendReconnectMsg(client.conn, client.assignedID)
+	if err != nil {
+		return err
+	}
+	slog.Info("Connection was succefull", "Id recuperated", client.assignedID)
 
 	return nil
 }

@@ -16,6 +16,8 @@ services:
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    #- CRASH_AFTER_LOG=100
+    #- CRASH_BEFORE_EOF=2
     volumes:
     - ./datasets:/datasets
     - ./output:/output
@@ -86,7 +88,7 @@ services:
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     - EOF_EXPECTED_BY_QUERY_1=0
-    - EOF_EXPECTED_BY_QUERY_2=2 # Coincidir con la cantidad de q2 counters
+    - EOF_EXPECTED_BY_QUERY_2=1 # Coincidir con la cantidad de q2 counters
     - EOF_EXPECTED_BY_QUERY_3=0
     - EOF_EXPECTED_BY_QUERY_4=0
     - EOF_EXPECTED_BY_QUERY_5=0
@@ -108,8 +110,6 @@ services:
     - OUTPUT_QUEUE=results_queue
     - QUERY_ID=5
     - BATCH_SIZE=100
-    #- CRASH_AFTER_LOG=1
-    #- CRASH_BEFORE_EOF=2
     volumes:
     - ./persistence:/persistence
   rabbitmq:

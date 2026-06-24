@@ -76,28 +76,8 @@ func NewClient(config ClientConfig) (*Client, error) {
 		resultsLogsSaver: resultsLogsSaver,
 	}
 
-	if config.Restorate {
-		if err := client.restaurateState(); err != nil { // restauramos la fase de envio y el id
-			return nil, err
-		}
-
-		if err := client.restaurateResultsState(); err != nil { // restauramos la fase de envio
-			return nil, err
-		}
-
-		slog.Info("cargando en base a checkpoint")
-		err = sendReconnectMsg(conn, client.assignedID)
-		if err != nil {
-			return nil, err
-		}
-		slog.Info("Connection was succefull", "Id recuperated", client.assignedID)
-	} else {
-		id, err := sendConnectMsg(conn) // para obtener el id en caso de requerir reconexion
-		if err != nil {
-			return nil, err
-		}
-		client.assignedID = id
-		slog.Info("Connection was succefull", "Id assigned", client.assignedID)
+	if err := client.restaurateState(); err != nil { // restauramos la fase de envio y el id
+		return nil, err
 	}
 
 	client.dataSaver.SaveCheckpoint(client.GetCheckpointData()) // guardamos checkpoint de una para persistir el id

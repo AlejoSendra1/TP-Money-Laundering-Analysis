@@ -40,6 +40,8 @@ func (client *Client) sendTransactionRecords() error {
 
 	slog.Info("Comenzando el envio de transacciones...")
 	for {
+		datasaver.Crash(datasaver.CrashAfterLog)
+
 		records, err := transactionsReader.GetTransactionRecords()
 		if err != nil {
 			return err
