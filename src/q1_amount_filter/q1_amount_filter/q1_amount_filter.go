@@ -5,11 +5,14 @@ import (
 	"log/slog"
 	"sync"
 	"tp_distribuidos/common/batch_utils"
+	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/messageprotocol/inner"
-	"tp_distribuidos/common/messageprotocol/inner/control"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
+
+const LogsUntilCheckpoint = 1
 
 type Q1AmountFilterConfig struct {
 	Id                int
@@ -28,9 +31,16 @@ type Q1AmountFilter struct {
 	inputQueue      middleware.Middleware
 	outputQueue     middleware.Middleware
 	controlExchange middleware.Middleware
-	eofCounter      map[int64]int
+	eofCounter      map[int64]batch_utils.Set[string]
+	finishedClients batch_utils.Set[int64] // Sirve para no procesar un eof de un cliente que ya termino
 	config          Q1AmountFilterConfig
 	mu              sync.Mutex
+	dataSaver       *datasaver.DataSaver
+}
+
+type CheckpointData struct {
+	EofCounter      map[int64]batch_utils.Set[string] `json:"eofCounter"`
+	FinishedClients batch_utils.Set[int64]            `json:"finishedClients"`
 }
 
 func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
@@ -56,14 +66,32 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		outputQueue.Close()
 		return nil, err
 	}
-
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "q1_amount_filter", config.Id), LogsUntilCheckpoint)
+	if err != nil {
+		inputQueue.Close()
+		outputQueue.Close()
+		controlExchange.Close()
+		return nil, err
+	}
 	return &Q1AmountFilter{
 		inputQueue:      inputQueue,
 		outputQueue:     outputQueue,
 		controlExchange: controlExchange,
 		config:          config,
-		eofCounter:      make(map[int64]int),
+		eofCounter:      make(map[int64]batch_utils.Set[string]),
+		finishedClients: make(batch_utils.Set[int64]),
+		dataSaver:       dataSaver,
 	}, nil
+}
+
+func (q1AmountFilter *Q1AmountFilter) GetCheckpointData() any {
+	slog.Info("State saved",
+		"eofCounter", q1AmountFilter.eofCounter,
+		"finishedClients", q1AmountFilter.finishedClients)
+	return CheckpointData{
+		EofCounter:      q1AmountFilter.eofCounter,
+		FinishedClients: q1AmountFilter.finishedClients,
+	}
 }
 
 func (q1AmountFilter *Q1AmountFilter) Run() {
@@ -79,47 +107,48 @@ func (q1AmountFilter *Q1AmountFilter) Run() {
 func (q1AmountFilter *Q1AmountFilter) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
 	q1AmountFilter.mu.Lock()
 	defer q1AmountFilter.mu.Unlock()
-	msg, err := inner.DeserializeMessage(middlewareMsg)
+	err := worker.HandleMessageV2(
+		middlewareMsg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords:     q1AmountFilter.handleEndOfRecordMessage,
+			inner.TransactionBatch: q1AmountFilter.handleTransactionBatchMessage,
+		},
+	)
 	if err != nil {
-		slog.Error("While deserializing message", "err", err, "clientID", msg.ClientID)
 		nack()
 		return
 	}
-
-	switch msg.MsgType {
-	case inner.EndOfRecords:
-		if err := q1AmountFilter.handleEndOfRecordMessage(msg.ClientID); err != nil {
-			slog.Error("While handling end of record message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		ack()
-		return
-	case inner.TransactionBatch:
-		transactions, err := inner.DeserializeTransactionBatch(msg.Data)
-		if err != nil {
-			slog.Error("While deserializing transactions from message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		if err := q1AmountFilter.handleDataMessage(transactions, msg.ClientID); err != nil {
-			slog.Error("While handling data message", "err", err, "clientID", msg.ClientID)
-			nack()
-			return
-		}
-		ack()
-	}
+	datasaver.Crash(datasaver.CrashProcessingData)
+	ack()
 }
 
-func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) error {
-	slog.Info("Arrived EOF record message", "clientID", clientID)
-	ctrlMsg, err := control.SerializeControlMessage(control.ControlMessage{Type: control.TypeEOF, ClientID: clientID})
+func (q1AmountFilter *Q1AmountFilter) handleTransactionBatchMessage(clientID int64, data []interface{}) error {
+	transactions, err := inner.DeserializeTransactionBatch(data)
 	if err != nil {
-		slog.Error("While serializing control message", "err", err)
+		slog.Error("While deserializing transactions from message", "err", err, "clientID", clientID)
 		return err
 	}
-	if err = q1AmountFilter.controlExchange.Send(*ctrlMsg); err != nil {
-		slog.Error("While sending control message", "err", err, "clientID", clientID)
+	if err = q1AmountFilter.handleDataMessage(transactions, clientID); err != nil {
+		slog.Error("While handling data message", "err", err, "clientID", clientID)
+		return err
+	}
+	return nil
+}
+
+func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
+	slog.Info("Arrived EOF record message", "clientID", clientID)
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing EOR message", "err", err, "clientID", clientID)
+		return err
+	}
+	msg, err := inner.SerializeEOR(clientID, false, sender)
+	if err != nil {
+		slog.Info("While serializing EOF control message", "err", err, "clientID", clientID)
+		return err
+	}
+	if err = q1AmountFilter.controlExchange.Send(*msg); err != nil {
+		slog.Error("While sending EOF control message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -127,7 +156,8 @@ func (q1AmountFilter *Q1AmountFilter) handleEndOfRecordMessage(clientID int64) e
 
 func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []transaction.Transaction, clientID int64) error {
 	if _, ok := q1AmountFilter.eofCounter[clientID]; !ok {
-		q1AmountFilter.eofCounter[clientID] = 0
+		slog.Info("New client arrived", "clientID", clientID)
+		q1AmountFilter.eofCounter[clientID] = batch_utils.NewSet[string]()
 	}
 	transactions := []transaction.LowAmountTransfer{}
 	for _, transactionRecord := range transactionRecords {
@@ -165,37 +195,56 @@ func (q1AmountFilter *Q1AmountFilter) handleDataMessage(transactionRecords []tra
 func (q1AmountFilter *Q1AmountFilter) handleControlMessage(msg *middleware.Message, ack func(), nack func()) {
 	q1AmountFilter.mu.Lock()
 	defer q1AmountFilter.mu.Unlock()
-
-	slog.Info("Arrived control message", "msg", msg)
-	controlMessage, err := control.DeserializeControlMessage(msg)
+	err := worker.HandleMessageV2(
+		msg,
+		worker.MessageHandlerMap{
+			inner.EndOfRecords: q1AmountFilter.handleControlEndOfRecords,
+		},
+	)
 	if err != nil {
-		slog.Error("While deserializing control message", "err", err)
 		nack()
 		return
 	}
+	datasaver.Crash(datasaver.CrashBeforeCheckpoint)
+	q1AmountFilter.dataSaver.Save(msg, q1AmountFilter)
+	ack()
+}
 
-	clientID := controlMessage.ClientID
-	q1AmountFilter.eofCounter[clientID] += 1
-	if q1AmountFilter.eofCounter[clientID] != q1AmountFilter.config.USDFilterAmount {
+func (q1AmountFilter *Q1AmountFilter) handleControlEndOfRecords(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
+		return err
+	}
+	if q1AmountFilter.finishedClients.Contains(clientID) {
+		slog.Info("Client has already done", "clientID", clientID)
+		return nil
+	}
+
+	if _, ok := q1AmountFilter.eofCounter[clientID]; !ok {
+		slog.Info("EOF arrived before client data (or dont save client new arrived for crash), initializing...", "clientID", clientID)
+		q1AmountFilter.eofCounter[clientID] = batch_utils.NewSet[string]()
+	}
+
+	q1AmountFilter.eofCounter[clientID].Add(sender)
+	if q1AmountFilter.eofCounter[clientID].Size() != q1AmountFilter.config.USDFilterAmount {
 		slog.Info("Received EOF from other instance, waiting for more...")
-		ack()
-		return
+		return nil
 	}
 	msgEof, err := inner.SerializeQueryEOR(clientID, transaction.Query1, fmt.Sprintf("%d", q1AmountFilter.config.Id)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err, "clientID", clientID)
-		nack()
-		return
+		return err
 	}
 
-	if err := q1AmountFilter.outputQueue.Send(*msgEof); err != nil {
+	if err = q1AmountFilter.outputQueue.Send(*msgEof); err != nil {
 		slog.Debug("While sending EOF message", "err", err, "clientID", clientID)
-		nack()
-		return
+		return err
 	}
-	slog.Info("Sent EOF", "clientID", controlMessage.ClientID)
+	slog.Info("Sent EOF", "clientID", clientID)
 	delete(q1AmountFilter.eofCounter, clientID)
-	ack()
+	q1AmountFilter.finishedClients.Add(clientID)
+	return nil
 }
 
 func (q1AmountFilter *Q1AmountFilter) sendOutput(clientID int64, queryResult transaction.QueryResult) error {
@@ -207,6 +256,42 @@ func (q1AmountFilter *Q1AmountFilter) sendOutput(clientID int64, queryResult tra
 	if err := q1AmountFilter.outputQueue.Send(*message); err != nil {
 		slog.Debug("While sending data message", "err", err, "clientID", clientID)
 		return err
+	}
+	return nil
+}
+
+func (q1AmountFilter *Q1AmountFilter) Restaurate() error {
+	var checkpoint CheckpointData
+	thereIsCheckpoint, err := q1AmountFilter.dataSaver.GetRestaurationCheckpoint(&checkpoint)
+	if err != nil {
+		return err
+	}
+
+	if thereIsCheckpoint {
+		slog.Info("Cargando Q1 Amount Filter en base a checkpoint")
+		q1AmountFilter.eofCounter = checkpoint.EofCounter
+		q1AmountFilter.finishedClients = checkpoint.FinishedClients
+		slog.Info("State restaured", "eofCounter", checkpoint.EofCounter, "finishedClients", checkpoint.FinishedClients)
+	}
+	var savedDataVar middleware.Message
+	var thereIsLogs bool
+	for {
+		thereIsLogs, err = q1AmountFilter.dataSaver.GetDataFromLogs(&savedDataVar)
+		if err != nil {
+			return err
+		}
+		if !thereIsLogs {
+			break
+		}
+		err = worker.HandleMessageV2(
+			&savedDataVar,
+			worker.MessageHandlerMap{
+				inner.EndOfRecords: q1AmountFilter.handleControlEndOfRecords,
+			},
+		)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

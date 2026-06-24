@@ -142,7 +142,6 @@ func (dateFilter *DateFilter) handleMessage(middlewareMsg *middleware.Message, a
 		nack()
 		return
 	}
-	datasaver.Crash(datasaver.CrashProcessingData)
 	ack()
 }
 
@@ -176,7 +175,7 @@ func (dateFilter *DateFilter) handleEndOfRecordMessage(clientID int64, sender st
 	slog.Info("Received End Of Records message", "clientID", clientID)
 	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Info("While serializing EOF control message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := dateFilter.controlExchange.Send(*msg); err != nil {
