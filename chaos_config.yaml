@@ -1,6 +1,6 @@
 chaos_monkey:
   # Segundos que se espera antes de elegir al siguiente contenedor
-  attack_interval: 40
+  attack_interval: 15
 
   # Contenedores especificos a atacar
   # Si esta vacia la lista, atacará a cualquier contenedor (que no esté excluido)

@@ -214,14 +214,13 @@ func (groupWorker *Group) sendTransactions(clientID int64, transactionRecords []
 // --------------- EndOfRecords ---------------
 
 func (groupWorker *Group) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
-	datasaver.Crash(datasaver.CrashBeforeEOF)
 	// se debe propagar entre todos los group workers y estos a todos los bridges analizers
 	mustPropagate, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
 		return err
 	}
-	slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
+	slog.Info("Received EOF record message from", "clientID", clientID, "sender", sender)
 
 	if mustPropagate {
 		// EOF viene del date_filter, reenviar por controlExchange sin propagación

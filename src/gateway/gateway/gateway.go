@@ -23,7 +23,7 @@ import (
 
 // Tiempo máximo que el gateway espera a que el cliente confirme
 // la recepción de una respuesta antes de nackear el mensaje del MOM.
-const responseAckTimeout = 20 * time.Second
+const responseAckTimeout = 40 * time.Second
 
 type GatewayConfig struct {
 	InputQueueName      string
@@ -47,10 +47,11 @@ type Gateway struct {
 	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
 
-	listener     net.Listener
-	running      atomic.Bool
-	config       GatewayConfig
-	deduplicator *batch_utils.MultiClientDeduplicator
+	listener        net.Listener
+	running         atomic.Bool
+	config          GatewayConfig
+	deduplicator    *batch_utils.MultiClientDeduplicator
+	EORdeduplicator *batch_utils.MultiClientDeduplicator
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -75,12 +76,13 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	}
 
 	gateway := &Gateway{
-		registry:       clientregistry.NewClientRegistry(),
-		inputQueue:     inputQueue,
-		outputExchange: outputExchange,
-		listener:       listener,
-		config:         config,
-		deduplicator:   batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
+		registry:        clientregistry.NewClientRegistry(),
+		inputQueue:      inputQueue,
+		outputExchange:  outputExchange,
+		listener:        listener,
+		config:          config,
+		deduplicator:    batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
+		EORdeduplicator: batch_utils.NewMultiClientDeduplicator(100),
 	}
 	gateway.running.Store(true)
 	return gateway, nil
@@ -255,6 +257,13 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		return
 	}
 
+	// dedup de EORs
+	if gateway.EORdeduplicator.IsDuplicateNoUpdate(msg.ClientID, batchID) {
+		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
+		ack()
+		return
+	}
+
 	// Procesamos y enviamos AFUERA del lock del registro
 	switch msg.MsgType {
 	case inner.Query1Response, inner.Query2Response, inner.Query3Response, inner.Query4Response, inner.Query5Response:
@@ -279,6 +288,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			return
 		}
 
+		gateway.deduplicator.Load(msg.ClientID, batchID)
 		gateway.registry.IncrementSequenceNumberToSent(msg.ClientID)
 
 	case inner.EndOfRecords:
@@ -309,6 +319,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			gateway.registry.Remove(msg.ClientID)
 			gateway.deduplicator.RemoveClient(msg.ClientID)
 		}
+		gateway.EORdeduplicator.Load(msg.ClientID, batchID)
 
 	default:
 		slog.Error("Unexpected msg type received", "msgType", msg.MsgType)
@@ -317,5 +328,4 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	}
 
 	ack()
-	gateway.deduplicator.Load(msg.ClientID, batchID)
 }

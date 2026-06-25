@@ -384,7 +384,6 @@ func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
 		counter.mutex.Unlock()
 		return nil
 	}
-	slog.Info("SE PUEDE ENVIAR EOF")
 	banks := counter.topByClient[clientID]
 	delete(counter.topByClient, clientID)
 	delete(counter.eofCounter, clientID)
@@ -393,8 +392,6 @@ func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
 	if err := counter.sendData(clientID, banks); err != nil {
 		return err
 	}
-	datasaver.Crash(datasaver.CrashAfterSendData) // para testear caida
-	slog.Info("ENVIANDO EOF")
 	return counter.sendEOF(clientID)
 }
 
