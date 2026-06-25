@@ -208,6 +208,11 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 			Amount:   entry.amount,
 		})
 	}
+	// Ordenar TODOS los rows antes de dividir en chunks para garantizar
+	// contenido determinístico en cada chunk (necesario para deduplicación por hash).
+	batch_utils.SortBatch(rows, func(a, b transaction.MaxBankTransaction) bool {
+		return a.Amount > b.Amount
+	})
 
 	for i := 0; i < len(rows); i += joinQ2.config.BatchSize {
 		end := i + joinQ2.config.BatchSize
@@ -215,9 +220,6 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 			end = len(rows)
 		}
 		chunk := rows[i:end]
-		batch_utils.SortBatch(chunk, func(a, b transaction.MaxBankTransaction) bool {
-			return a.Amount > b.Amount
-		})
 		msg, err := inner.SerializeQueryResultMessage(clientID, transaction.QueryResult{
 			QueryID:      transaction.Query2,
 			Transactions: chunk,
