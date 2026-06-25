@@ -23,6 +23,10 @@ import (
 // la recepción de una respuesta antes de nackear el mensaje del MOM.
 const responseAckTimeout = 20 * time.Second
 
+// Tiempo máximo que el gateway espera a que el cliente confirme
+// la recepción de una respuesta antes de nackear el mensaje del MOM.
+const responseAckTimeout = 20 * time.Second
+
 type GatewayConfig struct {
 	InputQueueName      string
 	OutputExchangeName  string
@@ -44,10 +48,11 @@ type Gateway struct {
 	registry       clientregistry.ClientRegistry
 	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
-	listener       net.Listener
-	running        atomic.Bool
-	config         GatewayConfig
-	deduplicator   *batch_utils.MultiClientDeduplicator
+
+	listener     net.Listener
+	running      atomic.Bool
+	config       GatewayConfig
+	deduplicator *batch_utils.MultiClientDeduplicator
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
