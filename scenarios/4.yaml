@@ -8,6 +8,7 @@ services:
     - q4_join_0
     environment:
     - ID=0
+    - WORKER_ID=bridge_matcher_0
     - WORKER_PREFIX=bridge_matcher
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -30,6 +31,7 @@ services:
     - q4_join_0
     environment:
     - ID=1
+    - WORKER_ID=bridge_matcher_1
     - WORKER_PREFIX=bridge_matcher
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -52,6 +54,7 @@ services:
     - q4_join_0
     environment:
     - ID=2
+    - WORKER_ID=bridge_matcher_2
     - WORKER_PREFIX=bridge_matcher
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -75,6 +78,7 @@ services:
     - usd_filter_1
     environment:
     - ID=0
+    - WORKER_ID=client_0
     - BATCH_SIZE=100
     - INPUT_FILE=/datasets/input_0.csv
     - OUTPUT_FILE=/output/output.csv
@@ -96,6 +100,7 @@ services:
     - group_2
     environment:
     - ID=0
+    - WORKER_ID=date_filter_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=date_filter_queue
@@ -107,6 +112,8 @@ services:
     - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
     - CONTROL_TOPIC=date_filter_control_topic
     - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   date_filter_1:
     build:
       context: ./src/
@@ -117,18 +124,21 @@ services:
       - group_1
       - group_2
     environment:
-      - ID=1
-      - MOM_HOST=rabbitmq
-      - MOM_PORT=5672
-      - INPUT_QUEUE=date_filter_queue
-      - INPUT_EXCHANGE_NAME=usd_exchange
-      - INPUT_TOPIC=usd_transactions_topic
-      - OUTPUT_EXCHANGE_NAME=date_exchange
-      - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
-      - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
-      - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
-      - CONTROL_TOPIC=date_filter_control_topic
-      - USD_FILTER_AMOUNT=2
+    - ID=1
+    - WORKER_ID=date_filter_1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=date_filter_queue
+    - INPUT_EXCHANGE_NAME=usd_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_EXCHANGE_NAME=date_exchange
+    - OUTPUT_TOPIC_1=usd_early_period_transactions_topic
+    - OUTPUT_TOPIC_2=usd_later_period_transactions_topic
+    - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
+    - CONTROL_TOPIC=date_filter_control_topic
+    - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   gateway:
     build:
       context: ./src/
@@ -161,6 +171,7 @@ services:
     - bridge_matcher_1
     environment:
     - ID=0
+    - WORKER_ID=group_0
     - WORKER_PREFIX=group
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -185,6 +196,7 @@ services:
     - bridge_matcher_1
     environment:
     - ID=1
+    - WORKER_ID=group_1
     - WORKER_PREFIX=group
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -209,6 +221,7 @@ services:
     - bridge_matcher_1
     environment:
     - ID=2
+    - WORKER_ID=group_2
     - WORKER_PREFIX=group
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -232,6 +245,7 @@ services:
     - gateway
     environment:
     - ID=0
+    - WORKER_ID=q4_join_0
     - WORKER_PREFIX=q4_join
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -267,6 +281,7 @@ services:
     - date_filter_1
     environment:
     - ID=0
+    - WORKER_ID=usd_filter_0
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
@@ -282,16 +297,17 @@ services:
       dockerfile: usd_filter/Dockerfile
     container_name: usd_filter_1
     depends_on:
-      - date_filter_1
-      - date_filter_0
+    - date_filter_1
+    - date_filter_0
     environment:
-      - ID=1
-      - INPUT_QUEUE=usd_filter_queue
-      - INPUT_EXCHANGE_NAME=transactions_exchange
-      - INPUT_TOPIC=transactions_topic
-      - MOM_HOST=rabbitmq
-      - MOM_PORT=5672
-      - OUTPUT_EXCHANGE_NAME=usd_exchange
-      - OUTPUT_TOPIC=usd_transactions_topic
-      - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
-      - CONTROL_TOPIC=usd_filter_control_topic
+    - ID=1
+    - WORKER_ID=usd_filter_0
+    - INPUT_QUEUE=usd_filter_queue
+    - INPUT_EXCHANGE_NAME=transactions_exchange
+    - INPUT_TOPIC=transactions_topic
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - OUTPUT_EXCHANGE_NAME=usd_exchange
+    - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic

@@ -19,7 +19,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 5
+const DestinationThreshold = 2
 const SuspiciousAccountsBatchSize = 100
 
 type BridgeMatcherConfig struct {
@@ -138,6 +138,7 @@ func (bm *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack fu
 		return
 	}
 
+	datasaver.Crash(datasaver.CrashAfterLog)
 	bm.dataSaver.Save(*middlewareMsg, bm) // persistencia de datos
 	ack()
 }
@@ -145,7 +146,8 @@ func (bm *BridgeMatcher) handleMessage(middlewareMsg *middleware.Message, ack fu
 // ------------------- EndOfRecords -------------------
 
 func (bridgeMatcher *BridgeMatcher) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
-	//slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
+
+	datasaver.Crash(datasaver.CrashAfterLog)
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
@@ -266,6 +268,8 @@ func (bridgeMatcher *BridgeMatcher) processSuspiciousAccount(clientID int64, ori
 // ------------------- ReadyForEOR -------------------
 
 func (bridgeMatcher *BridgeMatcher) handleReadyForEOR(clientID int64, data []interface{}) error {
+	datasaver.Crash(datasaver.CrashBeforeEOF)
+
 	senderID, err := inner.DeserializeReadyForEOR(data)
 
 	if err != nil {

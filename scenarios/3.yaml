@@ -9,6 +9,7 @@ services:
     - usd_filter_1
     environment:
     - ID=0
+    - WORKER_ID=client_0
     - BATCH_SIZE=200
     - INPUT_FILE=/datasets/LI-Small_Trans.csv
     - OUTPUT_FILE=/output/output.csv
@@ -29,6 +30,7 @@ services:
     - sum_1
     environment:
     - ID=0
+    - WORKER_ID=date_filter_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=date_filter_queue
@@ -40,6 +42,8 @@ services:
     - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
     - CONTROL_TOPIC=date_filter_control_topic
     - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   date_filter_1:
     build:
       context: ./src/
@@ -50,6 +54,7 @@ services:
     - sum_1
     environment:
     - ID=1
+    - WORKER_ID=date_filter_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=date_filter_queue
@@ -61,6 +66,8 @@ services:
     - CONTROL_EXCHANGE_NAME=date_filter_control_exchange
     - CONTROL_TOPIC=date_filter_control_topic
     - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   gateway:
     build:
       context: ./src/
@@ -109,6 +116,7 @@ services:
     - promediator_1
     environment:
     - ID=0
+    - WORKER_ID=sum_0
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_QUEUE=sum_queue
@@ -120,6 +128,8 @@ services:
     - PROMEDIATOR_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
     - DATE_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   sum_1:
     build:
       context: ./src/
@@ -130,6 +140,7 @@ services:
     - promediator_1
     environment:
     - ID=1
+    - WORKER_ID=sum_1
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_QUEUE=sum_queue
@@ -141,6 +152,8 @@ services:
     - PROMEDIATOR_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
     - DATE_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   usd_filter_0:
     build:
       context: ./src/
@@ -151,6 +164,7 @@ services:
     - date_filter_1
     environment:
     - ID=0
+    - WORKER_ID=usd_filter_0
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
@@ -170,6 +184,7 @@ services:
     - date_filter_1
     environment:
     - ID=1
+    - WORKER_ID=usd_filter_1
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
@@ -189,6 +204,7 @@ services:
     - transactions_saver_1
     environment:
     - ID=0
+    - WORKER_ID=promediator_0
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_EXCHANGE_NAME=sum_results_exchange
@@ -196,6 +212,8 @@ services:
     - OUTPUT_TOPIC_NAME=promediator_results_topic
     - SUM_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
+    volumes:
+    - ./persistence:/persistence 
   promediator_1:
     build:
       context: ./src/
@@ -206,6 +224,7 @@ services:
     - transactions_saver_1
     environment:
     - ID=1
+    - WORKER_ID=promediator_1
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - INPUT_EXCHANGE_NAME=sum_results_exchange
@@ -213,6 +232,8 @@ services:
     - OUTPUT_TOPIC_NAME=promediator_results_topic
     - SUM_AMOUNT=2
     - PROMEDIATOR_PREFIX=promediator
+    volumes:
+    - ./persistence:/persistence 
   transactions_saver_0:
     build:
       context: ./src/
@@ -225,6 +246,7 @@ services:
       - ./src/transactions_saver/cache:/storage
     environment:
     - ID=0
+    - WORKER_ID=transactions_saver_0
     - MOM_PORT=5672
     - MOM_HOST=rabbitmq
     - STORAGE_DIR=/storage
@@ -238,6 +260,8 @@ services:
     - CONTROL_TOPIC_NAME=transactions_saver_control_topic
     - Q3_AMOUNT_FILTER_AMOUNT=2
     - DATE_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   transactions_saver_1:
     build:
       context: ./src/
@@ -249,20 +273,23 @@ services:
     volumes:
       - ./src/transactions_saver/cache:/storage
     environment:
-      - ID=1
-      - MOM_PORT=5672
-      - MOM_HOST=rabbitmq
-      - STORAGE_DIR=/storage
-      - INPUT_QUEUE=transactions_saver_queue
-      - INPUT_EXCHANGE_NAME=date_exchange
-      - INPUT_TOPIC=usd_later_period_transactions_topic
-      - OUTPUT_QUEUE=q3_amount_filter_queue
-      - NOTIFICATION_EXCHANGE_NAME=notification_exchange
-      - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
-      - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
-      - CONTROL_TOPIC_NAME=transactions_saver_control_topic
-      - Q3_AMOUNT_FILTER_AMOUNT=2
-      - DATE_FILTER_AMOUNT=2
+    - ID=1
+    - WORKER_ID=transactions_saver_1
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - STORAGE_DIR=/storage
+    - INPUT_QUEUE=transactions_saver_queue
+    - INPUT_EXCHANGE_NAME=date_exchange
+    - INPUT_TOPIC=usd_later_period_transactions_topic
+    - OUTPUT_QUEUE=q3_amount_filter_queue
+    - NOTIFICATION_EXCHANGE_NAME=notification_exchange
+    - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
+    - CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange
+    - CONTROL_TOPIC_NAME=transactions_saver_control_topic
+    - Q3_AMOUNT_FILTER_AMOUNT=2
+    - DATE_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   q3_amount_filter_0:
     build:
       context: ./src/
@@ -271,19 +298,22 @@ services:
     depends_on:
       - gateway
     environment:
-      - ID=0
-      - MOM_PORT=5672
-      - MOM_HOST=rabbitmq
-      - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
-      - INPUT_PROMEDIATOR_TOPIC=promediator_results_topic
-      - INPUT_QUEUE=q3_amount_filter_queue
-      - NOTIFICATION_EXCHANGE_NAME=notification_exchange
-      - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
-      - CONTROL_EXCHANGE_NAME=q3_amount_filter_control_exchange
-      - CONTROL_TOPIC_NAME=q3_amount_filter_control_topic
-      - OUTPUT_QUEUE=results_queue
-      - PROMEDIATOR_AMOUNT=2
-      - TRANSACTIONS_SAVER_AMOUNT=2
+    - ID=0
+    - WORKER_ID=q3_amount_filter_0
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
+    - INPUT_PROMEDIATOR_TOPIC=promediator_results_topic
+    - INPUT_QUEUE=q3_amount_filter_queue
+    - NOTIFICATION_EXCHANGE_NAME=notification_exchange
+    - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
+    - CONTROL_EXCHANGE_NAME=q3_amount_filter_control_exchange
+    - CONTROL_TOPIC_NAME=q3_amount_filter_control_topic
+    - OUTPUT_QUEUE=results_queue
+    - PROMEDIATOR_AMOUNT=2
+    - TRANSACTIONS_SAVER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   q3_amount_filter_1:
     build:
       context: ./src/
@@ -292,16 +322,19 @@ services:
     depends_on:
       - gateway
     environment:
-      - ID=1
-      - MOM_PORT=5672
-      - MOM_HOST=rabbitmq
-      - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
-      - INPUT_PROMEDIATOR_TOPIC=promediator_results_topic
-      - INPUT_QUEUE=q3_amount_filter_queue
-      - NOTIFICATION_EXCHANGE_NAME=notification_exchange
-      - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
-      - CONTROL_EXCHANGE_NAME=q3_amount_filter_control_exchange
-      - CONTROL_TOPIC_NAME=q3_amount_filter_control_topic
-      - OUTPUT_QUEUE=results_queue
-      - PROMEDIATOR_AMOUNT=2
-      - TRANSACTIONS_SAVER_AMOUNT=2
+    - ID=1
+    - WORKER_ID=q3_amount_filter_1
+    - MOM_PORT=5672
+    - MOM_HOST=rabbitmq
+    - INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange
+    - INPUT_PROMEDIATOR_TOPIC=promediator_results_topic
+    - INPUT_QUEUE=q3_amount_filter_queue
+    - NOTIFICATION_EXCHANGE_NAME=notification_exchange
+    - NOTIFICATION_TOPIC_NAME=notification_avgs_topic
+    - CONTROL_EXCHANGE_NAME=q3_amount_filter_control_exchange
+    - CONTROL_TOPIC_NAME=q3_amount_filter_control_topic
+    - OUTPUT_QUEUE=results_queue
+    - PROMEDIATOR_AMOUNT=2
+    - TRANSACTIONS_SAVER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 

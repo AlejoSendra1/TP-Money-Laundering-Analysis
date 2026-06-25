@@ -9,6 +9,7 @@ services:
     - usd_filter_1
     environment:
     - ID=0
+    - WORKER_ID=client_0
     - BATCH_SIZE=200
     - INPUT_FILE=/datasets/LI-Small_Trans.csv
     - OUTPUT_FILE=/output/output.csv
@@ -29,6 +30,7 @@ services:
         condition: service_healthy
     environment:
     - ID=0
+    - WORKER_ID=q2_counter_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=counter_q2_queue
@@ -52,6 +54,7 @@ services:
         condition: service_healthy
     environment:
     - ID=1
+    - WORKER_ID=q2_counter_1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_QUEUE=counter_q2_queue
@@ -97,6 +100,7 @@ services:
         condition: service_healthy
     environment:
     - ID=0
+    - WORKER_ID=q2_join_0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_PREFIX=join_q2
@@ -104,6 +108,8 @@ services:
     - OUTPUT_QUEUE=results_queue
     - QUERY_ID=5
     - BATCH_SIZE=100
+    volumes:
+    - ./persistence:/persistence 
   q2_join_1:
     build:
       context: ./src/
@@ -114,6 +120,7 @@ services:
         condition: service_healthy
     environment:
     - ID=1
+    - WORKER_ID=q2_join_1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - INPUT_PREFIX=join_q2
@@ -121,6 +128,8 @@ services:
     - OUTPUT_QUEUE=results_queue
     - QUERY_ID=5
     - BATCH_SIZE=100
+    volumes:
+    - ./persistence:/persistence 
   rabbitmq:
     build:
       context: ./src/rabbitmq

@@ -17,7 +17,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 5
+const DestinationThreshold = 2
 
 type JoinConfig struct {
 	ID                    int
@@ -82,8 +82,8 @@ func NewJoinWorker(config JoinConfig) (*Join, error) {
 		heartbeat:             hb,
 	}
 	j.mssgHandlers = worker.MessageHandlerMap{
-		inner.EndOfRecords:     j.handleEndOfRecordMessage,
-		inner.TransactionBatch: j.handlePossibleFraudDestinationsMessage,
+		inner.EndOfRecords:              j.handleEndOfRecordMessage,
+		inner.PossibleFraudDestinations: j.handlePossibleFraudDestinationsMessage,
 	}
 
 	return j, nil
