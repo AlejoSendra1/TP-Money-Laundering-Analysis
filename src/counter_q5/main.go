@@ -40,31 +40,19 @@ func loadConfig() (counter_q5.CounterQ5Config, error) {
 		return counter_q5.CounterQ5Config{}, errors.New("CACHE_AMOUNT is required and must be a number")
 	}
 
-	instanceAmount, err := strconv.Atoi(os.Getenv("INSTANCE_AMOUNT"))
-	if err != nil {
-		return counter_q5.CounterQ5Config{}, errors.New("INSTANCE_AMOUNT is required and must be a number")
-	}
-
-	controlExchangeName := os.Getenv("CONTROL_EXCHANGE_NAME")
-	if controlExchangeName == "" {
-		return counter_q5.CounterQ5Config{}, errors.New("CONTROL_EXCHANGE_NAME is required")
-	}
-
 	workerID := os.Getenv("WORKER_ID")
 	if workerID == "" {
 		return counter_q5.CounterQ5Config{}, errors.New("WORKER_ID is required")
 	}
 
 	return counter_q5.CounterQ5Config{
-		ID:                  id,
-		WorkerID:            workerID,
-		MomHost:             momHost,
-		MomPort:             momPort,
-		InputPrefix:         inputPrefix,
-		OutputQueue:         outputQueue,
-		CacheAmount:         cacheAmount,
-		InstanceAmount:      instanceAmount,
-		ControlExchangeName: controlExchangeName,
+		ID:          id,
+		WorkerID:    workerID,
+		MomHost:     momHost,
+		MomPort:     momPort,
+		InputPrefix: inputPrefix,
+		OutputQueue: outputQueue,
+		CacheAmount: cacheAmount,
 	}, nil
 }
 

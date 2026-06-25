@@ -50,11 +50,9 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("FILTER_PAYMENT_CONTROL environment variable is required")
 	}
 
-	batchSize := 100
-	if bs := os.Getenv("BATCH_SIZE"); bs != "" {
-		if v, err := strconv.Atoi(bs); err == nil {
-			batchSize = v
-		}
+	controlTopic := os.Getenv("CONTROL_TOPIC")
+	if controlTopic == "" {
+		return filter_payment_format.FilterPaymentFormatConfig{}, errors.New("CONTROL_TOPIC environment variable is required")
 	}
 
 	workerID := os.Getenv("WORKER_ID")
@@ -72,7 +70,7 @@ func loadConfig() (filter_payment_format.FilterPaymentFormatConfig, error) {
 		FilterAmount:         filterAmount,
 		USDFilterAmount:      dateFilterAmount,
 		FilterPaymentControl: filterPaymentControl,
-		BatchSize:            batchSize,
+		ControlTopic:         controlTopic,
 	}, nil
 }
 
