@@ -17,6 +17,7 @@ import (
 )
 
 const LOGS_UNTIL_CHECKPOINT = 250
+const DEDUP_MAX_SIZE = 1000
 
 type CounterQ5Config struct {
 	ID          int
@@ -29,9 +30,10 @@ type CounterQ5Config struct {
 }
 
 type CheckpointData struct {
-	CountByClient    map[int64]map[string]int `json:"countByClient"`
-	EofCountByClient map[int64]int            `json:"eofCountByClient"`
-	FinishedClients  batch_utils.Set[int64]   `json:"finishedClients"`
+	CountByClient    map[int64]map[string]int             `json:"countByClient"`
+	EofCountByClient map[int64]int                        `json:"eofCountByClient"`
+	FinishedClients  batch_utils.Set[int64]               `json:"finishedClients"`
+	Deduplicator     *batch_utils.MultiClientDeduplicator `json:"deduplicator"`
 }
 
 // CounterQ5 reads USD-converted PaymentRecords from currencies_cache,
@@ -46,6 +48,7 @@ type CounterQ5 struct {
 	countByClient    map[int64]map[string]int
 	eofCountByClient map[int64]int
 	finishedClients  batch_utils.Set[int64]
+	deduplicator     *batch_utils.MultiClientDeduplicator
 }
 
 func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
@@ -86,6 +89,7 @@ func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 		countByClient:    make(map[int64]map[string]int),
 		eofCountByClient: make(map[int64]int),
 		finishedClients:  make(batch_utils.Set[int64]),
+		deduplicator:     batch_utils.NewMultiClientDeduplicator(DEDUP_MAX_SIZE),
 	}, nil
 }
 
@@ -94,6 +98,7 @@ func (counter *CounterQ5) GetCheckpointData() any {
 		CountByClient:    counter.countByClient,
 		EofCountByClient: counter.eofCountByClient,
 		FinishedClients:  counter.finishedClients,
+		Deduplicator:     counter.deduplicator,
 	}
 }
 
@@ -108,6 +113,9 @@ func (counter *CounterQ5) Restaurate() error {
 		counter.countByClient = checkpoint.CountByClient
 		counter.eofCountByClient = checkpoint.EofCountByClient
 		counter.finishedClients = checkpoint.FinishedClients
+		if checkpoint.Deduplicator != nil {
+			counter.deduplicator = checkpoint.Deduplicator
+		}
 	}
 
 	var savedMsg middleware.Message
@@ -119,10 +127,10 @@ func (counter *CounterQ5) Restaurate() error {
 		if !hasLogs {
 			break
 		}
-		if err := worker.HandleMessageV2(&savedMsg, worker.MessageHandlerMap{
+		if err := worker.HandleMessageV3(&savedMsg, worker.MessageHandlerMap{
 			inner.TransactionBatch: counter.handleTransactionBatch,
 			inner.EndOfRecords:     counter.handleEOF,
-		}); err != nil {
+		}, counter.deduplicator); err != nil {
 			return err
 		}
 	}
@@ -147,12 +155,13 @@ func (counter *CounterQ5) handleSigterm() {
 }
 
 func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()) {
-	err := worker.HandleMessageV2(
+	err := worker.HandleMessageV3(
 		&msg,
 		worker.MessageHandlerMap{
 			inner.TransactionBatch: counter.handleTransactionBatch,
 			inner.EndOfRecords:     counter.handleEOF,
 		},
+		counter.deduplicator,
 	)
 	if err != nil {
 		slog.Error("Handling message", "err", err)
@@ -197,6 +206,7 @@ func (counter *CounterQ5) handleEOFLogic(clientID int64) error {
 	delete(counter.countByClient, clientID)
 	delete(counter.eofCountByClient, clientID)
 	counter.finishedClients.Add(clientID)
+	counter.deduplicator.RemoveClient(clientID)
 
 	if err := counter.sendData(clientID, counts); err != nil {
 		return err
