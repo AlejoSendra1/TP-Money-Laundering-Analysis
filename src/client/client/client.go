@@ -130,7 +130,7 @@ func (client *Client) Run() error {
 			return fmt.Errorf("error en la rutina de lectura: %w", err)
 		}
 	}
-
+	client.close()
 	return nil
 }
 
@@ -141,4 +141,10 @@ func (client *Client) handleSignals() {
 	slog.Info("SIGTERM signal received")
 	client.running.Store(false)
 	client.conn.Close()
+}
+
+func (client *Client) close() {
+	client.conn.Close()
+	client.dataSaver.Close()
+	client.writer.Close()
 }

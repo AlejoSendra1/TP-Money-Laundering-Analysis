@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -18,10 +20,6 @@ import (
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/messagehandler"
 )
-
-// Tiempo máximo que el gateway espera a que el cliente confirme
-// la recepción de una respuesta antes de nackear el mensaje del MOM.
-const responseAckTimeout = 20 * time.Second
 
 // Tiempo máximo que el gateway espera a que el cliente confirme
 // la recepción de una respuesta antes de nackear el mensaje del MOM.
@@ -166,6 +164,10 @@ func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
 	for {
 		msgType, err := external.ReadMsgType(client.Conn)
 		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				slog.Info("Client disconnected gracefully", "client", client)
+				return
+			}
 			slog.Error("While reading message type handling client request", "err", err)
 			return
 		}
