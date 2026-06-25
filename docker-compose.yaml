@@ -20,8 +20,6 @@ services:
     - NEXT_FASE_WORKERS_AMOUNT=1
     - NEXT_FASE_WORKERS_PREFIX=q4_join
     - PYTHONUNBUFFERED=1
-    #- CRASH_AFTER_LOG=110
-    #- CRASH_BEFORE_EOF=2
     volumes:
     - ./persistence:/persistence 
   bridge_matcher_1:
@@ -255,6 +253,8 @@ services:
     - OUTPUT_QUEUE_NAME=results_queue
     - PREV_FASE_WORKERS_AMOUNT=3
     - PYTHONUNBUFFERED=1
+    #- CRASH_AFTER_LOG=110
+    #- CRASH_BEFORE_EOF=1
     volumes:
     - ./persistence:/persistence 
   rabbitmq:

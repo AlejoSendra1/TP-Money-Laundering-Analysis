@@ -104,7 +104,6 @@ func run() int {
 		return 1
 	}
 
-	slog.Info("restaurando")
 	if err := g.Restaurate(); err != nil {
 		slog.Error("While restoring state", "err", err)
 		return 1
