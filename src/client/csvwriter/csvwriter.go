@@ -57,10 +57,10 @@ func (c *CSVWriter) getCount() int64 {
 
 // NewCSVWriter ahora recibe un basePath o archivo base para las transacciones comunes.
 // Los archivos de las queries se crearán en el mismo directorio con nombres específicos.
-func NewCSVWriter(baseFilepath string) (*CSVWriter, error) {
+func NewCSVWriter(Filepath string) (*CSVWriter, error) {
 	return &CSVWriter{
 		counter:      0,
-		basePath:     filepath.Dir(baseFilepath),
+		basePath:     filepath.Dir(Filepath),
 		queryFiles:   make(map[string]*os.File),
 		queryWriters: make(map[string]*csv.Writer),
 		q4Written:    make(map[[2]string]struct{}),
@@ -73,8 +73,12 @@ func (c *CSVWriter) getQueryWriter(queryName string) (*csv.Writer, error) {
 		return w, nil
 	}
 
+	if err := os.MkdirAll(c.basePath, 0755); err != nil {
+		return nil, fmt.Errorf("creating directory %s: %w", c.basePath, err)
+	}
+
 	// Construye el path: ej. "resultado_q1.csv" en el mismo directorio
-	fileName := fmt.Sprintf("%s_results_%s.csv", c.basePath, queryName)
+	fileName := fmt.Sprintf("results_%s.csv", queryName)
 	fullPath := filepath.Join(c.basePath, fileName)
 
 	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

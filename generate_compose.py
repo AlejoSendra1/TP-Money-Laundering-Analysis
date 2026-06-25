@@ -107,7 +107,7 @@ def main():
                 f"ID={idx}",
                 f"BATCH_SIZE={batch_size}",
                 f"INPUT_FILE={input_file}",
-                f"OUTPUT_FILE=/output/output_{client_name}.csv",
+                f"OUTPUT_FILE=/output/output_{client_name}/",
                 f"WORKER_ID={client_name}",
                 "SERVER_HOST=gateway",
                 "SERVER_PORT=5678"

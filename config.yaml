@@ -20,9 +20,9 @@ scale:
   q3_amount_filter: 2
   
   # Query 4
-  group: 3  
-  bridge_matcher: 2
-  q4_join: 1 # Solo puede tener 1 replica? (dejar a 1)
+  group: 2
+  bridge_matcher: 3
+  q4_join: 3
   
   # Query 5
   q5_date_filter: 2
@@ -36,6 +36,8 @@ clients:
   - batch_size: 200
     input_file: "/datasets/LI-Small_Trans.csv"
   # client_1
+  - batch_size: 200
+    input_file: "/datasets/LI-Small_Trans.csv"
   # ...
   # client_N
   # ...

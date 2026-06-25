@@ -17,7 +17,7 @@ import (
 )
 
 const FANOUT = ""
-const DestinationThreshold = 5
+const DestinationThreshold = 2
 
 type JoinConfig struct {
 	ID                    int
