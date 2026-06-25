@@ -279,7 +279,6 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			return
 		}
 
-		gateway.deduplicator.Load(msg.ClientID, batchID)
 		gateway.registry.IncrementSequenceNumberToSent(msg.ClientID)
 
 	case inner.EndOfRecords:
@@ -318,4 +317,5 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	}
 
 	ack()
+	gateway.deduplicator.Load(msg.ClientID, batchID)
 }
