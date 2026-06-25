@@ -13,6 +13,7 @@ import (
 	"tp_distribuidos/common/messageprotocol/inner"
 	"tp_distribuidos/common/middleware"
 	"tp_distribuidos/common/transaction"
+	"tp_distribuidos/common/worker"
 )
 
 const LOGS_UNTIL_CHECKPOINT = 250
@@ -118,16 +119,11 @@ func (counter *CounterQ5) Restaurate() error {
 		if !hasLogs {
 			break
 		}
-		clientID, records, isEof, err := inner.DeserializePaymentRecordMessage(&savedMsg)
-		if err != nil {
+		if err := worker.HandleMessageV2(&savedMsg, worker.MessageHandlerMap{
+			inner.TransactionBatch: counter.handleTransactionBatch,
+			inner.EndOfRecords:     counter.handleEOF,
+		}); err != nil {
 			return err
-		}
-		if isEof {
-			if err := counter.handleEOFLogic(clientID); err != nil {
-				return err
-			}
-		} else {
-			counter.countRecords(clientID, records)
 		}
 	}
 	return nil
@@ -151,26 +147,35 @@ func (counter *CounterQ5) handleSigterm() {
 }
 
 func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()) {
-	clientID, records, isEof, err := inner.DeserializePaymentRecordMessage(&msg)
+	err := worker.HandleMessageV2(
+		&msg,
+		worker.MessageHandlerMap{
+			inner.TransactionBatch: counter.handleTransactionBatch,
+			inner.EndOfRecords:     counter.handleEOF,
+		},
+	)
 	if err != nil {
-		slog.Error("Deserializing message", "err", err)
+		slog.Error("Handling message", "err", err)
 		nack()
 		return
 	}
-
-	if isEof {
-		slog.Info("EOF received from cache", "client_id", clientID)
-		if err := counter.handleEOFLogic(clientID); err != nil {
-			slog.Error("Handling EOF", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
-	} else {
-		counter.countRecords(clientID, records)
-	}
-
 	counter.dataSaver.Save(msg, counter)
 	ack()
+}
+
+func (counter *CounterQ5) handleTransactionBatch(clientID int64, data []interface{}) error {
+	records, err := inner.DeserializePaymentRecordBatch(data)
+	if err != nil {
+		slog.Error("Deserializing payment record batch", "err", err, "client_id", clientID)
+		return err
+	}
+	counter.countRecords(clientID, records)
+	return nil
+}
+
+func (counter *CounterQ5) handleEOF(clientID int64, _ []interface{}) error {
+	slog.Info("EOF received from cache", "client_id", clientID)
+	return counter.handleEOFLogic(clientID)
 }
 
 // handleEOFLogic incrementa el contador y hace flush cuando se recibieron todos los EOFs.

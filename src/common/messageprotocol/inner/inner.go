@@ -702,11 +702,41 @@ func SerializePaymentRecordMessage(clientId int64, records []transaction.Payment
 			r.PaymentFormat,
 		})
 	}
-	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data})
+	body, err := SerializeJson(MessageClient{ClientID: clientId, Data: data, MsgType: TransactionBatch})
 	if err != nil {
 		return nil, fmt.Errorf("serializing payment records: %w", err)
 	}
 	return &middleware.Message{Body: string(body)}, nil
+}
+
+// DeserializePaymentRecordBatch deserializes a batch of PaymentRecord from the generic []interface{} data field.
+// Row format: [timestamp(0), amount(1), currency(2), payment_format(3)]
+func DeserializePaymentRecordBatch(data []interface{}) ([]transaction.PaymentRecord, error) {
+	records := make([]transaction.PaymentRecord, 0, len(data))
+	for _, datum := range data {
+		fields, ok := datum.([]interface{})
+		if !ok || len(fields) != 4 {
+			return nil, fmt.Errorf("invalid structure inside payment record (expected 4 fields)")
+		}
+		timestamp, ok1 := fields[0].(string)
+		amount, ok2 := fields[1].(float64)
+		currency, ok3 := fields[2].(string)
+		paymentFormat, ok4 := fields[3].(string)
+		if !ok1 || !ok2 || !ok3 || !ok4 {
+			return nil, fmt.Errorf("type mismatch in payment record fields")
+		}
+		parsedTime, err := time.Parse("2006/01/02 15:04", timestamp)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timestamp %q in payment record: %w", timestamp, err)
+		}
+		records = append(records, transaction.PaymentRecord{
+			Timestamp:     parsedTime,
+			Amount:        amount,
+			Currency:      currency,
+			PaymentFormat: paymentFormat,
+		})
+	}
+	return records, nil
 }
 
 // DeserializePaymentRecordMessage deserializes a batch of PaymentRecord records.

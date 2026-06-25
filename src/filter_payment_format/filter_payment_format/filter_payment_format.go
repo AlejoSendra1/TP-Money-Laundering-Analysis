@@ -302,7 +302,7 @@ func (filter *FilterPaymentFormat) sendOutput(clientID int64, records []transact
 
 // forwardEOF sends an EOF marker downstream.
 func (filter *FilterPaymentFormat) forwardEOF(clientID int64) error {
-	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
+	msg, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", filter.config.ID))
 	if err != nil {
 		return fmt.Errorf("serializing EOF: %w", err)
 	}

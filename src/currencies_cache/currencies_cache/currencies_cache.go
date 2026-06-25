@@ -262,34 +262,36 @@ func (currencyCache *CurrenciesCache) handleSigterm() {
 }
 
 func (currencyCache *CurrenciesCache) handleMessage(msg middleware.Message, ack, nack func()) {
-	clientID, records, isEof, err := inner.DeserializePaymentRecordMessage(&msg)
+	err := worker.HandleMessageV2(
+		&msg,
+		worker.MessageHandlerMap{
+			inner.TransactionBatch: currencyCache.handleTransactionBatch,
+			inner.EndOfRecords:     currencyCache.handleEOFFromUpstream,
+		},
+	)
 	if err != nil {
-		slog.Error("Deserializing payment record message", "err", err)
+		slog.Error("Handling message", "err", err)
 		nack()
 		return
 	}
-
-	if isEof {
-		slog.Info("EOF received from upstream, broadcasting to control", "client_id", clientID)
-		if err := currencyCache.sendControlEOF(clientID); err != nil {
-			slog.Error("Broadcasting control EOF", "err", err, "client_id", clientID)
-			nack()
-			return
-		}
-		ack()
-		return
-	}
-
-	currencyCache.mu.Lock()
-	converted := currencyCache.convertBatch(clientID, records)
-	if err := currencyCache.sendConvertedRecords(clientID, converted); err != nil {
-		currencyCache.mu.Unlock()
-		slog.Error("Sending converted records", "err", err, "client_id", clientID)
-		nack()
-		return
-	}
-	currencyCache.mu.Unlock()
 	ack()
+}
+
+func (currencyCache *CurrenciesCache) handleTransactionBatch(clientID int64, data []interface{}) error {
+	records, err := inner.DeserializePaymentRecordBatch(data)
+	if err != nil {
+		slog.Error("Deserializing payment record batch", "err", err, "client_id", clientID)
+		return err
+	}
+	currencyCache.mu.Lock()
+	defer currencyCache.mu.Unlock()
+	converted := currencyCache.convertBatch(clientID, records)
+	return currencyCache.sendConvertedRecords(clientID, converted)
+}
+
+func (currencyCache *CurrenciesCache) handleEOFFromUpstream(clientID int64, _ []interface{}) error {
+	slog.Info("EOF received from upstream, broadcasting to control", "client_id", clientID)
+	return currencyCache.sendControlEOF(clientID)
 }
 
 func (currencyCache *CurrenciesCache) sendControlEOF(clientID int64) error {
@@ -457,11 +459,11 @@ func (currencyCache *CurrenciesCache) toUSD(currencyName string, amount float64,
 }
 
 func (currencyCache *CurrenciesCache) forwardEOF(clientID int64) error {
-	msg, err := inner.SerializePaymentRecordMessage(clientID, []transaction.PaymentRecord{})
-	if err != nil {
-		return err
-	}
 	for i, q := range currencyCache.outputQueues {
+		msg, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", currencyCache.config.ID))
+		if err != nil {
+			return fmt.Errorf("serializing EOF for queue %d: %w", i, err)
+		}
 		if err := q.Send(*msg); err != nil {
 			return fmt.Errorf("sending EOF to output queue %d: %w", i, err)
 		}
