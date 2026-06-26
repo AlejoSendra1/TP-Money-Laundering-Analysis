@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/heatbeat"
@@ -322,9 +321,6 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormat
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleControlEndOfRecodsWrapper(clientID int64, data []interface{}) error {
-	if q3AmountFilter.config.Id == 0 {
-		slog.Info("Me llego EOF de otra instancia, LO PROCESO")
-	}
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
@@ -366,16 +362,10 @@ func (q3AmountFilter *Q3AmountFilter) handleControlEndOfRecodsWrapper(clientID i
 	} else {
 		slog.Info("Waiting for more transactions saver EOFs", "clientID", clientID)
 	}
-	if q3AmountFilter.config.Id == 0 {
-		slog.Info("Termine de procesaaaar el EOF de ontra instancia")
-	}
 	return nil
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleTransactionsSaverEndOfRecordsWrapper(clientID int64, data []interface{}) error {
-	if q3AmountFilter.config.Id == 0 {
-		slog.Info("Me llego EOF, LO PROCESO")
-	}
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
@@ -385,17 +375,10 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionsSaverEndOfRecordsWrapper
 		slog.Info("While handling transaction saver EOF", "err", err, "clientID", clientID)
 		return err
 	}
-	if q3AmountFilter.config.Id == 0 {
-		slog.Info("Termine de procesaaaar el EOF")
-	}
 	return nil
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleThresholdFilteredTransferWrapper(clientID int64, data []interface{}) error {
-	if q3AmountFilter.config.Id == 0 {
-		slog.Info("Procesaaaando mensage")
-		time.Sleep(1 * time.Second)
-	}
 	transactionRecords, err := inner.DeserializeThresholdFilteredTransferMessage(data)
 	if err != nil {
 		slog.Info("While deserializing transaction saver message", "err", err, "clientID", clientID)
@@ -404,10 +387,6 @@ func (q3AmountFilter *Q3AmountFilter) handleThresholdFilteredTransferWrapper(cli
 	if err = q3AmountFilter.handleTransactionSaverDataMessage(transactionRecords, clientID); err != nil {
 		slog.Error("While handling data message", "err", err, "clientID", clientID)
 		return err
-	}
-	if q3AmountFilter.config.Id == 0 {
-		slog.Info("termine de procesar mensaaage")
-		time.Sleep(1 * time.Second)
 	}
 	return nil
 }
