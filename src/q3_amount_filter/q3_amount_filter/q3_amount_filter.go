@@ -268,12 +268,11 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 
 		return nil
 	}
-	_, ok := q3AmountFilter.eofCounterAvg[clientID]
-
-	if !ok {
-		// Si me llego un NotificationAvg de promediator que no tengo registro, es porque me mando tarde la data o porque nunca me mando
-		slog.Warn("Notification avg arrived from promediator, but wont process", "clientID", clientID)
-		return nil
+	if _, ok := q3AmountFilter.eofCounterAvg[clientID]; !ok {
+		slog.Info("EOF arrived before data, initializing state safely", "clientID", clientID)
+		q3AmountFilter.averages[clientID] = make(map[string]float64)
+		q3AmountFilter.eofCounterAvg[clientID] = batch_utils.NewSet[string]()
+		q3AmountFilter.eofCounterTs[clientID] = batch_utils.NewSet[string]()
 	}
 
 	q3AmountFilter.eofCounterAvg[clientID].Add(sender)
@@ -332,12 +331,10 @@ func (q3AmountFilter *Q3AmountFilter) handleControlEndOfRecodsWrapper(clientID i
 
 		return nil
 	}
-	_, ok := q3AmountFilter.eofCounterTs[clientID]
 
-	if !ok {
-		// Si me llego un EOF de un cliente que no tengo registro, es porque me mando tarde la data
-		slog.Warn("New client arrived from control message, but dont have data, wont process", "clientID", clientID)
-		return nil
+	if _, ok := q3AmountFilter.eofCounterTs[clientID]; !ok {
+		slog.Info("Control EOF arrived before data, initializing state safely", "clientID", clientID)
+		q3AmountFilter.eofCounterTs[clientID] = batch_utils.NewSet[string]()
 	}
 	shouldSendEOF := false
 
@@ -406,11 +403,14 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverEndOfRecordMessage(c
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverDataMessage(transactionRecords []transaction.ThresholdFilteredTransfer, clientID int64) error {
-
+	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
+		slog.Info("Ignoring late date from client already finished", "clientID", clientID)
+		return nil
+	}
 	_, ok := q3AmountFilter.averages[clientID]
 
 	if !ok {
-		slog.Info("New client arrived from transaction saver without averages", "clientID", clientID)
+		slog.Warn("New client arrived from transaction saver without averages", "clientID", clientID)
 		return fmt.Errorf("transactions arrived for client %d before receiving averages", clientID)
 	}
 
