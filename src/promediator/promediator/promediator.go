@@ -92,6 +92,7 @@ func (promediator *Promediator) GetCheckpointData() any {
 		PaymentFormatAverage: promediator.paymentFormatAvg,
 		EofCounter:           promediator.eofCounter,
 		Deduplicator:         promediator.deduplicator,
+		FinishedClients:      promediator.finishedClients,
 	}
 }
 
