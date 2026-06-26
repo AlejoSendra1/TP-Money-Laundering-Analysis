@@ -60,7 +60,7 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		inputExchange.Close()
 		return nil, err
 	}
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", config.PromediatorPrefix, config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/%s_%d", config.PromediatorPrefix, config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		return nil, err
 	}

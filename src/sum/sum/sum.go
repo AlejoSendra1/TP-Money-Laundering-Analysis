@@ -85,7 +85,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 		return nil, err
 	}
 
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "sum", config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/sum_%d", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputQueue.Close()
 		outputExchange.Close()

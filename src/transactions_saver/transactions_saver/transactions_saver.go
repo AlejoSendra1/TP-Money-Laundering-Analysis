@@ -94,7 +94,7 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		return nil, err
 	}
 
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "transactions_saver", config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/transactions_saver_%d", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()

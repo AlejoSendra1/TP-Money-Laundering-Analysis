@@ -105,7 +105,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 		config.OutputTopic1: outputExchangeTopic1,
 		config.OutputTopic2: outputExchangeTopic2,
 	}
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "date_filter", config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/date_filter_%d", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputQueue.Close()
 		controlExchange.Close()

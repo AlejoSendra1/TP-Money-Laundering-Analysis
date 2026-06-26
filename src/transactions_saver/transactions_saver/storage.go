@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/transaction"
 )
@@ -69,6 +70,7 @@ func (storage *Storage) FlushTransactions(clientID int64, send SendTransactions)
 	if err := storage.readAndSendFromFile(clientID, send); err != nil {
 		return err
 	}
+	time.Sleep(15 * time.Second) // Pequeña pausa para asegurar que los mensajes se envíen antes de eliminar el archivo
 	slog.Info("Flushed transactions from disk to output", "clientID", clientID, "filePath", storage.filePath)
 
 	if err := os.Remove(storage.filePath); err != nil && !os.IsNotExist(err) {

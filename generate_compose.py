@@ -174,7 +174,7 @@ def main():
         "NOTIFICATION_TOPIC_NAME=notification_avgs_topic", "CONTROL_EXCHANGE_NAME=transactions_saver_control_exchange",
         "CONTROL_TOPIC_NAME=transactions_saver_control_topic", f"Q3_AMOUNT_FILTER_AMOUNT={SCALE.get('q3_amount_filter', 1)}",
         f"DATE_FILTER_AMOUNT={SCALE.get('date_filter', 1)}"
-    ], volumes=["./src/transactions_saver/cache:/storage"])
+    ], volumes=["./src/transactions_saver/cache:/storage", "./persistence:/persistence"])
     add_worker("q3_amount_filter", [], [
         "INPUT_PROMEDIATOR_EXCHANGE=promediator_exchange", "INPUT_PROMEDIATOR_TOPIC=promediator_results_topic",
         "INPUT_QUEUE=q3_amount_filter_queue", "NOTIFICATION_EXCHANGE_NAME=notification_exchange",
