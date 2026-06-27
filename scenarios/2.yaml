@@ -12,7 +12,28 @@ services:
     - WORKER_ID=client_0
     - BATCH_SIZE=200
     - INPUT_FILE=/datasets/LI-Small_Trans.csv
-    - OUTPUT_FILE=/output/output.csv
+    - OUTPUT_FILE=/output/output_client_0/
+    - PYTHONUNBUFFERED=1
+    - SERVER_HOST=gateway
+    - SERVER_PORT=5678
+    volumes:
+    - ./datasets:/datasets
+    - ./output:/output
+    - ./persistence:/persistence 
+  client_1:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_1
+    depends_on:
+    - usd_filter_0
+    - usd_filter_1
+    environment:
+    - ID=0
+    - WORKER_ID=client_1
+    - BATCH_SIZE=200
+    - INPUT_FILE=/datasets/LI-Small_Trans.csv
+    - OUTPUT_FILE=/output/output_client_1/
     - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
@@ -156,6 +177,7 @@ services:
     - q2_counter_1
     environment:
     - ID=0
+    - WORKER_ID=usd_filter_0
     - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
@@ -175,6 +197,7 @@ services:
       - q2_counter_1
     environment:
       - ID=1
+      - WORKER_ID=usd_filter_1
       - INPUT_QUEUE=usd_filter_queue
       - INPUT_EXCHANGE_NAME=transactions_exchange
       - INPUT_TOPIC=transactions_topic
@@ -184,3 +207,35 @@ services:
       - OUTPUT_TOPIC=usd_transactions_topic
       - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
       - CONTROL_TOPIC=usd_filter_control_topic
+  watchdog_0:
+    build:
+      context: ./src/
+      dockerfile: watchdog/Dockerfile
+    container_name: watchdog_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - WORKER_IDS=usd_filter_0,usd_filter_1,q2_join_1,q2_join_0,q2_counter_0,q2_counter_1
+    - ELECTION_EXCHANGE=watchdog_election
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+  watchdog_1:
+    build:
+      context: ./src/
+      dockerfile: watchdog/Dockerfile
+    container_name: watchdog_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - WORKER_IDS=usd_filter_0,usd_filter_1,q2_join_1,q2_join_0,q2_counter_0,q2_counter_1
+    - ELECTION_EXCHANGE=watchdog_election
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock

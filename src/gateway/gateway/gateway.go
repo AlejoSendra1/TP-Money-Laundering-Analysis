@@ -23,7 +23,7 @@ import (
 
 // Tiempo máximo que el gateway espera a que el cliente confirme
 // la recepción de una respuesta antes de nackear el mensaje del MOM.
-const responseAckTimeout = 20 * time.Second
+const responseAckTimeout = 40 * time.Second
 
 type GatewayConfig struct {
 	InputQueueName      string
@@ -47,10 +47,11 @@ type Gateway struct {
 	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
 
-	listener     net.Listener
-	running      atomic.Bool
-	config       GatewayConfig
-	deduplicator *batch_utils.MultiClientDeduplicator
+	listener        net.Listener
+	running         atomic.Bool
+	config          GatewayConfig
+	deduplicator    *batch_utils.MultiClientDeduplicator
+	EORdeduplicator *batch_utils.MultiClientDeduplicator
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -75,12 +76,13 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	}
 
 	gateway := &Gateway{
-		registry:       clientregistry.NewClientRegistry(),
-		inputQueue:     inputQueue,
-		outputExchange: outputExchange,
-		listener:       listener,
-		config:         config,
-		deduplicator:   batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
+		registry:        clientregistry.NewClientRegistry(),
+		inputQueue:      inputQueue,
+		outputExchange:  outputExchange,
+		listener:        listener,
+		config:          config,
+		deduplicator:    batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
+		EORdeduplicator: batch_utils.NewMultiClientDeduplicator(100),
 	}
 	gateway.running.Store(true)
 	return gateway, nil
@@ -233,6 +235,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		nack()
 		return
 	}
+	slog.Info("mensage recibido en gateway", msg)
 
 	// Lock corto: Solo buscamos el cliente idóneo en el registro
 	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
@@ -250,6 +253,13 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 
 	batchID := batch_utils.GenerateBatchID([]byte(middlewareMsg.Body))
 	if gateway.deduplicator.IsDuplicateNoUpdate(msg.ClientID, batchID) {
+		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
+		ack()
+		return
+	}
+
+	// dedup de EORs
+	if gateway.EORdeduplicator.IsDuplicateNoUpdate(msg.ClientID, batchID) {
 		slog.Warn("Duplicate message detected", "clientID", msg.ClientID, "batchID", batchID, "msg", msg)
 		ack()
 		return
@@ -310,6 +320,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 			gateway.registry.Remove(msg.ClientID)
 			gateway.deduplicator.RemoveClient(msg.ClientID)
 		}
+		gateway.EORdeduplicator.Load(msg.ClientID, batchID)
 
 	default:
 		slog.Error("Unexpected msg type received", "msgType", msg.MsgType)

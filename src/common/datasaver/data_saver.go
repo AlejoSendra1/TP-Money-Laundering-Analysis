@@ -42,8 +42,6 @@ type FileRecord struct {
 }
 
 func NewDataSaver(filename string, logsUntilCheckpoint int) (*DataSaver, error) {
-
-	slog.Info("Creando datasasver")
 	filename = filename + RESTORATION_FILE_SUFIX
 	restorationFile, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {

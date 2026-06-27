@@ -41,8 +41,8 @@ type CounterQ2Config struct {
 }
 
 type bankEntry struct {
-	amount  float64
-	account string
+	Amount  float64 `json:"amont"`
+	Account string  `json:"account"`
 }
 
 // struct usado para el guardado de checkpoints y recuperacion de datos
@@ -303,6 +303,7 @@ func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{})
 
 // processBatch updates in-memory state: keeps max-amount entry per bank.
 func (counter *CounterQ2) processBatch(clientID int64, data []interface{}) error {
+	slog.Info("dato recibido", "val", data)
 	transactions, err := inner.DeserializeTransactionBatch(data)
 	if err != nil {
 		slog.Error("While deserializing transactions from message", "err", err, "clientID", clientID)
@@ -319,8 +320,8 @@ func (counter *CounterQ2) processBatch(clientID int64, data []interface{}) error
 	}
 	for _, tx := range transactions {
 		prev, exists := banks[tx.FromBank]
-		if !exists || tx.Amount > prev.amount {
-			banks[tx.FromBank] = bankEntry{amount: tx.Amount, account: tx.FromAccount}
+		if !exists || tx.Amount > prev.Amount {
+			banks[tx.FromBank] = bankEntry{Amount: tx.Amount, Account: tx.FromAccount}
 			//slog.Info("New top", "client_id", clientID, "bank", tx.FromBank, "amount", tx.Amount, "account", tx.FromAccount)
 		}
 	}
@@ -384,7 +385,6 @@ func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
 		counter.mutex.Unlock()
 		return nil
 	}
-	slog.Info("SE PUEDE ENVIAR EOF")
 	banks := counter.topByClient[clientID]
 	delete(counter.topByClient, clientID)
 	delete(counter.eofCounter, clientID)
@@ -393,8 +393,6 @@ func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
 	if err := counter.sendData(clientID, banks); err != nil {
 		return err
 	}
-	datasaver.Crash(datasaver.CrashAfterSendData) // para testear caida
-	slog.Info("ENVIANDO EOF")
 	return counter.sendEOF(clientID)
 }
 
@@ -406,8 +404,8 @@ func (counter *CounterQ2) sendData(clientID int64, banks map[int]bankEntry) erro
 		idx := getJoinerIndex(fmt.Sprintf("%d", bankCode), counter.config.JoinAmount)
 		shards[idx] = append(shards[idx], transaction.MaxBankTransaction{
 			BankCode: bankCode,
-			Account:  entry.account,
-			Amount:   entry.amount,
+			Account:  entry.Account,
+			Amount:   entry.Amount,
 		})
 	}
 
