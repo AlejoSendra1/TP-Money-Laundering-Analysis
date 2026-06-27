@@ -34,10 +34,10 @@ scale:
 clients:
   # client_0
   - batch_size: 200
-    input_file: "/datasets/LI-Small_Trans.csv"
+    input_file: "/datasets/input_0.csv"
   # client_1
   - batch_size: 200
-    input_file: "/datasets/LI-Small_Trans.csv"
+    input_file: "/datasets/input_0.csv"
   # ...
   # client_N
   # ...

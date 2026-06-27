@@ -143,7 +143,7 @@ func (joinQ2 *JoinQ2) handleMessage(msg middleware.Message, ack, nack func()) {
 
 // processBatch updates in-memory state: keeps max-amount entry per bank.
 func (joinQ2 *JoinQ2) processBatch(clientID int64, data []interface{}) error {
-	slog.Info("dato recibido", "val", data)
+	//slog.Info("dato recibido", "val", data)
 
 	records, err := inner.DeserializeMaxBankTransactionMessage(data)
 	if err != nil {
@@ -159,6 +159,10 @@ func (joinQ2 *JoinQ2) processBatch(clientID int64, data []interface{}) error {
 		prev, exists := banks[record.BankCode]
 		if !exists || record.Amount > prev.amount {
 			banks[record.BankCode] = bankEntry{amount: record.Amount, account: record.Account}
+		} else if record.Amount == prev.amount {
+			if record.Account > prev.account {
+				banks[record.BankCode] = bankEntry{amount: record.Amount, account: record.Account}
+			}
 		}
 	}
 	return nil
@@ -217,7 +221,14 @@ func (joinQ2 *JoinQ2) flushClient(clientID int64) error {
 		})
 	}
 	batch_utils.SortBatch(rows, func(a, b transaction.MaxBankTransaction) bool {
-		return a.Amount > b.Amount
+		if a.Amount > b.Amount {
+			return a.Amount > b.Amount
+		} else if a.Amount == b.Amount {
+			if a.BankCode > b.BankCode {
+				return a.BankCode > b.BankCode
+			}
+		}
+		return false
 	})
 
 	// Register the flush intent before sending anything.  If we crash before

@@ -303,7 +303,7 @@ func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{})
 
 // processBatch updates in-memory state: keeps max-amount entry per bank.
 func (counter *CounterQ2) processBatch(clientID int64, data []interface{}) error {
-	slog.Info("dato recibido", "val", data)
+	//slog.Info("dato recibido", "val", data)
 	transactions, err := inner.DeserializeTransactionBatch(data)
 	if err != nil {
 		slog.Error("While deserializing transactions from message", "err", err, "clientID", clientID)
@@ -318,11 +318,16 @@ func (counter *CounterQ2) processBatch(clientID int64, data []interface{}) error
 		counter.topByClient[clientID] = banks
 		counter.eofCounter[clientID] = make([]string, 0, 5)
 	}
+
 	for _, tx := range transactions {
 		prev, exists := banks[tx.FromBank]
 		if !exists || tx.Amount > prev.Amount {
 			banks[tx.FromBank] = bankEntry{Amount: tx.Amount, Account: tx.FromAccount}
 			//slog.Info("New top", "client_id", clientID, "bank", tx.FromBank, "amount", tx.Amount, "account", tx.FromAccount)
+		} else if tx.Amount == prev.Amount {
+			if tx.FromAccount > prev.Account {
+				banks[tx.FromBank] = bankEntry{Amount: tx.Amount, Account: tx.FromAccount}
+			}
 		}
 	}
 

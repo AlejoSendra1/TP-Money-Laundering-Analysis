@@ -5,9 +5,6 @@ chaos_monkey:
   # Contenedores especificos a atacar
   # Si esta vacia la lista, atacará a cualquier contenedor (que no esté excluido)
   target_containers:
-    - "q2_counter"
-    - "q2_join"
-    - "usd_filter"
 
   # Contenedores que se ignoran
   excluded_containers:
