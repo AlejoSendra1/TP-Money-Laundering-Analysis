@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/heatbeat"
@@ -295,9 +294,6 @@ func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *
 }
 
 func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID int64, data []interface{}) error {
-	if transactionsSaver.config.Id == 0 {
-		slog.Info("Procesando EOFFFFFFF")
-	}
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
@@ -306,9 +302,6 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
 	if clientState == nil {
-		if transactionsSaver.config.Id == 0 {
-			slog.Info("terminando de procesar el EOFFFFFFF")
-		}
 		// Clienta ya finalizado
 		return nil
 	}
@@ -318,9 +311,6 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 			"clientID", clientID,
 			"receivedEOFCount", transactionsSaver.eofCounter[clientID],
 			"expectedEOFCount", transactionsSaver.config.DateFilterAmount)
-		if transactionsSaver.config.Id == 0 {
-			slog.Info("terminando de procesar el EOFFFFFFF")
-		}
 		return nil
 	}
 
@@ -330,9 +320,6 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 		}
 	} else {
 		slog.Info("Received client EOF, but cannot send because disk has not been flushed yet")
-	}
-	if transactionsSaver.config.Id == 0 {
-		slog.Info("terminando de procesar el EOFFFFFFF")
 	}
 	return nil
 }
@@ -362,15 +349,7 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 	if clientState.ShouldBuffData() {
 		return clientState.Storage.StoreTransactions(transactions)
 	}
-	if transactionsSaver.config.Id == 0 {
-		slog.Info("EnviaaAAAAAAnDO")
-		time.Sleep(2 * time.Second)
-	}
-	err := transactionsSaver.sendToOutput(clientID, transactions)
-	if transactionsSaver.config.Id == 0 {
-		slog.Info("terminando de enviaaaaa")
-	}
-	return err
+	return transactionsSaver.sendToOutput(clientID, transactions)
 }
 
 func (transactionsSaver *TransactionsSaver) sentEOF(clientID int64) error {
