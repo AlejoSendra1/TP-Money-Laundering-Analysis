@@ -76,7 +76,7 @@ func (ds *DataSaver) Save(content any, w worker.Worker) {
 	// gestion del checkpoint
 	ds.logCounter++
 	if ds.logCounter >= ds.logsUntilCheckpoint {
-		slog.Info("Guardando checkpoint")
+		slog.Debug("Guardando checkpoint")
 		ds.logCounter = 0
 		ds.SaveCheckpoint(w.GetCheckpointData())
 		//	Crash(CrashAfterCheckpoint) // para testing

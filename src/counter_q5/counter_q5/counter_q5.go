@@ -116,7 +116,7 @@ func (counter *CounterQ5) Restaurate() error {
 		if checkpoint.Deduplicator != nil {
 			counter.deduplicator = checkpoint.Deduplicator
 		}
-		slog.Info("Done restaurating counter_q5 from checkpoint",
+		slog.Debug("Done restaurating counter_q5 from checkpoint",
 			"countByClient", counter.countByClient,
 			"eofCountByClient", counter.eofCountByClient,
 			"finishedClients", counter.finishedClients,
@@ -194,7 +194,7 @@ func (counter *CounterQ5) handleEOF(clientID int64, data []interface{}) error {
 		slog.Error("Deserializing EOR", "err", err, "client_id", clientID)
 		return err
 	}
-	slog.Info("EOF received from cache", "client_id", clientID, "sender", sender)
+	slog.Debug("EOF received from cache", "client_id", clientID, "sender", sender)
 	return counter.handleEOFLogic(clientID, sender)
 }
 

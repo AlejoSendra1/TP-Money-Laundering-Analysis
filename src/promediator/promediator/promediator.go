@@ -193,11 +193,11 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 	// Envio la notificacion a q3 amount filter
 	msgToSend, err := inner.SerializeNotificationAvg(clientID, false, fmt.Sprintf("%s_%d", promediator.config.PromediatorPrefix, promediator.config.Id))
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := promediator.outputExchange.Send(*msgToSend); err != nil {
-		slog.Info("While sending EOF message to promediator", "err", err, "clientID", clientID)
+		slog.Error("While sending EOF message to promediator", "err", err, "clientID", clientID)
 		return err
 	}
 	slog.Info("Sent EOF message to q3 amount filter", "clientID", clientID)
@@ -264,7 +264,7 @@ func (promediator *Promediator) Restaurate() error {
 		promediator.eofCounter = checkpoint.EofCounter
 		promediator.deduplicator = checkpoint.Deduplicator
 		promediator.finishedClients = checkpoint.FinishedClients
-		slog.Info("State restaurated",
+		slog.Debug("State restaurated",
 			"paymentFormatAvg", promediator.paymentFormatAvg,
 			"eofCounter", promediator.eofCounter,
 			"deduplicator", promediator.deduplicator,

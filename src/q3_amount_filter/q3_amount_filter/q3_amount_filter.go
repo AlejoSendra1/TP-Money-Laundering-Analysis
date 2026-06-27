@@ -135,7 +135,7 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 }
 
 func (q3AmountFilter *Q3AmountFilter) GetCheckpointData() any {
-	slog.Info("State saved",
+	slog.Debug("State saved",
 		"eofCounterAvg", q3AmountFilter.eofCounterAvg,
 		"eofCounterTs", q3AmountFilter.eofCounterTs,
 		"averages", q3AmountFilter.averages,
@@ -243,7 +243,7 @@ func (q3AmountFilter *Q3AmountFilter) handleNotificationAverageWrapper(clientID 
 		return err
 	}
 	if err = q3AmountFilter.handlePromediatorEndOfRecordMessage(clientID, sender); err != nil {
-		slog.Info("While handling end of record message", "err", err, "clientID", clientID)
+		slog.Error("While handling end of record message", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -252,7 +252,7 @@ func (q3AmountFilter *Q3AmountFilter) handleNotificationAverageWrapper(clientID 
 func (q3AmountFilter *Q3AmountFilter) handlePaymentFormatAverageWrapper(clientID int64, data []interface{}) error {
 	paymentFormatAverageRecords, err := inner.DeserializePaymentFormatAverageMessage(data)
 	if err != nil {
-		slog.Info("While deserializing message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing message", "err", err, "clientID", clientID)
 		return err
 	}
 	q3AmountFilter.handlePromediatorDataMessage(paymentFormatAverageRecords, clientID)
@@ -284,11 +284,11 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 		// Envio la notificacion
 		msgToSend, err := inner.SerializeNotificationAvg(clientID, false, fmt.Sprintf("%d", q3AmountFilter.config.Id))
 		if err != nil {
-			slog.Info("While serializing notification message", "err", err, "clientID", clientID)
+			slog.Error("While serializing notification message", "err", err, "clientID", clientID)
 			return err
 		}
 		if err := q3AmountFilter.notificationExchange.Send(*msgToSend); err != nil {
-			slog.Info("While sending notification message", "err", err, "clientID", clientID)
+			slog.Error("While sending notification message", "err", err, "clientID", clientID)
 			return err
 		}
 		slog.Info("Sent notification to transaction saver", "clientID", clientID)
@@ -369,7 +369,7 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionsSaverEndOfRecordsWrapper
 		return err
 	}
 	if err := q3AmountFilter.handleTransactionSaverEndOfRecordMessage(clientID, sender); err != nil {
-		slog.Info("While handling transaction saver EOF", "err", err, "clientID", clientID)
+		slog.Error("While handling transaction saver EOF", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -378,7 +378,7 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionsSaverEndOfRecordsWrapper
 func (q3AmountFilter *Q3AmountFilter) handleThresholdFilteredTransferWrapper(clientID int64, data []interface{}) error {
 	transactionRecords, err := inner.DeserializeThresholdFilteredTransferMessage(data)
 	if err != nil {
-		slog.Info("While deserializing transaction saver message", "err", err, "clientID", clientID)
+		slog.Error("While deserializing transaction saver message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err = q3AmountFilter.handleTransactionSaverDataMessage(transactionRecords, clientID); err != nil {
@@ -392,11 +392,11 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverEndOfRecordMessage(c
 	slog.Info("Received End Of Records message", "clientID", clientID)
 	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := q3AmountFilter.controlExchange.Send(*msg); err != nil {
-		slog.Info("While sending EOF message to other instances", "err", err, "clientID", clientID)
+		slog.Error("While sending EOF message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -509,7 +509,7 @@ func (q3AmountFilter *Q3AmountFilter) Restaurate() error {
 		q3AmountFilter.eofCounterTs = checkpoint.EofCounterTs
 		q3AmountFilter.averages = checkpoint.Averages
 		q3AmountFilter.finishedClients = checkpoint.FinishedClients
-		slog.Info("State restaurated",
+		slog.Debug("State restaurated",
 			"eofCounterAvg", q3AmountFilter.eofCounterAvg,
 			"eofCounterTs", q3AmountFilter.eofCounterTs,
 			"averages", q3AmountFilter.averages,
