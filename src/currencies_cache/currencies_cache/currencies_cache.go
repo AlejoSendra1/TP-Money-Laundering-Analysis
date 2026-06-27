@@ -59,8 +59,8 @@ type CurrenciesCacheConfig struct {
 }
 
 type CheckpointData struct {
-	EofCountByClient map[int64]int          `json:"eofCountByClient"`
-	FinishedClients  batch_utils.Set[int64] `json:"finishedClients"`
+	EofCountByClient map[int64]batch_utils.Set[string] `json:"eofCountByClient"`
+	FinishedClients  batch_utils.Set[int64]            `json:"finishedClients"`
 }
 
 // CurrenciesCache converts PaymentRecord amounts to USD using live exchange rates,
@@ -75,7 +75,7 @@ type CurrenciesCache struct {
 	apiRatesByDate     map[string]map[string]float64
 	apiMutex           sync.RWMutex
 	mu                 sync.Mutex
-	eofCountByClient   map[int64]int
+	eofCountByClient   map[int64]batch_utils.Set[string]
 	finishedClients    batch_utils.Set[int64]
 	heartbeat          *heatbeat.HeartbeatSender
 	dataSaver          *datasaver.DataSaver
@@ -189,7 +189,7 @@ func NewCurrenciesCache(config CurrenciesCacheConfig) (*CurrenciesCache, error) 
 		currencyNameToCode: config.CurrencyNameToCode,
 		bitcoinRates:       bitcoinRates,
 		apiRatesByDate:     make(map[string]map[string]float64),
-		eofCountByClient:   make(map[int64]int),
+		eofCountByClient:   make(map[int64]batch_utils.Set[string]),
 		finishedClients:    make(batch_utils.Set[int64]),
 		heartbeat:          hb,
 		dataSaver:          dataSaver,
@@ -213,6 +213,10 @@ func (currencyCache *CurrenciesCache) Restaurate() error {
 		slog.Info("Restaurating currencies_cache from checkpoint")
 		currencyCache.eofCountByClient = checkpoint.EofCountByClient
 		currencyCache.finishedClients = checkpoint.FinishedClients
+		slog.Info("Currencies cache restored",
+			"eofCountByClient", currencyCache.eofCountByClient,
+			"finishedClients", currencyCache.finishedClients,
+		)
 	}
 
 	var savedMsg middleware.Message
@@ -289,13 +293,18 @@ func (currencyCache *CurrenciesCache) handleTransactionBatch(clientID int64, dat
 	return currencyCache.sendConvertedRecords(clientID, converted)
 }
 
-func (currencyCache *CurrenciesCache) handleEOFFromUpstream(clientID int64, _ []interface{}) error {
+func (currencyCache *CurrenciesCache) handleEOFFromUpstream(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("Deserializing EOR", "err", err, "client_id", clientID)
+		return err
+	}
 	slog.Info("EOF received from upstream, broadcasting to control", "client_id", clientID)
-	return currencyCache.sendControlEOF(clientID)
+	return currencyCache.sendControlEOF(clientID, sender)
 }
 
-func (currencyCache *CurrenciesCache) sendControlEOF(clientID int64) error {
-	msg, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", currencyCache.config.ID))
+func (currencyCache *CurrenciesCache) sendControlEOF(clientID int64, sender string) error {
+	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
 		return fmt.Errorf("serializing control EOF: %w", err)
 	}
@@ -303,12 +312,20 @@ func (currencyCache *CurrenciesCache) sendControlEOF(clientID int64) error {
 }
 
 func (currencyCache *CurrenciesCache) handleEOFLogic(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
+		return err
+	}
 	if currencyCache.finishedClients.Contains(clientID) {
 		slog.Info("Client already finished, ignoring EOF", "client_id", clientID)
 		return nil
 	}
-	currencyCache.eofCountByClient[clientID]++
-	count := currencyCache.eofCountByClient[clientID]
+	if currencyCache.eofCountByClient[clientID] == nil {
+		currencyCache.eofCountByClient[clientID] = batch_utils.NewSet[string]()
+	}
+	currencyCache.eofCountByClient[clientID].Add(sender)
+	count := currencyCache.eofCountByClient[clientID].Size()
 	slog.Info("EOF accumulated", "client_id", clientID, "count", count, "expected", currencyCache.config.FilterAmount)
 	if count < currencyCache.config.FilterAmount {
 		return nil
@@ -343,6 +360,12 @@ func (currencyCache *CurrenciesCache) sendConvertedRecords(clientID int64, conve
 		shards[idx] = append(shards[idx], r)
 	}
 	for idx, batch := range shards {
+		batch_utils.SortBatch(batch, func(a, b transaction.PaymentRecord) bool {
+			if !a.Timestamp.Equal(b.Timestamp) {
+				return a.Timestamp.Before(b.Timestamp)
+			}
+			return a.Amount > b.Amount
+		})
 		outMsg, err := inner.SerializePaymentRecordMessage(clientID, batch)
 		if err != nil {
 			return fmt.Errorf("serializing batch for shard %d: %w", idx, err)
