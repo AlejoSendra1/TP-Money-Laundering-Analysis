@@ -5,7 +5,10 @@ chaos_monkey:
   # Contenedores especificos a atacar
   # Si esta vacia la lista, atacará a cualquier contenedor (que no esté excluido)
   target_containers:
-
+    - "q5_date_filter"
+    - "filter_payment_format"
+    - "currencies_cache"
+    - "counter_q5"
   # Contenedores que se ignoran
   excluded_containers:
     - "rabbitmq"

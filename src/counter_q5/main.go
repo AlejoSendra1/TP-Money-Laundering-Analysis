@@ -69,6 +69,11 @@ func run() int {
 		return 1
 	}
 
+	if err = worker.Restaurate(); err != nil {
+		slog.Error("Initializing counter_q5", "err", err)
+		return 1
+	}
+
 	worker.Run()
 	return 0
 }

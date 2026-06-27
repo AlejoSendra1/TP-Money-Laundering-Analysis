@@ -4,25 +4,25 @@
 scale:
   # Flujo en comun
   usd_filter: 2
-  date_filter: 2
+  date_filter: 0
   
   # Query 1
-  q1_amount_filter: 2
+  q1_amount_filter: 0
   
   # Query 2
-  counter_q2: 2
-  join_q2: 2
+  counter_q2: 0
+  join_q2: 0
   
   # Query 3
-  sum: 2
-  promediator: 2
-  transactions_saver: 2
-  q3_amount_filter: 2
+  sum: 0
+  promediator: 0
+  transactions_saver: 0
+  q3_amount_filter: 0
   
   # Query 4
-  group: 2
-  bridge_matcher: 3
-  q4_join: 3
+  group: 0
+  bridge_matcher: 0
+  q4_join: 0
   
   # Query 5
   q5_date_filter: 2

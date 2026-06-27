@@ -147,6 +147,11 @@ func run() int {
 		return 1
 	}
 
+	if err = worker.Restaurate(); err != nil {
+		slog.Error("Initializing currencies_cache", "err", err)
+		return 1
+	}
+
 	worker.Run()
 	return 0
 }
