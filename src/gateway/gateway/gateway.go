@@ -129,7 +129,7 @@ func (gateway *Gateway) Run() error {
 				c.Conn.Close()
 				c.Conn = conn
 				isAnOldClient = true
-				client = *c
+				client = c
 			}
 		})
 
@@ -167,7 +167,7 @@ func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
 		msgType, err := external.ReadMsgType(client.Conn)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				slog.Info("Client disconnected gracefully", "client", client)
+				slog.Info("Client disconnected", "client", client)
 				return
 			}
 			slog.Error("While reading message type handling client request", "err", err)
@@ -240,7 +240,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 	// Lock corto: Solo buscamos el cliente idóneo en el registro
 	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
 		if c, ok := clients[msg.ClientID]; ok {
-			targetClient = *c
+			targetClient = c
 			found = true
 		}
 	})
