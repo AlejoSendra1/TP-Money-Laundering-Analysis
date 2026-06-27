@@ -81,7 +81,7 @@ func NewQ1AmountFilter(config Q1AmountFilterConfig) (*Q1AmountFilter, error) {
 		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
 	}
 
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "q1_amount_filter", config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q1_amount_filter_%d", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()

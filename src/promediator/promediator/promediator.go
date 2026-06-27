@@ -34,6 +34,7 @@ type CheckpointData struct {
 	PaymentFormatAverage map[int64]map[string]transaction.PaymentFormatAverage `json:"topByClient"`
 	EofCounter           map[int64]batch_utils.Set[string]                     `json:"eofCounter"`
 	Deduplicator         *batch_utils.MultiClientDeduplicator                  `json:"deduplicator"`
+	FinishedClients      batch_utils.Set[int64]                                `json:"finishedClients"`
 }
 
 type Promediator struct {
@@ -45,6 +46,7 @@ type Promediator struct {
 	deduplicator     *batch_utils.MultiClientDeduplicator
 	dataSaver        *datasaver.DataSaver
 	heartbeat        *heatbeat.HeartbeatSender
+	finishedClients  batch_utils.Set[int64]
 }
 
 func NewPromediator(config PromediatorConfig) (*Promediator, error) {
@@ -60,7 +62,7 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		inputExchange.Close()
 		return nil, err
 	}
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", config.PromediatorPrefix, config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/%s_%d", config.PromediatorPrefix, config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +81,7 @@ func NewPromediator(config PromediatorConfig) (*Promediator, error) {
 		eofCounter:       make(map[int64]batch_utils.Set[string]),
 		config:           config,
 		deduplicator:     batch_utils.NewMultiClientDeduplicator(MaxBatchSize),
+		finishedClients:  make(batch_utils.Set[int64]),
 		dataSaver:        dataSaver,
 		heartbeat:        hb,
 	}, nil
@@ -89,6 +92,7 @@ func (promediator *Promediator) GetCheckpointData() any {
 		PaymentFormatAverage: promediator.paymentFormatAvg,
 		EofCounter:           promediator.eofCounter,
 		Deduplicator:         promediator.deduplicator,
+		FinishedClients:      promediator.finishedClients,
 	}
 }
 
@@ -154,14 +158,15 @@ func (promediator *Promediator) handleEndOfRecords(clientID int64, data []interf
 }
 
 func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender string) error {
-	// Verifico si ya recibi todos los EOFs que faltaban
 	slog.Info("Received End Of Records message", "clientID", clientID)
-	if _, ok := promediator.eofCounter[clientID]; !ok {
-		slog.Info(
-			"Received EOF for unknown client; client may have already finished or never sent any data",
-			"clientID", clientID,
-		)
+	if _, isDone := promediator.finishedClients[clientID]; isDone {
+		slog.Info("Ignoring late EOF from client finished", "clientID", clientID)
 		return nil
+	}
+	if _, ok := promediator.eofCounter[clientID]; !ok {
+		slog.Info("EOF arrived before data, initializing state safely", "clientID", clientID)
+		promediator.paymentFormatAvg[clientID] = make(map[string]transaction.PaymentFormatAverage)
+		promediator.eofCounter[clientID] = batch_utils.NewSet[string]()
 	}
 	promediator.eofCounter[clientID].Add(sender)
 	if uint8(promediator.eofCounter[clientID].Size()) != promediator.config.SumAmount {
@@ -198,12 +203,17 @@ func (promediator *Promediator) handleEndOfRecordMessage(clientID int64, sender 
 	slog.Info("Sent EOF message to q3 amount filter", "clientID", clientID)
 	delete(promediator.paymentFormatAvg, clientID)
 	delete(promediator.eofCounter, clientID)
+	promediator.finishedClients.Add(clientID)
 	promediator.deduplicator.RemoveClient(clientID)
 	slog.Info("Cleanup client and finished", "clientID", clientID)
 	return nil
 }
 
 func (promediator *Promediator) handleDataMessage(paymentFormatAverageRecords []transaction.Transaction, clientID int64) error {
+	if _, isDone := promediator.finishedClients[clientID]; isDone {
+		slog.Info("Ignoring late date from client finished", "clientID", clientID)
+		return nil
+	}
 	if _, exist := promediator.paymentFormatAvg[clientID]; !exist {
 		slog.Info("Client new arrived", "clientID", clientID)
 		promediator.paymentFormatAvg[clientID] = make(map[string]transaction.PaymentFormatAverage)
@@ -253,6 +263,13 @@ func (promediator *Promediator) Restaurate() error {
 		promediator.paymentFormatAvg = checkpoint.PaymentFormatAverage
 		promediator.eofCounter = checkpoint.EofCounter
 		promediator.deduplicator = checkpoint.Deduplicator
+		promediator.finishedClients = checkpoint.FinishedClients
+		slog.Info("State restaurated",
+			"paymentFormatAvg", promediator.paymentFormatAvg,
+			"eofCounter", promediator.eofCounter,
+			"deduplicator", promediator.deduplicator,
+			"finishedClients", promediator.finishedClients,
+		)
 	}
 
 	var savedDataVar middleware.Message

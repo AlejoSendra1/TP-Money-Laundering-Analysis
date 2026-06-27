@@ -94,7 +94,7 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 		return nil, err
 	}
 
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "transactions_saver", config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/transactions_saver_%d", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputQueue.Close()
 		outputQueue.Close()
@@ -167,6 +167,8 @@ func (transactionsSaver *TransactionsSaver) Run() {
 }
 
 func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middleware.Message, ack, nack func()) {
+	transactionsSaver.mu.Lock()
+	defer transactionsSaver.mu.Unlock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -218,6 +220,7 @@ func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID in
 }
 
 func (transactionsSaver *TransactionsSaver) handleNotificationMessage(middlewareMsg *middleware.Message, ack, nack func()) {
+	transactionsSaver.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -225,8 +228,10 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessage(middleware
 		})
 	if err != nil {
 		nack()
+		transactionsSaver.mu.Unlock()
 		return
 	}
+	transactionsSaver.mu.Unlock()
 	transactionsSaver.muDataSaver.Lock()
 	transactionsSaver.dataSaver.Save(middlewareMsg, transactionsSaver)
 	transactionsSaver.muDataSaver.Unlock()
@@ -270,6 +275,7 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessageWrapper(cli
 }
 
 func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	transactionsSaver.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -277,8 +283,10 @@ func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *
 		})
 	if err != nil {
 		nack()
+		transactionsSaver.mu.Unlock()
 		return
 	}
+	transactionsSaver.mu.Unlock()
 	transactionsSaver.muDataSaver.Lock()
 	transactionsSaver.dataSaver.Save(middlewareMsg, transactionsSaver)
 	transactionsSaver.muDataSaver.Unlock()
@@ -297,17 +305,14 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 		// Clienta ya finalizado
 		return nil
 	}
-	transactionsSaver.mu.Lock()
 	transactionsSaver.eofCounter[clientID].Add(sender)
 	if transactionsSaver.eofCounter[clientID].Size() != transactionsSaver.config.DateFilterAmount {
 		slog.Info("Dont send EOF because still waiting for more EOFs",
 			"clientID", clientID,
 			"receivedEOFCount", transactionsSaver.eofCounter[clientID],
 			"expectedEOFCount", transactionsSaver.config.DateFilterAmount)
-		transactionsSaver.mu.Unlock()
 		return nil
 	}
-	transactionsSaver.mu.Unlock()
 
 	if clientState.MarkEOFAndCheckFinish() {
 		if err = transactionsSaver.finishClient(clientID); err != nil {
@@ -375,8 +380,7 @@ func (transactionsSaver *TransactionsSaver) sendToOutput(clientID int64, txs []t
 }
 
 func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int64) *ClientState {
-	transactionsSaver.mu.Lock()
-	defer transactionsSaver.mu.Unlock()
+
 	if _, isDone := transactionsSaver.finishedClients[clientID]; isDone {
 		slog.Info("Client has already done", "clientID", clientID)
 		return nil
@@ -393,8 +397,6 @@ func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int6
 }
 
 func (transactionsSaver *TransactionsSaver) cleanupClientState(clientID int64) error {
-	transactionsSaver.mu.Lock()
-	defer transactionsSaver.mu.Unlock()
 
 	clientState, exists := transactionsSaver.clientStates[clientID]
 	if !exists {

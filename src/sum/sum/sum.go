@@ -85,7 +85,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 		return nil, err
 	}
 
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_%s_%d", "sum", config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/sum_%d", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputQueue.Close()
 		outputExchange.Close()
@@ -146,6 +146,8 @@ func (sum *Sum) Run() {
 }
 
 func (sum *Sum) handleMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	sum.mu.Lock()
+	defer sum.mu.Unlock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -202,12 +204,10 @@ func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, 
 	}
 
 	// Verifico si es un nuevo cliente o no
-	sum.mu.Lock()
 	if _, exist := sum.eofCounter[clientID]; !exist {
 		slog.Info("Client new arrived", "clientID", clientID)
 		sum.eofCounter[clientID] = batch_utils.NewSet[string]()
 	}
-	sum.mu.Unlock()
 
 	// Envio al promediator
 	for paymentFormat, transactions := range transactionsByPaymentFormat {
@@ -230,6 +230,7 @@ func (sum *Sum) handleDataMessage(transactionRecords []transaction.Transaction, 
 }
 
 func (sum *Sum) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	sum.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -237,8 +238,10 @@ func (sum *Sum) handleControlMessage(middlewareMsg *middleware.Message, ack func
 		})
 	if err != nil {
 		nack()
+		sum.mu.Unlock()
 		return
 	}
+	sum.mu.Unlock()
 	sum.dataSaver.Save(middlewareMsg, sum)
 	ack()
 }
@@ -249,9 +252,7 @@ func (sum *Sum) handleControlMessageWrapper(clientID int64, data []interface{}) 
 		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
 		return err
 	}
-	sum.mu.Lock()
 	if sum.finishedClients.Contains(clientID) {
-		sum.mu.Unlock()
 		slog.Info("Client has already done", "clientID", clientID)
 		return nil
 	}
@@ -264,12 +265,10 @@ func (sum *Sum) handleControlMessageWrapper(clientID int64, data []interface{}) 
 	sum.eofCounter[clientID].Add(sender)
 	if uint8(sum.eofCounter[clientID].Size()) != sum.config.DateFilterAmount {
 		slog.Debug("Waiting for remaining EOFs")
-		sum.mu.Unlock()
 		return nil
 	}
 	delete(sum.eofCounter, clientID)
 	sum.finishedClients.Add(clientID)
-	sum.mu.Unlock()
 
 	msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", sum.config.Id))
 	if err != nil {

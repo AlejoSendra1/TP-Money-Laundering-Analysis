@@ -99,7 +99,7 @@ func NewQ3AmountFilter(config Q3AmountFilterConfig) (*Q3AmountFilter, error) {
 		return nil, err
 	}
 
-	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence_q3_amount_filter_%d", config.Id), LogsUntilCheckpoint)
+	dataSaver, err := datasaver.NewDataSaver(fmt.Sprintf("/persistence/q3_amount_filter_%d", config.Id), LogsUntilCheckpoint)
 	if err != nil {
 		inputPromediator.Close()
 		inputTransactionSaver.Close()
@@ -178,6 +178,7 @@ func (q3AmountFilter *Q3AmountFilter) Run() {
 }
 
 func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	q3AmountFilter.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -187,8 +188,10 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(middlewareMsg *mi
 	)
 	if err != nil {
 		nack()
+		q3AmountFilter.mu.Unlock()
 		return
 	}
+	q3AmountFilter.mu.Unlock()
 	q3AmountFilter.muDataSaver.Lock()
 	q3AmountFilter.dataSaver.Save(middlewareMsg, q3AmountFilter)
 	q3AmountFilter.muDataSaver.Unlock()
@@ -196,6 +199,7 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorMessage(middlewareMsg *mi
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	q3AmountFilter.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -204,8 +208,10 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middle
 	)
 	if err != nil {
 		nack()
+		q3AmountFilter.mu.Unlock()
 		return
 	}
+	q3AmountFilter.mu.Unlock()
 	q3AmountFilter.muDataSaver.Lock()
 	q3AmountFilter.dataSaver.Save(middlewareMsg, q3AmountFilter)
 	q3AmountFilter.muDataSaver.Unlock()
@@ -213,6 +219,7 @@ func (q3AmountFilter *Q3AmountFilter) handleControlMessage(middlewareMsg *middle
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	q3AmountFilter.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -222,8 +229,10 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverMessage(middlewareMs
 	)
 	if err != nil {
 		nack()
+		q3AmountFilter.mu.Unlock()
 		return
 	}
+	q3AmountFilter.mu.Unlock()
 	ack()
 }
 
@@ -253,26 +262,23 @@ func (q3AmountFilter *Q3AmountFilter) handlePaymentFormatAverageWrapper(clientID
 func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(clientID int64, sender string) error {
 	slog.Info("Averages EOF arrived from promediator", "clientID", clientID)
 	needNotify := false
-	q3AmountFilter.mu.Lock()
+
 	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
 		slog.Info("Client has already done", "clientID", clientID)
-		q3AmountFilter.mu.Unlock()
-		return nil
-	}
-	_, ok := q3AmountFilter.eofCounterAvg[clientID]
-	q3AmountFilter.mu.Unlock()
 
-	if !ok {
-		// Si me llego un NotificationAvg de promediator que no tengo registro, es porque me mando tarde la data o porque nunca me mando
-		slog.Warn("Notification avg arrived from promediator, but wont process", "clientID", clientID)
 		return nil
 	}
-	q3AmountFilter.mu.Lock()
+	if _, ok := q3AmountFilter.eofCounterAvg[clientID]; !ok {
+		slog.Info("EOF arrived before data, initializing state safely", "clientID", clientID)
+		q3AmountFilter.averages[clientID] = make(map[string]float64)
+		q3AmountFilter.eofCounterAvg[clientID] = batch_utils.NewSet[string]()
+		q3AmountFilter.eofCounterTs[clientID] = batch_utils.NewSet[string]()
+	}
+
 	q3AmountFilter.eofCounterAvg[clientID].Add(sender)
 	if q3AmountFilter.eofCounterAvg[clientID].Size() == q3AmountFilter.config.PromediatorAmount {
 		needNotify = true
 	}
-	q3AmountFilter.mu.Unlock()
 
 	if needNotify {
 		// Envio la notificacion
@@ -295,10 +301,10 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorEndOfRecordMessage(client
 
 func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormatAverageRecords []transaction.PaymentFormatAverage, clientID int64) {
 	// Ensure initialization happens under lock to avoid races
-	q3AmountFilter.mu.Lock()
+
 	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
 		slog.Info("Client has already done", "clientID", clientID)
-		q3AmountFilter.mu.Unlock()
+
 		return
 	}
 	if _, ok := q3AmountFilter.averages[clientID]; !ok {
@@ -310,7 +316,7 @@ func (q3AmountFilter *Q3AmountFilter) handlePromediatorDataMessage(paymentFormat
 	for _, rec := range paymentFormatAverageRecords {
 		q3AmountFilter.averages[clientID][rec.PaymentFormat] = rec.Average / 100.0
 	}
-	q3AmountFilter.mu.Unlock()
+
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleControlEndOfRecodsWrapper(clientID int64, data []interface{}) error {
@@ -319,27 +325,23 @@ func (q3AmountFilter *Q3AmountFilter) handleControlEndOfRecodsWrapper(clientID i
 		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
 		return err
 	}
-	q3AmountFilter.mu.Lock()
+
 	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
 		slog.Info("Client has already done", "clientID", clientID)
-		q3AmountFilter.mu.Unlock()
+
 		return nil
 	}
-	_, ok := q3AmountFilter.eofCounterTs[clientID]
-	q3AmountFilter.mu.Unlock()
 
-	if !ok {
-		// Si me llego un EOF de un cliente que no tengo registro, es porque me mando tarde la data
-		slog.Warn("New client arrived from control message, but dont have data, wont process", "clientID", clientID)
-		return nil
+	if _, ok := q3AmountFilter.eofCounterTs[clientID]; !ok {
+		slog.Info("Control EOF arrived before data, initializing state safely", "clientID", clientID)
+		q3AmountFilter.eofCounterTs[clientID] = batch_utils.NewSet[string]()
 	}
 	shouldSendEOF := false
-	q3AmountFilter.mu.Lock()
+
 	q3AmountFilter.eofCounterTs[clientID].Add(sender)
 	if q3AmountFilter.eofCounterTs[clientID].Size() == q3AmountFilter.config.TransactionsSaverAmount {
 		shouldSendEOF = true
 	}
-	q3AmountFilter.mu.Unlock()
 
 	if shouldSendEOF {
 		// para avisar q no hay mas nada
@@ -401,12 +403,14 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverEndOfRecordMessage(c
 }
 
 func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverDataMessage(transactionRecords []transaction.ThresholdFilteredTransfer, clientID int64) error {
-	q3AmountFilter.mu.Lock()
+	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
+		slog.Info("Ignoring late date from client already finished", "clientID", clientID)
+		return nil
+	}
 	_, ok := q3AmountFilter.averages[clientID]
-	q3AmountFilter.mu.Unlock()
 
 	if !ok {
-		slog.Info("New client arrived from transaction saver without averages", "clientID", clientID)
+		slog.Warn("New client arrived from transaction saver without averages", "clientID", clientID)
 		return fmt.Errorf("transactions arrived for client %d before receiving averages", clientID)
 	}
 
@@ -417,15 +421,15 @@ func (q3AmountFilter *Q3AmountFilter) handleTransactionSaverDataMessage(transact
 }
 
 func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []transaction.ThresholdFilteredTransfer, clientID int64) error {
-	q3AmountFilter.mu.Lock()
+
 	if _, isDone := q3AmountFilter.finishedClients[clientID]; isDone {
 		slog.Info("Client has already done", "clientID", clientID)
-		q3AmountFilter.mu.Unlock()
+
 		return nil
 	}
 	clientAverages, ok := q3AmountFilter.averages[clientID]
 	if !ok {
-		q3AmountFilter.mu.Unlock()
+
 		slog.Info("No averages for client during processing", "clientID", clientID)
 		return fmt.Errorf("no averages for client %d", clientID)
 	}
@@ -433,7 +437,6 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 	for k, v := range clientAverages {
 		averagesCopy[k] = v
 	}
-	q3AmountFilter.mu.Unlock()
 
 	transactions := make([]transaction.ThresholdFilteredTransfer, 0, len(transactionsRecord))
 	for _, tx := range transactionsRecord {
@@ -472,8 +475,7 @@ func (q3AmountFilter *Q3AmountFilter) processTransactions(transactionsRecord []t
 }
 
 func (q3AmountFilter *Q3AmountFilter) cleanupClient(clientID int64) {
-	q3AmountFilter.mu.Lock()
-	defer q3AmountFilter.mu.Unlock()
+
 	delete(q3AmountFilter.averages, clientID)
 	delete(q3AmountFilter.eofCounterAvg, clientID)
 	delete(q3AmountFilter.eofCounterTs, clientID)
