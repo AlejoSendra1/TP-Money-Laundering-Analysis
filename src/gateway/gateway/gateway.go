@@ -123,7 +123,7 @@ func (gateway *Gateway) Run() error {
 		}
 		// si el cliente se reconecto solo cambiamos el socket del registro para enviarle las respuestas
 		isAnOldClient := false
-		var client clientregistry.ClientState
+		var client *clientregistry.ClientState
 		gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
 			if c, ok := clients[clientId]; ok {
 				c.Conn.Close()
@@ -137,7 +137,7 @@ func (gateway *Gateway) Run() error {
 			handler := messagehandler.NewMessageHandler(clientId, eorMap)
 			NewClient := clientregistry.ClientState{Conn: conn, Handler: &handler, AckCh: make(chan struct{}, 1)}
 			gateway.registry.Add(clientId, NewClient)
-			go gateway.handleClientRequest(NewClient)
+			go gateway.handleClientRequest(&NewClient)
 		} else {
 			go gateway.handleClientRequest(client)
 		}
@@ -162,12 +162,12 @@ func (gateway *Gateway) handleSignals() {
 	gateway.listener.Close()
 }
 
-func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
+func (gateway *Gateway) handleClientRequest(client *clientregistry.ClientState) {
 	for {
 		msgType, err := external.ReadMsgType(client.Conn)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				slog.Info("Client disconnected", "client", client)
+				slog.Info("Client disconnected", "client", *client)
 				return
 			}
 			slog.Error("While reading message type handling client request", "err", err)
@@ -181,7 +181,7 @@ func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
 			}
 
 		case external.EndOfRecords:
-			slog.Info("Received EOF msg", "client", client)
+			slog.Info("Received EOF msg", "client", *client)
 			if err := gateway.handleEndOfRecordsMessage(client); err != nil {
 				slog.Info("While handling end of records message", "err", err)
 				return
@@ -215,7 +215,7 @@ func (gateway *Gateway) handleClientRequest(client clientregistry.ClientState) {
 
 // waitForClientAck bloquea hasta que el cliente confirme (via external.ResponseAck)
 // que recibió la última respuesta que le mandamos, o hasta que se cumpla el timeout.
-func (gateway *Gateway) waitForClientAck(client clientregistry.ClientState) error {
+func (gateway *Gateway) waitForClientAck(client *clientregistry.ClientState) error {
 	select {
 	case <-client.AckCh:
 		return nil
@@ -225,7 +225,7 @@ func (gateway *Gateway) waitForClientAck(client clientregistry.ClientState) erro
 }
 
 func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, ack func(), nack func()) {
-	var targetClient clientregistry.ClientState
+	var targetClient *clientregistry.ClientState
 	found := false
 
 	// Deserializamos el mensaje de la cola antes de bloquear nada
@@ -247,6 +247,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 
 	if !found {
 		slog.Warn("No client handler could process this message", "clientID", msg.ClientID)
+		slog.Info("Los contenidos del msg no procesado son", "val", msg)
 		ack()
 		return
 	}

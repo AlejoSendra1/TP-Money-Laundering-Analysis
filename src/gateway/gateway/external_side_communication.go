@@ -71,7 +71,7 @@ func (gateway *Gateway) getNewClientId() int64 {
 
 // ------------------------  Handlers de msgs recibidos ---------------------------------------------------------------
 
-func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.ClientState) error {
+func (gateway *Gateway) handleTransactionBatchMessage(client *clientregistry.ClientState) error {
 	transactions, secNum, err := external.ReadTransactionBatch(client.Conn)
 	if err != nil {
 		slog.Error("While reading transaction batch", "err", err)
@@ -96,7 +96,7 @@ func (gateway *Gateway) handleTransactionBatchMessage(client clientregistry.Clie
 	return nil
 }
 
-func (gateway *Gateway) handleEndOfRecordsMessage(client clientregistry.ClientState) error {
+func (gateway *Gateway) handleEndOfRecordsMessage(client *clientregistry.ClientState) error {
 	slog.Info("Received END_OF_RECORDS message")
 
 	if gateway.registry.UserSentEOF(client.Handler.UserId) {
@@ -125,7 +125,7 @@ func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
 	return nil
 }
 
-func (gateway *Gateway) mustProcess(client clientregistry.ClientState, secNum int64) bool {
+func (gateway *Gateway) mustProcess(client *clientregistry.ClientState, secNum int64) bool {
 	secuenceNumberToReceive := gateway.registry.GetSecuenceNumber(client.Handler.UserId)
 	if secNum != secuenceNumberToReceive {
 		slog.Error("Un mensaje recibido se ha salteado uno o mas numeros de secuencia", "Recibido", secNum, "Esperado", secuenceNumberToReceive)

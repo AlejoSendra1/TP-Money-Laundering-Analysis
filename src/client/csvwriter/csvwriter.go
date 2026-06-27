@@ -23,7 +23,6 @@ var queryHeaders = map[string][]string{
 	"q2": {
 		"from_bank",
 		"account",
-		"bank_name",
 		"amount_paid",
 	},
 	"q3": {
