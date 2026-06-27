@@ -123,7 +123,7 @@ func (join *Join) handleMessage(middlewareMsg *middleware.Message, ack func(), n
 }
 
 func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
-	slog.Info("Received msg", "type", "EOF")
+	slog.Debug("Received msg", "type", "EOF")
 	datasaver.Crash(datasaver.CrashBeforeEOF)
 
 	_, sender, err := inner.DeserializeEOR(data)
@@ -131,7 +131,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) e
 		slog.Error("While deserializing EOR msg", "err", err, "clientID", clientID)
 		return err
 	}
-	slog.Info("Received EOF record message from ", "clientID", clientID, "sender", sender)
+	slog.Debug("Received EOF record message from ", "clientID", clientID, "sender", sender)
 
 	join.updateClientEORCondition(clientID, sender)
 	if !join.assertClientEORCondition(clientID) {
@@ -146,7 +146,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) e
 
 	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query4, fmt.Sprintf("%d", join.config.ID)) // TO DO agregar otra var de entorno y para group tmb
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 
@@ -163,7 +163,7 @@ func (join *Join) handleEndOfRecordMessage(clientID int64, data []interface{}) e
 func (join *Join) handlePossibleFraudDestinationsMessage(clientID int64, data []interface{}) error {
 	source, possibleBridgesAndSinks, err := inner.DeserializePossibleFraudDestinations(data)
 	if err != nil {
-		slog.Info("While serializing data message", "err", err, "clientID", clientID)
+		slog.Error("While serializing data message", "err", err, "clientID", clientID)
 		return err
 	}
 

@@ -40,7 +40,7 @@ func (g *Group) Restaurate() error {
 
 	for {
 		thereIsLogs, err = g.datasaver.GetDataFromLogs(&savedDataVar)
-		slog.Info("Dato sacado del log", "val", savedDataVar)
+		slog.Debug("Dato sacado del log", "val", savedDataVar)
 		if err != nil { // habria q modificar para retrys
 			return err
 		}

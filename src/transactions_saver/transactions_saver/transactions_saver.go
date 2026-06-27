@@ -127,7 +127,7 @@ func NewTransactionsSaver(config TransactionsSaverConfig) (*TransactionsSaver, e
 }
 
 func (transactionsSaver *TransactionsSaver) GetCheckpointData() any {
-	slog.Info("State saved",
+	slog.Debug("State saved",
 		"clientStates", transactionsSaver.clientStates,
 		"eofCounter", transactionsSaver.eofCounter,
 		"finishedClients", transactionsSaver.finishedClients,
@@ -209,11 +209,11 @@ func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID in
 	slog.Info("Received End Of Records message", "clientID", clientID)
 	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := transactionsSaver.controlExchange.Send(*msg); err != nil {
-		slog.Info("While sending EOF message to other instances", "err", err, "clientID", clientID)
+		slog.Error("While sending EOF message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil
@@ -245,7 +245,7 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessageWrapper(cli
 		return err
 	}
 
-	slog.Info("Received notification message", "clientID", clientID)
+	slog.Debug("Received notification message", "clientID", clientID)
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
 	if clientState == nil {
 		// Clienta ya finalizado
@@ -307,7 +307,7 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 	}
 	transactionsSaver.eofCounter[clientID].Add(sender)
 	if transactionsSaver.eofCounter[clientID].Size() != transactionsSaver.config.DateFilterAmount {
-		slog.Info("Dont send EOF because still waiting for more EOFs",
+		slog.Debug("Dont send EOF because still waiting for more EOFs",
 			"clientID", clientID,
 			"receivedEOFCount", transactionsSaver.eofCounter[clientID],
 			"expectedEOFCount", transactionsSaver.config.DateFilterAmount)
@@ -355,11 +355,11 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 func (transactionsSaver *TransactionsSaver) sentEOF(clientID int64) error {
 	msgToSend, err := inner.SerializeEOR(clientID, false, fmt.Sprintf("%d", transactionsSaver.config.Id))
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := transactionsSaver.outputQueue.Send(*msgToSend); err != nil {
-		slog.Info("While sending EOF message to q3 amount filter", "err", err, "clientID", clientID)
+		slog.Error("While sending EOF message to q3 amount filter", "err", err, "clientID", clientID)
 		return err
 	}
 	slog.Info("Client processing completed - EOF sent", "clientID", clientID)
@@ -437,7 +437,7 @@ func (transactionsSaver *TransactionsSaver) Restaurate() error {
 		for _, state := range transactionsSaver.clientStates {
 			state.Storage = NewStorage(state.StorageFilePath, state.StorageFileName)
 		}
-		slog.Info("State restaured", "clientStates", checkpoint.ClientStates, "eof", checkpoint.EofCounter, "finishedClients", checkpoint.FinishedClients)
+		slog.Debug("State restaured", "clientStates", checkpoint.ClientStates, "eof", checkpoint.EofCounter, "finishedClients", checkpoint.FinishedClients)
 	}
 	var savedDataVar middleware.Message
 	var thereIsLogs bool
