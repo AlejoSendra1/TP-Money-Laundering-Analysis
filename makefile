@@ -4,8 +4,8 @@ PWD := $(shell pwd)
 up:
 	mkdir -p output
 	mkdir -p persistence
-	rm -rf output/*
-	rm -rf persistence/*
+	sudo rm -rf output/*
+	sudo rm -rf persistence/*
 	COMPOSE_HTTP_TIMEOUT=300 docker compose -f docker-compose.yaml up --build --remove-orphans --detach
 	docker compose -f docker-compose.yaml logs --follow
 .PHONY: up
