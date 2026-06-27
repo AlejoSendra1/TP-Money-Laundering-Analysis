@@ -179,10 +179,6 @@ func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()
 }
 
 func (counter *CounterQ5) handleTransactionBatch(clientID int64, data []interface{}) error {
-	if counter.finishedClients.Contains(clientID) {
-		slog.Info("Ignorando data retrasada de cliente finalizado", "client_id", clientID)
-		return nil
-	}
 	records, err := inner.DeserializePaymentRecordBatch(data)
 	if err != nil {
 		slog.Error("Deserializing payment record batch", "err", err, "client_id", clientID)
