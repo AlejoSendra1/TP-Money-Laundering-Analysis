@@ -34,7 +34,7 @@ func (client *Client) handleQueryResponse(queryCode uint32) error {
 	}
 
 	// CHECKEO Q NO LO HAYA ESCRITO
-	if state, exists := client.processedQueries[queryCode]; exists && newSecNum <= state.LastSecNum {
+	if state, exists := client.processedQueries[queryCode]; exists && newSecNum < state.LastSecNum {
 		slog.Warn("Ignoring duplicate message from gateway redelivery", "query", queryCode, "secNum", newSecNum)
 		return nil
 	}
@@ -52,7 +52,8 @@ func (client *Client) handleQueryResponse(queryCode uint32) error {
 
 	// efectivisamos el cambio
 	client.processedQueries[queryCode] = QueryState{
-		LastSecNum: newSecNum,
+		LastSecNum:      newSecNum,
+		LastWriteOffset: newOffset,
 	}
 
 	client.resultsLogsSaver.Save(

@@ -119,7 +119,7 @@ func (gateway *Gateway) handleEndOfRecordsMessage(client *clientregistry.ClientS
 
 func (gateway *Gateway) sendResponse(socket net.Conn, data []byte) error {
 	if err := safeio.WriteAll(socket, data); err != nil {
-		slog.Error("While writing queries result message", "err", err)
+		slog.Warn("Client disconnected before response could be delivered", "err", err)
 		return fmt.Errorf("While writing queries result message: %w", err)
 	}
 	return nil

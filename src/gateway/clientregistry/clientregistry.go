@@ -36,9 +36,9 @@ func NewClientRegistry() ClientRegistry {
 	}
 }
 
-func (registry *ClientRegistry) Add(clientID int64, client ClientState) {
+func (registry *ClientRegistry) AddPtr(clientID int64, client *ClientState) {
 	registry.mutex.Lock()
-	registry.clients[clientID] = &client
+	registry.clients[clientID] = client // same pointer everywhere
 	registry.mutex.Unlock()
 
 	registry.sentSecuenceNumberByClientMutex.Lock()

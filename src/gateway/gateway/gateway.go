@@ -135,9 +135,13 @@ func (gateway *Gateway) Run() error {
 
 		if !isAnOldClient {
 			handler := messagehandler.NewMessageHandler(clientId, eorMap)
-			NewClient := clientregistry.ClientState{Conn: conn, Handler: &handler, AckCh: make(chan struct{}, 1)}
-			gateway.registry.Add(clientId, NewClient)
-			go gateway.handleClientRequest(&NewClient)
+			newClient := &clientregistry.ClientState{
+				Conn:    conn,
+				Handler: &handler,
+				AckCh:   make(chan struct{}, 1),
+			}
+			gateway.registry.AddPtr(clientId, newClient) // store and use the same pointer
+			go gateway.handleClientRequest(newClient)
 		} else {
 			go gateway.handleClientRequest(client)
 		}
@@ -279,7 +283,8 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		}
 
 		if err := gateway.sendResponse(targetClient.Conn, serialization); err != nil {
-			slog.Error("While sending results to client", "err", err)
+			slog.Warn("Could not deliver response to client (likely disconnected), nacking", "clientID", msg.ClientID)
+			time.Sleep(10 * time.Second)
 			nack()
 			return
 		}
