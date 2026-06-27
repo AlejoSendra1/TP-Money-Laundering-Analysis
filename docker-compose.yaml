@@ -5,53 +5,90 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      gateway:
-        condition: service_started
-      q5_date_filter_0:
-        condition: service_started
-      q5_date_filter_1:
-        condition: service_started
+    - usd_filter_0
+    - usd_filter_1
     environment:
     - ID=0
     - WORKER_ID=client_0
     - BATCH_SIZE=200
-    - INPUT_FILE=/datasets/input_0.csv
+    - INPUT_FILE=/datasets/input_LI_corto.csv
     - OUTPUT_FILE=/output/output_client_0/
-    - WORKER_ID=client_0
+    - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
     - ./output:/output
-    - ./persistence:/persistence
+    - ./persistence:/persistence 
   client_1:
     build:
       context: ./src/
       dockerfile: client/Dockerfile
     container_name: client_1
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      gateway:
-        condition: service_started
-      q5_date_filter_0:
-        condition: service_started
-      q5_date_filter_1:
-        condition: service_started
+    - usd_filter_0
+    - usd_filter_1
     environment:
     - ID=1
     - WORKER_ID=client_1
     - BATCH_SIZE=200
-    - INPUT_FILE=/datasets/input_0.csv
+    - INPUT_FILE=/datasets/input_LI_corto.csv
     - OUTPUT_FILE=/output/output_client_1/
+    - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ./datasets:/datasets
     - ./output:/output
-    - ./persistence:/persistence
+    - ./persistence:/persistence 
+  q2_counter_0:
+    build:
+      context: ./src/
+      dockerfile: counter_q2/Dockerfile
+    container_name: q2_counter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - WORKER_ID=q2_counter_0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
+    - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
+  q2_counter_1:
+    build:
+      context: ./src/
+      dockerfile: counter_q2/Dockerfile
+    container_name: q2_counter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - WORKER_ID=q2_counter_1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_QUEUE=counter_q2_queue
+    - INPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - INPUT_TOPIC=usd_transactions_topic
+    - OUTPUT_PREFIX=join_q2
+    - JOIN_AMOUNT=2
+    - COUNTER_AMOUNT=2
+    - COUNTER_Q2_CONTROL=counter_q2_control
+    - BATCH_SIZE=100
+    - USD_FILTER_AMOUNT=2
+    volumes:
+    - ./persistence:/persistence 
   gateway:
     build:
       context: ./src/
@@ -66,13 +103,54 @@ services:
     - MOM_PORT=5672
     - OUTPUT_EXCHANGE_NAME=transactions_exchange
     - OUTPUT_TOPIC=transactions_topic
+    - PYTHONUNBUFFERED=1
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     - EOF_EXPECTED_BY_QUERY_1=0
-    - EOF_EXPECTED_BY_QUERY_2=0
+    - EOF_EXPECTED_BY_QUERY_2=2 # Coincidir con la cantidad de q2 counters
     - EOF_EXPECTED_BY_QUERY_3=0
     - EOF_EXPECTED_BY_QUERY_4=0
-    - EOF_EXPECTED_BY_QUERY_5=2 # Coincidir con la cantidad de q5 counter
+    - EOF_EXPECTED_BY_QUERY_5=0
+  q2_join_0:
+    build:
+      context: ./src/
+      dockerfile: join_q2/Dockerfile
+    container_name: q2_join_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=0
+    - WORKER_ID=q2_join_0
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
+    - BATCH_SIZE=100
+    volumes:
+    - ./persistence:/persistence 
+  q2_join_1:
+    build:
+      context: ./src/
+      dockerfile: join_q2/Dockerfile
+    container_name: q2_join_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - WORKER_ID=q2_join_1
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - INPUT_PREFIX=join_q2
+    - COUNTER_AMOUNT=2
+    - OUTPUT_QUEUE=results_queue
+    - QUERY_ID=5
+    - BATCH_SIZE=100
+    volumes:
+    - ./persistence:/persistence 
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -89,214 +167,46 @@ services:
     ports:
     - 5672:5672
     - 15672:15672
-    logging:
-      driver: none
-  q5_date_filter_0:
+  usd_filter_0:
     build:
       context: ./src/
-      dockerfile: q5_date_filter/Dockerfile
-    container_name: q5_date_filter_0
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_0
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      filter_payment_format_0:
-        condition: service_started
-      filter_payment_format_1:
-        condition: service_started
+    - q2_counter_0
+    - q2_counter_1
     environment:
     - ID=0
-    - WORKER_ID=q5_date_filter_0
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_ID=q5_date_filter_0
-    - INPUT_QUEUE=q5_date_filter_queue
+    - WORKER_ID=usd_filter_0
+    - INPUT_QUEUE=usd_filter_queue
     - INPUT_EXCHANGE_NAME=transactions_exchange
     - INPUT_TOPIC=transactions_topic
-    - OUTPUT_QUEUE=filter_payment_format_queue
-    - INSTANCE_AMOUNT=2
-    - CONTROL_EXCHANGE_NAME=q5_date_filter_control
-    volumes:
-    - ./persistence:/persistence 
-  q5_date_filter_1:
-    build:
-      context: ./src/
-      dockerfile: q5_date_filter/Dockerfile
-    container_name: q5_date_filter_1
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      filter_payment_format_0:
-        condition: service_started
-      filter_payment_format_1:
-        condition: service_started
-    environment:
-    - ID=1
-    - WORKER_ID=q5_date_filter_1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - WORKER_ID=q5_date_filter_1
-    - INPUT_QUEUE=q5_date_filter_queue
-    - INPUT_EXCHANGE_NAME=transactions_exchange
-    - INPUT_TOPIC=transactions_topic
-    - OUTPUT_QUEUE=filter_payment_format_queue
-    - INSTANCE_AMOUNT=2
-    - CONTROL_EXCHANGE_NAME=q5_date_filter_control
-    volumes:
-    - ./persistence:/persistence 
-  filter_payment_format_0:
+    - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
+    - OUTPUT_TOPIC=usd_transactions_topic
+    - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+    - CONTROL_TOPIC=usd_filter_control_topic
+  usd_filter_1:
     build:
       context: ./src/
-      dockerfile: filter_payment_format/Dockerfile
-    container_name: filter_payment_format_0
+      dockerfile: usd_filter/Dockerfile
+    container_name: usd_filter_1
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      currencies_cache_0:
-        condition: service_started
-      currencies_cache_1:
-        condition: service_started
+      - q2_counter_0
+      - q2_counter_1
     environment:
-    - ID=0
-    - WORKER_ID=filter_payment_format_0
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_ID=filter_payment_format_0
-    - INPUT_QUEUE=filter_payment_format_queue
-    - OUTPUT_QUEUE=currencies_cache
-    - FILTER_AMOUNT=2
-    - DATE_FILTER_AMOUNT=2
-    - FILTER_PAYMENT_CONTROL=filter_payment_control
-    - BATCH_SIZE=100
-    - CONTROL_TOPIC=filter_payment_control_topic
-    volumes:
-    - ./persistence:/persistence
-  filter_payment_format_1:
-    build:
-      context: ./src/
-      dockerfile: filter_payment_format/Dockerfile
-    container_name: filter_payment_format_1
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      currencies_cache_0:
-        condition: service_started
-      currencies_cache_1:
-        condition: service_started
-    environment:
-    - ID=1
-    - WORKER_ID=filter_payment_format_1
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_ID=filter_payment_format_1
-    - INPUT_QUEUE=filter_payment_format_queue
-    - OUTPUT_QUEUE=currencies_cache
-    - FILTER_AMOUNT=2
-    - DATE_FILTER_AMOUNT=2
-    - FILTER_PAYMENT_CONTROL=filter_payment_control
-    - BATCH_SIZE=100
-    - CONTROL_TOPIC=filter_payment_control_topic
-    volumes:
-    - ./persistence:/persistence
-  counter_q5_0:
-    build:
-      context: ./src/
-      dockerfile: counter_q5/Dockerfile
-    container_name: counter_q5_0
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-    - ID=0
-    - WORKER_ID=counter_q5_0
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_ID=counter_q5_0
-    - INPUT_PREFIX=counter_q5_queue
-    - OUTPUT_QUEUE=results_queue
-    - CACHE_AMOUNT=2
-    volumes:
-    - ./persistence:/persistence
-  counter_q5_1:
-    build:
-      context: ./src/
-      dockerfile: counter_q5/Dockerfile
-    container_name: counter_q5_1
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-    - ID=1
-    - WORKER_ID=counter_q5_1
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_ID=counter_q5_1
-    - INPUT_PREFIX=counter_q5_queue
-    - OUTPUT_QUEUE=results_queue
-    - CACHE_AMOUNT=2
-    volumes:
-    - ./persistence:/persistence
-  currencies_cache_0:
-    build:
-      context: ./src/
-      dockerfile: currencies_cache/Dockerfile
-    container_name: currencies_cache_0
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      counter_q5_0:
-        condition: service_started
-      counter_q5_1:
-        condition: service_started
-    environment:
-    - ID=0
-    - WORKER_ID=currencies_cache_0
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_ID=currencies_cache_0
-    - INPUT_QUEUE=currencies_cache
-    - OUTPUT_PREFIX=counter_q5_queue
-    - COUNTER_AMOUNT=2
-    - FILTER_AMOUNT=2
-    - CONTROL_EXCHANGE_NAME=currencies_cache_control
-    - CONTROL_TOPIC=currencies_cache_control_topic
-    - CURRENCY_CODES_FILE=/currency_codes.json
-    - FALLBACK_RATES_FILE=/bitcoin_usd_rates.json
-    - EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v2/rates
-    volumes:
-    - ./src/currencies_cache/currency_codes.json:/currency_codes.json
-    - ./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json
-    - ./persistence:/persistence
-  currencies_cache_1:
-    build:
-      context: ./src/
-      dockerfile: currencies_cache/Dockerfile
-    container_name: currencies_cache_1
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      counter_q5_0:
-        condition: service_started
-      counter_q5_1:
-        condition: service_started
-    environment:
-    - ID=1
-    - WORKER_ID=currencies_cache_1
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_ID=currencies_cache_1
-    - INPUT_QUEUE=currencies_cache
-    - OUTPUT_PREFIX=counter_q5_queue
-    - COUNTER_AMOUNT=2
-    - FILTER_AMOUNT=2
-    - CONTROL_EXCHANGE_NAME=currencies_cache_control
-    - CONTROL_TOPIC=currencies_cache_control_topic
-    - CURRENCY_CODES_FILE=/currency_codes.json
-    - FALLBACK_RATES_FILE=/bitcoin_usd_rates.json
-    - EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v2/rates
-    volumes:
-    - ./src/currencies_cache/currency_codes.json:/currency_codes.json
-    - ./src/currencies_cache/bitcoin_usd_rates.json:/bitcoin_usd_rates.json
-    - ./persistence:/persistence
+      - ID=1
+      - WORKER_ID=usd_filter_1
+      - INPUT_QUEUE=usd_filter_queue
+      - INPUT_EXCHANGE_NAME=transactions_exchange
+      - INPUT_TOPIC=transactions_topic
+      - MOM_HOST=rabbitmq
+      - MOM_PORT=5672
+      - OUTPUT_EXCHANGE_NAME=usd_transactions_exchange
+      - OUTPUT_TOPIC=usd_transactions_topic
+      - CONTROL_EXCHANGE_NAME=usd_filter_control_exchange
+      - CONTROL_TOPIC=usd_filter_control_topic
   watchdog_0:
     build:
       context: ./src/
@@ -309,7 +219,7 @@ services:
     - ID=0
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - WORKER_IDS=q5_date_filter_0,q5_date_filter_1,filter_payment_format_0,filter_payment_format_1,counter_q5_0,counter_q5_1,currencies_cache_0,currencies_cache_1,watchdog_0,watchdog_1
+    - WORKER_IDS=usd_filter_0,usd_filter_1,q2_join_1,q2_join_0,q2_counter_0,q2_counter_1
     - ELECTION_EXCHANGE=watchdog_election
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -325,23 +235,7 @@ services:
     - ID=1
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - WORKER_IDS=q5_date_filter_0,q5_date_filter_1,filter_payment_format_0,filter_payment_format_1,counter_q5_0,counter_q5_1,currencies_cache_0,currencies_cache_1,watchdog_0,watchdog_1
-    - ELECTION_EXCHANGE=watchdog_election
-    volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
-  watchdog_2:
-    build:
-      context: ./src/
-      dockerfile: watchdog/Dockerfile
-    container_name: watchdog_2
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-    - ID=2
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - WORKER_IDS=q5_date_filter_0,q5_date_filter_1,filter_payment_format_0,filter_payment_format_1,counter_q5_0,counter_q5_1,currencies_cache_0,currencies_cache_1,watchdog_0,watchdog_1
+    - WORKER_IDS=usd_filter_0,usd_filter_1,q2_join_1,q2_join_0,q2_counter_0,q2_counter_1
     - ELECTION_EXCHANGE=watchdog_election
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock

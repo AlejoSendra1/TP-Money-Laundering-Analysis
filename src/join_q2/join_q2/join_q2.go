@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"sync"
 	"syscall"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/datasaver"
@@ -43,12 +42,12 @@ type JoinQ2 struct {
 	config           JoinQ2Config
 	inputExchange    middleware.Middleware
 	outputQueue      middleware.Middleware
-	mutex            sync.Mutex
 	topByClient      map[int64]map[int]bankEntry // client_id -> bankCode -> bankEntry{amount, account}
 	eofCountByClient map[int64][]string          // tracks how many counter_q2 EOFs have arrived per client
 	mssgHandlers     worker.MessageHandlerMap
 	heartbeat        *heatbeat.HeartbeatSender
 	datasaver        *datasaver.DataSaver
+	flushHandler     *FlushHandler
 }
 
 func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
@@ -78,6 +77,15 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 	if err != nil {
 		inputExchange.Close()
 		outputQueue.Close()
+		dataSaver.Close()
+		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
+	}
+
+	fh, err := NewFlushHandler(config.WorkerID)
+	if err != nil {
+		inputExchange.Close()
+		outputQueue.Close()
+		dataSaver.Close()
 		return nil, fmt.Errorf("creating heartbeat sender: %w", err)
 	}
 
@@ -89,6 +97,7 @@ func NewJoinQ2(config JoinQ2Config) (*JoinQ2, error) {
 		eofCountByClient: make(map[int64][]string),
 		heartbeat:        hb,
 		datasaver:        dataSaver,
+		flushHandler:     fh,
 	}
 
 	j.mssgHandlers = worker.MessageHandlerMap{
@@ -108,6 +117,11 @@ func (joinQ2 *JoinQ2) Run() {
 		joinQ2.heartbeat.Stop()
 		joinQ2.inputExchange.StopConsuming()
 	}()
+
+	// Resume any flushes that were interrupted before a previous crash.
+	// This must happen before we start consuming new messages so that
+	// in-flight output is drained first.
+	joinQ2.flushHandler.resumePendingFlushes(joinQ2.config.BatchSize, &joinQ2.outputQueue, joinQ2.sendEOF)
 
 	joinQ2.heartbeat.Start()
 	joinQ2.inputExchange.StartConsuming(joinQ2.handleMessage)
@@ -129,13 +143,13 @@ func (joinQ2 *JoinQ2) handleMessage(msg middleware.Message, ack, nack func()) {
 
 // processBatch updates in-memory state: keeps max-amount entry per bank.
 func (joinQ2 *JoinQ2) processBatch(clientID int64, data []interface{}) error {
+	slog.Info("dato recibido", "val", data)
+
 	records, err := inner.DeserializeMaxBankTransactionMessage(data)
 	if err != nil {
 		slog.Error("Deserializing input message", "err", err)
 		return err
 	}
-	joinQ2.mutex.Lock()
-	defer joinQ2.mutex.Unlock()
 	banks, ok := joinQ2.topByClient[clientID]
 	if !ok {
 		banks = make(map[int]bankEntry)
@@ -145,7 +159,6 @@ func (joinQ2 *JoinQ2) processBatch(clientID int64, data []interface{}) error {
 		prev, exists := banks[record.BankCode]
 		if !exists || record.Amount > prev.amount {
 			banks[record.BankCode] = bankEntry{amount: record.Amount, account: record.Account}
-			//slog.Info("New top", "client_id", clientID, "bank", record.BankCode, "amount", record.Amount, "account", record.Account)
 		}
 	}
 	return nil
@@ -164,7 +177,6 @@ func (joinQ2 *JoinQ2) handleEOF(clientID int64, data []interface{}) error {
 		return err
 	}
 
-	joinQ2.mutex.Lock()
 	if joinQ2.eofCountByClient[clientID] == nil {
 		joinQ2.eofCountByClient[clientID] = make([]string, 0)
 	}
@@ -172,7 +184,6 @@ func (joinQ2 *JoinQ2) handleEOF(clientID int64, data []interface{}) error {
 		return nil
 	}
 	joinQ2.eofCountByClient[clientID] = append(joinQ2.eofCountByClient[clientID], sender)
-	joinQ2.mutex.Unlock()
 
 	slog.Info("EOF received", "client_id", clientID, "count", len(joinQ2.eofCountByClient[clientID]), "total", joinQ2.config.CounterAmount)
 
@@ -182,24 +193,21 @@ func (joinQ2 *JoinQ2) handleEOF(clientID int64, data []interface{}) error {
 	return nil
 }
 
-// flushClient pops the accumulated state for clientID and sends it to the output queue.
+// flushClient pops the accumulated state for clientID, builds a deterministically
+// sorted slice of all rows, persists the flush cursor, and then sends chunks to
+// the output queue starting from the last committed offset.
+//
+// If the worker crashes mid-flush the persisted flushState lets the next
+// startup resume from exactly the right chunk (via resumePendingFlushes).
 func (joinQ2 *JoinQ2) flushClient(clientID int64) error {
-	joinQ2.mutex.Lock()
+
 	banks := joinQ2.topByClient[clientID]
-	//slog.Info("Flushing client", "client_id", clientID, "banks", len(banks))
 	delete(joinQ2.topByClient, clientID)
 	delete(joinQ2.eofCountByClient, clientID)
-	joinQ2.mutex.Unlock()
 
-	if err := joinQ2.sendData(clientID, banks); err != nil {
-		return err
-	}
-	return joinQ2.sendEOF(clientID)
-}
-
-// sendData converts the internal state to MaxBankTransaction records and sends them
-// to the output queue wrapped as a QueryResult (Query2).
-func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
+	// Build the full, deterministically-ordered row slice once.
+	// Sorting here (rather than per-chunk) guarantees that chunk boundaries
+	// are stable across restarts, which is required for offset-based resume.
 	rows := make([]transaction.MaxBankTransaction, 0, len(banks))
 	for bankCode, entry := range banks {
 		rows = append(rows, transaction.MaxBankTransaction{
@@ -208,36 +216,31 @@ func (joinQ2 *JoinQ2) sendData(clientID int64, banks map[int]bankEntry) error {
 			Amount:   entry.amount,
 		})
 	}
-	// Ordenar TODOS los rows antes de dividir en chunks para garantizar
-	// contenido determinístico en cada chunk (necesario para deduplicación por hash).
 	batch_utils.SortBatch(rows, func(a, b transaction.MaxBankTransaction) bool {
 		return a.Amount > b.Amount
 	})
 
-	for i := 0; i < len(rows); i += joinQ2.config.BatchSize {
-		end := i + joinQ2.config.BatchSize
-		if end > len(rows) {
-			end = len(rows)
-		}
-		chunk := rows[i:end]
-		msg, err := inner.SerializeQueryResultMessage(clientID, transaction.QueryResult{
-			QueryID:      transaction.Query2,
-			Transactions: chunk,
-		})
-		if err != nil {
-			return fmt.Errorf("serializing data chunk: %w", err)
-		}
-		if err := joinQ2.outputQueue.Send(*msg); err != nil {
-			return fmt.Errorf("sending data chunk: %w", err)
-		}
-		//slog.Info("Sent batch to output queue", "client_id", clientID, "count", len(chunk))
+	// Register the flush intent before sending anything.  If we crash before
+	// any chunk is sent nextChunk=0 means "start from the beginning", which
+	// is exactly right.
+	fs := &flushState{rows: rows, nextChunk: 0}
+	// Persist the initial flushState so the DataSaver knows about it.
+	joinQ2.flushHandler.SaveFlushState(clientID, fs)
+
+	if err := joinQ2.flushHandler.SendChunksFrom(clientID, fs, joinQ2.config.BatchSize, &joinQ2.outputQueue); err != nil {
+		return err
 	}
-	return nil
+
+	// All data chunks sent – remove the pending marker before sending EOF so
+	// that a crash between the two still results in a correct resume (the
+	// next restart will see no pendingFlush entry for this client and only
+	// need to re-send the EOF, which is idempotent on the receiver side).
+	joinQ2.flushHandler.Delete(clientID)
+	return joinQ2.sendEOF(clientID)
 }
 
 // sendEOF sends an EOF marker to the output queue.
 func (joinQ2 *JoinQ2) sendEOF(clientID int64) error {
-
 	msg, err := inner.SerializeQueryEOR(clientID, transaction.Query2, fmt.Sprintf("%d", joinQ2.config.ID))
 	if err != nil {
 		return fmt.Errorf("serializing EOF: %w", err)

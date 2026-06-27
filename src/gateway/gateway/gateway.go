@@ -235,6 +235,7 @@ func (gateway *Gateway) handleClientResponse(middlewareMsg middleware.Message, a
 		nack()
 		return
 	}
+	slog.Info("mensage recibido en gateway", msg)
 
 	// Lock corto: Solo buscamos el cliente idóneo en el registro
 	gateway.registry.WithLock(func(clients map[int64]*clientregistry.ClientState) {
