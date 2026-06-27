@@ -31,7 +31,7 @@ type CounterQ5Config struct {
 
 type CheckpointData struct {
 	CountByClient    map[int64]map[string]int             `json:"countByClient"`
-	EofCountByClient map[int64]int                        `json:"eofCountByClient"`
+	EofCountByClient map[int64]batch_utils.Set[string]    `json:"eofCountByClient"`
 	FinishedClients  batch_utils.Set[int64]               `json:"finishedClients"`
 	Deduplicator     *batch_utils.MultiClientDeduplicator `json:"deduplicator"`
 }
@@ -46,7 +46,7 @@ type CounterQ5 struct {
 	dataSaver   *datasaver.DataSaver
 
 	countByClient    map[int64]map[string]int
-	eofCountByClient map[int64]int
+	eofCountByClient map[int64]batch_utils.Set[string]
 	finishedClients  batch_utils.Set[int64]
 	deduplicator     *batch_utils.MultiClientDeduplicator
 }
@@ -87,7 +87,7 @@ func NewCounterQ5(config CounterQ5Config) (*CounterQ5, error) {
 		heartbeat:        hb,
 		dataSaver:        ds,
 		countByClient:    make(map[int64]map[string]int),
-		eofCountByClient: make(map[int64]int),
+		eofCountByClient: make(map[int64]batch_utils.Set[string]),
 		finishedClients:  make(batch_utils.Set[int64]),
 		deduplicator:     batch_utils.NewMultiClientDeduplicator(DEDUP_MAX_SIZE),
 	}, nil
@@ -116,6 +116,12 @@ func (counter *CounterQ5) Restaurate() error {
 		if checkpoint.Deduplicator != nil {
 			counter.deduplicator = checkpoint.Deduplicator
 		}
+		slog.Info("Done restaurating counter_q5 from checkpoint",
+			"countByClient", counter.countByClient,
+			"eofCountByClient", counter.eofCountByClient,
+			"finishedClients", counter.finishedClients,
+			"deduplicator", counter.deduplicator,
+		)
 	}
 
 	var savedMsg middleware.Message
@@ -173,6 +179,10 @@ func (counter *CounterQ5) handleMessage(msg middleware.Message, ack, nack func()
 }
 
 func (counter *CounterQ5) handleTransactionBatch(clientID int64, data []interface{}) error {
+	if counter.finishedClients.Contains(clientID) {
+		slog.Info("Ignorando data retrasada de cliente finalizado", "client_id", clientID)
+		return nil
+	}
 	records, err := inner.DeserializePaymentRecordBatch(data)
 	if err != nil {
 		slog.Error("Deserializing payment record batch", "err", err, "client_id", clientID)
@@ -182,21 +192,28 @@ func (counter *CounterQ5) handleTransactionBatch(clientID int64, data []interfac
 	return nil
 }
 
-func (counter *CounterQ5) handleEOF(clientID int64, _ []interface{}) error {
-	slog.Info("EOF received from cache", "client_id", clientID)
-	return counter.handleEOFLogic(clientID)
+func (counter *CounterQ5) handleEOF(clientID int64, data []interface{}) error {
+	_, sender, err := inner.DeserializeEOR(data)
+	if err != nil {
+		slog.Error("Deserializing EOR", "err", err, "client_id", clientID)
+		return err
+	}
+	slog.Info("EOF received from cache", "client_id", clientID, "sender", sender)
+	return counter.handleEOFLogic(clientID, sender)
 }
 
 // handleEOFLogic incrementa el contador y hace flush cuando se recibieron todos los EOFs.
 // Usado en handleMessage y durante Restaurate.
-func (counter *CounterQ5) handleEOFLogic(clientID int64) error {
+func (counter *CounterQ5) handleEOFLogic(clientID int64, sender string) error {
 	if counter.finishedClients.Contains(clientID) {
 		slog.Info("Client already finished, ignoring EOF", "client_id", clientID)
 		return nil
 	}
-
-	counter.eofCountByClient[clientID]++
-	eofCount := counter.eofCountByClient[clientID]
+	if counter.eofCountByClient[clientID] == nil {
+		counter.eofCountByClient[clientID] = batch_utils.NewSet[string]()
+	}
+	counter.eofCountByClient[clientID].Add(sender)
+	eofCount := counter.eofCountByClient[clientID].Size()
 	slog.Info("EOF accumulated", "client_id", clientID, "eofCount", eofCount, "expected", counter.config.CacheAmount)
 	if eofCount < counter.config.CacheAmount {
 		return nil
