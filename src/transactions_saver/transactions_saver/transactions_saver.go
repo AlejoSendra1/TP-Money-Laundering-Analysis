@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 	"tp_distribuidos/common/batch_utils"
 	"tp_distribuidos/common/datasaver"
 	"tp_distribuidos/common/heatbeat"
@@ -167,6 +168,8 @@ func (transactionsSaver *TransactionsSaver) Run() {
 }
 
 func (transactionsSaver *TransactionsSaver) handleMessage(middlewareMsg *middleware.Message, ack, nack func()) {
+	transactionsSaver.mu.Lock()
+	defer transactionsSaver.mu.Unlock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -218,6 +221,7 @@ func (transactionsSaver *TransactionsSaver) handleEndOfRecordMessage(clientID in
 }
 
 func (transactionsSaver *TransactionsSaver) handleNotificationMessage(middlewareMsg *middleware.Message, ack, nack func()) {
+	transactionsSaver.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -225,8 +229,10 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessage(middleware
 		})
 	if err != nil {
 		nack()
+		transactionsSaver.mu.Unlock()
 		return
 	}
+	transactionsSaver.mu.Unlock()
 	transactionsSaver.muDataSaver.Lock()
 	transactionsSaver.dataSaver.Save(middlewareMsg, transactionsSaver)
 	transactionsSaver.muDataSaver.Unlock()
@@ -270,6 +276,7 @@ func (transactionsSaver *TransactionsSaver) handleNotificationMessageWrapper(cli
 }
 
 func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *middleware.Message, ack func(), nack func()) {
+	transactionsSaver.mu.Lock()
 	err := worker.HandleMessageV2(
 		middlewareMsg,
 		worker.MessageHandlerMap{
@@ -277,8 +284,10 @@ func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *
 		})
 	if err != nil {
 		nack()
+		transactionsSaver.mu.Unlock()
 		return
 	}
+	transactionsSaver.mu.Unlock()
 	transactionsSaver.muDataSaver.Lock()
 	transactionsSaver.dataSaver.Save(middlewareMsg, transactionsSaver)
 	transactionsSaver.muDataSaver.Unlock()
@@ -286,6 +295,9 @@ func (transactionsSaver *TransactionsSaver) handleControlMessage(middlewareMsg *
 }
 
 func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID int64, data []interface{}) error {
+	if transactionsSaver.config.Id == 0 {
+		slog.Info("Procesando EOFFFFFFF")
+	}
 	_, sender, err := inner.DeserializeEOR(data)
 	if err != nil {
 		slog.Error("While deserializing control message", "err", err, "clientID", clientID)
@@ -294,20 +306,23 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 
 	clientState := transactionsSaver.getOrCreateClientState(clientID)
 	if clientState == nil {
+		if transactionsSaver.config.Id == 0 {
+			slog.Info("terminando de procesar el EOFFFFFFF")
+		}
 		// Clienta ya finalizado
 		return nil
 	}
-	transactionsSaver.mu.Lock()
 	transactionsSaver.eofCounter[clientID].Add(sender)
 	if transactionsSaver.eofCounter[clientID].Size() != transactionsSaver.config.DateFilterAmount {
 		slog.Info("Dont send EOF because still waiting for more EOFs",
 			"clientID", clientID,
 			"receivedEOFCount", transactionsSaver.eofCounter[clientID],
 			"expectedEOFCount", transactionsSaver.config.DateFilterAmount)
-		transactionsSaver.mu.Unlock()
+		if transactionsSaver.config.Id == 0 {
+			slog.Info("terminando de procesar el EOFFFFFFF")
+		}
 		return nil
 	}
-	transactionsSaver.mu.Unlock()
 
 	if clientState.MarkEOFAndCheckFinish() {
 		if err = transactionsSaver.finishClient(clientID); err != nil {
@@ -315,6 +330,9 @@ func (transactionsSaver *TransactionsSaver) handleControlMessageWrapper(clientID
 		}
 	} else {
 		slog.Info("Received client EOF, but cannot send because disk has not been flushed yet")
+	}
+	if transactionsSaver.config.Id == 0 {
+		slog.Info("terminando de procesar el EOFFFFFFF")
 	}
 	return nil
 }
@@ -344,7 +362,15 @@ func (transactionsSaver *TransactionsSaver) handleDataMessage(transactionRecords
 	if clientState.ShouldBuffData() {
 		return clientState.Storage.StoreTransactions(transactions)
 	}
-	return transactionsSaver.sendToOutput(clientID, transactions)
+	if transactionsSaver.config.Id == 0 {
+		slog.Info("EnviaaAAAAAAnDO")
+		time.Sleep(2 * time.Second)
+	}
+	err := transactionsSaver.sendToOutput(clientID, transactions)
+	if transactionsSaver.config.Id == 0 {
+		slog.Info("terminando de enviaaaaa")
+	}
+	return err
 }
 
 func (transactionsSaver *TransactionsSaver) sentEOF(clientID int64) error {
@@ -375,8 +401,7 @@ func (transactionsSaver *TransactionsSaver) sendToOutput(clientID int64, txs []t
 }
 
 func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int64) *ClientState {
-	transactionsSaver.mu.Lock()
-	defer transactionsSaver.mu.Unlock()
+
 	if _, isDone := transactionsSaver.finishedClients[clientID]; isDone {
 		slog.Info("Client has already done", "clientID", clientID)
 		return nil
@@ -393,8 +418,6 @@ func (transactionsSaver *TransactionsSaver) getOrCreateClientState(clientID int6
 }
 
 func (transactionsSaver *TransactionsSaver) cleanupClientState(clientID int64) error {
-	transactionsSaver.mu.Lock()
-	defer transactionsSaver.mu.Unlock()
 
 	clientState, exists := transactionsSaver.clientStates[clientID]
 	if !exists {
