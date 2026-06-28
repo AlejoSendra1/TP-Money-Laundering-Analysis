@@ -281,7 +281,7 @@ func (c *CounterQ2) handleMessage(middlewareMsg middleware.Message, ack func(), 
 }
 
 func (c *CounterQ2) handleEndOfRecordMessage(clientID int64, data []interface{}) error {
-	slog.Info("EOF received, notifying peers and flushing", "client_id", clientID)
+	slog.Debug("EOF received, notifying peers and flushing", "client_id", clientID)
 
 	_, sender, err := inner.DeserializeEOR(data) // no hace falta el bool dado que se utiliza otro canal para propagar
 	if err != nil {
@@ -374,12 +374,13 @@ func (counter *CounterQ2) sendControlEOF(clientID int64, sender string) error {
 
 // flushClient pops partial state for clientID and sends it to the correct joiner(s).
 func (counter *CounterQ2) flushClient(clientID int64, sender string) error {
-	slog.Info("tomando lock")
+	slog.Debug("tomando lock")
 	counter.mutex.Lock()
-	slog.Info("lock tomado")
+	slog.Debug("lock tomado")
 
 	if slices.Contains(counter.eofCounter[clientID], sender) {
 		slog.Info("Sender de EOR repetido")
+		counter.mutex.Unlock() // bug fix: unlock en todos los paths de retorno temprano
 		return nil
 	}
 
