@@ -74,7 +74,9 @@ func (fh *FlushHandler) restaurate() error {
 
 	for client, newStartingPoint := range newStartingPointByClient {
 		flushState := fh.pendingFlush[client]
-		flushState.nextChunk = int(newStartingPoint)
+		// Add log count to the checkpoint's nextChunk (don't overwrite it),
+		// because the checkpoint may already reflect partial progress.
+		flushState.nextChunk += int(newStartingPoint)
 		fh.pendingFlush[client] = flushState
 	}
 	return nil
@@ -132,6 +134,9 @@ func (fh *FlushHandler) SendChunksFrom(clientID int64, fs *flushState, batchSize
 		// Advance the cursor and persist it so a crash after this point
 		// skips this chunk on the next startup.
 		fs.nextChunk++
+		// Also update the map entry so that any automatic DataSaver checkpoint
+		// reflects the real progress (the map stores values, not pointers).
+		fh.pendingFlush[clientID] = *fs
 		fh.datasaver.Save(clientID, fh)
 	}
 	return nil
