@@ -114,7 +114,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 }
 
 func (sum *Sum) GetCheckpointData() any {
-	slog.Info("State saved",
+	slog.Debug("State saved",
 		"eofCounter", sum.eofCounter,
 		"finishedClients", sum.finishedClients)
 	return CheckpointData{
@@ -184,14 +184,14 @@ func (sum *Sum) handleTransactionBatchWrapper(clientID int64, data []interface{}
 }
 
 func (sum *Sum) handleEndOfRecordMessage(clientID int64, sender string) error {
-	slog.Info("Received End Of Records message", "clientID", clientID)
+	slog.Debug("Received End Of Records message", "clientID", clientID)
 	msg, err := inner.SerializeEOR(clientID, false, sender)
 	if err != nil {
-		slog.Info("While serializing EOF message", "err", err, "clientID", clientID)
+		slog.Error("While serializing EOF message", "err", err, "clientID", clientID)
 		return err
 	}
 	if err := sum.controlExchange.Send(*msg); err != nil {
-		slog.Info("While sending EOF message to other instances", "err", err, "clientID", clientID)
+		slog.Error("While sending EOF message to other instances", "err", err, "clientID", clientID)
 		return err
 	}
 	return nil

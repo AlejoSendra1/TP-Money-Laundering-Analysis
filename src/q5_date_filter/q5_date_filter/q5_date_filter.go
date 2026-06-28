@@ -159,7 +159,7 @@ func (f *Q5DateFilter) handleMessage(middlewareMsg middleware.Message, ack, nack
 }
 
 func (f *Q5DateFilter) handleEndOfRecords(clientID int64, data []interface{}) error {
-	slog.Info("EOF received from upstream, notifying peers and forwarding", "clientID", clientID)
+	slog.Debug("EOF received from upstream, notifying peers and forwarding", "clientID", clientID)
 	if err := f.sendControlEOF(clientID); err != nil {
 		slog.Error("Sending control EOF to peers", "err", err)
 		return err
@@ -194,7 +194,7 @@ func (f *Q5DateFilter) handleControlMessage(msg middleware.Message, ack, nack fu
 }
 
 func (f *Q5DateFilter) handleControlEOF(clientID int64, data []interface{}) error {
-	slog.Info("Control EOF from peer — sending own EOF", "clientID", clientID)
+	slog.Debug("Control EOF from peer — sending own EOF", "clientID", clientID)
 	return f.sendEOF(clientID)
 }
 
