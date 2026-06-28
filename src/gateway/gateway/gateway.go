@@ -40,7 +40,7 @@ type GatewayConfig struct {
 	EofExpectedByQuery5 int
 }
 
-const MaxBatchSize = 200000
+const MaxBatchSize = 1000000
 
 type Gateway struct {
 	registry       clientregistry.ClientRegistry

@@ -17,7 +17,7 @@ import (
 )
 
 const LOGS_UNTIL_CHECKPOINT = 250
-const DEDUP_MAX_SIZE = 1000
+const DEDUP_MAX_SIZE = 100000
 
 type CounterQ5Config struct {
 	ID          int
